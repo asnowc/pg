@@ -1,0 +1,23 @@
+name: Publish
+on:
+  push:
+    tags:
+      - v*
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  check:
+    if: ${{github.repository_owner=='asnowc'}}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: ^2
+          cache: true
+      - name: Publish
+        run: deno publish

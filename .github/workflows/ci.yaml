@@ -1,0 +1,45 @@
+name: CI
+on:
+  push:
+    branches:
+      - "*"
+      - "**"
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_USER: ci_test
+      POSTGRES_DB: postgres
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_USER: ${{env.POSTGRES_USER}}
+          POSTGRES_DB: ${{env.POSTGRES_DB}}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: ^2
+          cache: true
+      - run: deno install
+      - name: Test
+        run: deno task ci:test
+        env:
+          PG_URL: pg://${{env.POSTGRES_USER}}@127.0.0.1:5432/${{env.POSTGRES_DB}}
+  check:
+    if: ${{github.ref_name=='main'}}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: jsr-dry-run
+        run: npx jsr publish --dry-run

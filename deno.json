@@ -1,0 +1,35 @@
+{
+  "name": "@asla/pg",
+  "version": "0.11.4",
+  "license": "MIT",
+  "nodeModulesDir": "manual",
+  "tasks": {
+    "type:check": "deno check",
+    "ci:test": "deno run -A npm:vitest",
+    "publishDry": "deno publish --dry-run --allow-dirty",
+
+    "build": "pnpm rollup -c  build/rollup.config.js && pnpm run ci:check-api -l",
+    "ci:check-api": "pnpm api-extractor run -c api-extractor.jsonc -v"
+  },
+  "imports": {
+    "@asla/yoursql": "jsr:@asla/yoursql@^0.11.4",
+    "@types/pg": "npm:@types/pg@^8.15.6",
+    "@types/pg-cursor": "npm:@types/pg-cursor@^2.7.2",
+    "pg": "npm:pg@^8.16.3",
+    "pg-cursor": "npm:pg-cursor@^2.15.3",
+
+    "@asla/pg": "./src/mod.ts",
+    "@/": "./src/",
+    "@test/": "./test/",
+    "vitest": "npm:vitest@^4.0.15"
+  },
+  "exports": {
+    ".": "./src/mod.ts"
+  },
+  "fmt": {
+    "lineWidth": 100
+  },
+  "publish": {
+    "include": ["README.md", "LICENSE", "src/**/*.ts"]
+  }
+}
