@@ -21,7 +21,9 @@
     "@asla/pg": "./src/mod.ts",
     "@/": "./src/",
     "@test/": "./test/",
-    "vitest": "npm:vitest@^4.0.15"
+
+    "vitest": "npm:vitest@^4.0.15",
+    "@deno/vite-plugin": "npm:@deno/vite-plugin@^1.0.5"
   },
   "exports": {
     ".": "./src/mod.ts"
@@ -30,6 +32,6 @@
     "lineWidth": 100
   },
   "publish": {
-    "include": ["README.md", "LICENSE", "src/**/*.ts"]
+    "include": ["README.md", "LICENSE", "src"]
   }
 }

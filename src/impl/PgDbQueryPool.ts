@@ -118,11 +118,11 @@ export class PgDbQueryPool extends DbQueryPool implements AsyncDisposable {
     );
     return new PgCursor(cursor, poolConn, option?.defaultSize);
   }
-  close(force?: boolean) {
+  close(force?: boolean): Promise<void> {
     return this.#pool.close(force);
   }
   /** 打开连接 */
-  open() {
+  open(): void {
     if (this.#pool.closed) {
       this.#pool = this.#createPool();
     }
@@ -132,10 +132,10 @@ export class PgDbQueryPool extends DbQueryPool implements AsyncDisposable {
     return this.close();
   }
   /** 如果为 true, 则不会在创建新连接 */
-  get closed() {
+  get closed(): boolean {
     return this.#pool.closed;
   }
-  get totalCount() {
+  get totalCount(): number {
     return this.#pool.totalCount;
   }
   get idleCount(): number {

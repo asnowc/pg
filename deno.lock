@@ -2,6 +2,7 @@
   "version": "5",
   "specifiers": {
     "jsr:@asla/yoursql@~0.11.4": "0.11.4",
+    "npm:@deno/vite-plugin@^1.0.5": "1.0.5_vite@6.4.1__@types+node@24.2.0__picomatch@4.0.3_@types+node@24.2.0",
     "npm:@types/node@*": "24.2.0",
     "npm:@types/pg-cursor@^2.7.2": "2.7.2",
     "npm:@types/pg@^8.15.6": "8.15.6",
@@ -15,6 +16,13 @@
     }
   },
   "npm": {
+    "@deno/vite-plugin@1.0.5_vite@6.4.1__@types+node@24.2.0__picomatch@4.0.3_@types+node@24.2.0": {
+      "integrity": "sha512-tLja5n4dyMhcze1NzvSs2iiriBymfBlDCZIrjMTxb9O2ru0gvmV6mn5oBD2teNw5Sd92cj3YJzKwsAs8tMJXlg==",
+      "dependencies": [
+        "vite@6.4.1_@types+node@24.2.0_picomatch@4.0.3"
+      ],
+      "tarball": "https://registry.npmmirror.com/@deno/vite-plugin/-/vite-plugin-1.0.5.tgz"
+    },
     "@esbuild/aix-ppc64@0.25.12": {
       "integrity": "sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA==",
       "os": ["aix"],
@@ -369,10 +377,10 @@
         "@vitest/spy",
         "estree-walker",
         "magic-string",
-        "vite"
+        "vite@6.4.1_picomatch@4.0.3_@types+node@24.2.0"
       ],
       "optionalPeers": [
-        "vite"
+        "vite@6.4.1_picomatch@4.0.3_@types+node@24.2.0"
       ],
       "tarball": "https://registry.npmmirror.com/@vitest/mocker/-/mocker-4.0.15.tgz"
     },
@@ -680,6 +688,26 @@
       "integrity": "sha512-t5Fy/nfn+14LuOc2KNYg75vZqClpAiqscVvMygNnlsHBFpSXdJaYtXMcdNLpl/Qvc3P2cB3s6lOV51nqsFq4ag==",
       "tarball": "https://registry.npmmirror.com/undici-types/-/undici-types-7.10.0.tgz"
     },
+    "vite@6.4.1_@types+node@24.2.0_picomatch@4.0.3": {
+      "integrity": "sha512-+Oxm7q9hDoLMyJOYfUYBuHQo+dkAloi33apOPP56pzj+vsdJDzr+j1NISE5pyaAuKL4A3UD34qd0lx5+kfKp2g==",
+      "dependencies": [
+        "@types/node",
+        "esbuild",
+        "fdir",
+        "picomatch",
+        "postcss",
+        "rollup",
+        "tinyglobby"
+      ],
+      "optionalDependencies": [
+        "fsevents"
+      ],
+      "optionalPeers": [
+        "@types/node"
+      ],
+      "bin": true,
+      "tarball": "https://registry.npmmirror.com/vite/-/vite-6.4.1.tgz"
+    },
     "vite@6.4.1_picomatch@4.0.3_@types+node@24.2.0": {
       "integrity": "sha512-+Oxm7q9hDoLMyJOYfUYBuHQo+dkAloi33apOPP56pzj+vsdJDzr+j1NISE5pyaAuKL4A3UD34qd0lx5+kfKp2g==",
       "dependencies": [
@@ -722,7 +750,7 @@
         "tinyexec",
         "tinyglobby",
         "tinyrainbow",
-        "vite",
+        "vite@6.4.1_picomatch@4.0.3_@types+node@24.2.0",
         "why-is-node-running"
       ],
       "optionalPeers": [
@@ -748,6 +776,7 @@
   "workspace": {
     "dependencies": [
       "jsr:@asla/yoursql@~0.11.4",
+      "npm:@deno/vite-plugin@^1.0.5",
       "npm:@types/pg-cursor@^2.7.2",
       "npm:@types/pg@^8.15.6",
       "npm:pg-cursor@^2.15.3",

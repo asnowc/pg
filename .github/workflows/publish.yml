@@ -19,5 +19,6 @@ jobs:
         with:
           deno-version: ^2
           cache: true
+      - run: deno install
       - name: Publish
         run: deno publish
