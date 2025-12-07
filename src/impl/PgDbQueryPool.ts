@@ -1,9 +1,10 @@
 import { PgCursor } from "./_PgCursor.ts";
 import {
+  createDbPoolConnection,
+  createDbPoolTransaction,
   DbCursor,
   DbCursorOption,
   DbPoolConnection,
-  DbPoolTransaction,
   DbQueryPool,
   DbTransaction,
   MultipleQueryInput,
@@ -70,7 +71,7 @@ export class PgDbQueryPool extends DbQueryPool implements AsyncDisposable {
   // implement
   async connect(): Promise<DbPoolConnection> {
     const conn = await this.#pool.get();
-    return new DbPoolConnection(
+    return createDbPoolConnection(
       new PgConnection(conn),
       () => this.#pool.release(conn),
       () => {
@@ -100,7 +101,7 @@ export class PgDbQueryPool extends DbQueryPool implements AsyncDisposable {
 
   //implement
   begin(mode?: TransactionMode): DbTransaction {
-    return new DbPoolTransaction(() => this.connect(), {
+    return createDbPoolTransaction(() => this.connect(), {
       mode,
       errorRollback: true,
     });
@@ -112,9 +113,10 @@ export class PgDbQueryPool extends DbQueryPool implements AsyncDisposable {
   ): Promise<DbCursor<T>> {
     const conn = await this.#pool.get();
     const cursor = conn.query(new Cursor(sql.toString()));
-    const poolConn = new DbPoolConnection(
+    const poolConn = createDbPoolConnection(
       new PgConnection(conn),
       () => this.#pool.release(conn),
+      () => conn.end().catch(() => {}),
     );
     return new PgCursor(cursor, poolConn, option?.defaultSize);
   }

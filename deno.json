@@ -1,6 +1,6 @@
 {
   "name": "@asla/pg",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "nodeModulesDir": "manual",
   "tasks": {
@@ -12,7 +12,7 @@
     "ci:check-api": "pnpm api-extractor run -c api-extractor.jsonc -v"
   },
   "imports": {
-    "@asla/yoursql": "jsr:@asla/yoursql@^0.11.4",
+    "@asla/yoursql": "jsr:@asla/yoursql@^0.12.0",
     "@types/pg": "npm:@types/pg@^8.15.6",
     "@types/pg-cursor": "npm:@types/pg-cursor@^2.7.2",
     "pg": "npm:pg@^8.16.3",
