@@ -1,7 +1,7 @@
 {
   "version": "5",
   "specifiers": {
-    "jsr:@asla/yoursql@0.12": "0.12.0",
+    "jsr:@asla/yoursql@0.13": "0.13.0",
     "npm:@deno/vite-plugin@^1.0.5": "1.0.5_vite@6.4.1__@types+node@24.2.0__picomatch@4.0.3_@types+node@24.2.0",
     "npm:@types/node@*": "24.2.0",
     "npm:@types/pg-cursor@^2.7.2": "2.7.2",
@@ -11,8 +11,8 @@
     "npm:vitest@^4.0.15": "4.0.15_vite@6.4.1__picomatch@4.0.3_@types+node@24.2.0"
   },
   "jsr": {
-    "@asla/yoursql@0.12.0": {
-      "integrity": "bec143d805f68a77959e2efea12a1b82005b5badbc83a09bc14a90db5c820458"
+    "@asla/yoursql@0.13.0": {
+      "integrity": "c80d34fe0cf07ce5c589688a78ca98cab08f0b22ffda31e31abf50efa0121ac8"
     }
   },
   "npm": {
@@ -775,7 +775,7 @@
   },
   "workspace": {
     "dependencies": [
-      "jsr:@asla/yoursql@0.12",
+      "jsr:@asla/yoursql@0.13",
       "npm:@deno/vite-plugin@^1.0.5",
       "npm:@types/pg-cursor@^2.7.2",
       "npm:@types/pg@^8.15.6",
