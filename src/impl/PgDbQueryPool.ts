@@ -39,12 +39,8 @@ export class PgDbQueryPool extends DbQueryPool implements AsyncDisposable {
         const pgClient = createPgClient(this.connectOption);
         pgClient.on("end", () => pool.remove(pgClient));
         pgClient.on("error", () => pool.remove(pgClient));
-        try {
-          await pgClient.connect();
-          return pgClient;
-        } catch (error) {
-          throw new Error("连接数据库失败", { cause: error });
-        }
+        await pgClient.connect();
+        return pgClient;
       },
       dispose: (conn) => {
         conn.end().catch((e) => {
