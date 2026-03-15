@@ -12,18 +12,18 @@
     "ci:check-api": "pnpm api-extractor run -c api-extractor.jsonc -v"
   },
   "imports": {
-    "@asla/yoursql": "jsr:@asla/yoursql@^0.13.0",
-    "@types/pg": "npm:@types/pg@^8.15.6",
+    "@asla/yoursql": "jsr:@asla/yoursql@^0.13.1",
+    "@types/pg": "npm:@types/pg@^8.18.0",
     "@types/pg-cursor": "npm:@types/pg-cursor@^2.7.2",
-    "pg": "npm:pg@^8.16.3",
-    "pg-cursor": "npm:pg-cursor@^2.15.3",
+    "pg": "npm:pg@^8.20.0",
+    "pg-cursor": "npm:pg-cursor@^2.19.0",
 
     "@asla/pg": "./src/mod.ts",
     "@/": "./src/",
     "@test/": "./test/",
 
     "vitest": "npm:vitest@^4.0.15",
-    "@deno/vite-plugin": "npm:@deno/vite-plugin@^1.0.5"
+    "@deno/vite-plugin": "npm:@deno/vite-plugin@^1.0.6"
   },
   "exports": {
     ".": "./src/mod.ts"

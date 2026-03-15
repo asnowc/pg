@@ -25,7 +25,7 @@ jobs:
           --health-timeout 5s
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - uses: denoland/setup-deno@v2
         with:
           deno-version: canary # vitest 在 deno 2.5.6 上有bug，无法运行
@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - uses: denoland/setup-deno@v2
         with:
           deno-version: ^2

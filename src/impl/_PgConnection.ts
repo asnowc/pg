@@ -32,6 +32,12 @@ export class PgConnection extends DbQuery implements DbConnection, DbQueryBase {
   override query<T = any>(sql: SqlLike[] | SqlLike): Promise<unknown[] | unknown>;
   override query<T = any>(input: QueryInput | MultipleQueryInput): Promise<T> {
     const text = genSql(input);
+    if (input instanceof Array) {
+      return this.#pool.query(text).then((res) => {
+        if (res instanceof Array) return res;
+        return [res];
+      }, (e) => addPgErrorInfo(e, text)) as any;
+    }
     return this.#pool.query(text).catch((e) => addPgErrorInfo(e, text)) as any;
   }
   override execute(input: QueryInput | MultipleQueryInput): Promise<void> {
