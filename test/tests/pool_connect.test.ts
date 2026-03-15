@@ -19,6 +19,14 @@ test("多条 SQL 语句", async function ({ emptyDbPool }) {
   expect(result).instanceof(Array);
   expect(result.length).toBe(2);
 });
+test("query 多条 SQL 语句", async function ({ emptyDbPool }) {
+  await createTable(emptyDbPool, 10);
+  const result = await emptyDbPool.query(
+    ["SELECT * FROM test limit 2"],
+  );
+  expect(result).instanceof(Array);
+  expect(result.length).toBe(1);
+});
 
 test("执行第一条语句时，才开始建立连接", async function ({ emptyDbPool }) {
   expect(emptyDbPool.totalCount).toBe(emptyDbPool.idleCount);
