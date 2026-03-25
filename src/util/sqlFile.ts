@@ -1,7 +1,7 @@
-import { DbQuery } from "@asla/yoursql/client";
+import type { DbQuery } from "#abstract";
 import fs from "node:fs/promises";
-import { DatabaseError } from "./driver/mod.js";
-import { genPgSqlErrorMsg } from "./driver/util.ts";
+import { DatabaseError } from "../driver/mod.js";
+import { genPgSqlErrorMsg } from "../driver/util.ts";
 
 export async function execSqlFile(pathname: string, client: DbQuery): Promise<void> {
   const file = await fs.readFile(pathname, "utf-8");

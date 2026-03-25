@@ -1,5 +1,5 @@
-import { DbConnection } from "@asla/yoursql/client";
-import { createDbConnection, DbConnectOption } from "./impl/mod.ts";
+import type { DbConnection } from "#abstract";
+import { createDbConnection, DbConnectOption } from "../impl/mod.ts";
 
 /** @public */
 export interface CreateDataBaseOption {

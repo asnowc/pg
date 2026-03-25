@@ -1,4 +1,4 @@
-import type { DbConnection } from "@asla/yoursql/client";
+import type { DbConnection } from "#abstract";
 import { createPgClient } from "./_pg_client.ts";
 import { PgConnection } from "./_PgConnection.ts";
 /** @public */
