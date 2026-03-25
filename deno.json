@@ -6,13 +6,10 @@
   "tasks": {
     "type:check": "deno check",
     "ci:test": "deno x vitest run",
-    "publishDry": "deno publish --dry-run --allow-dirty",
-
-    "build": "pnpm rollup -c  build/rollup.config.js && pnpm run ci:check-api -l",
-    "ci:check-api": "pnpm api-extractor run -c api-extractor.jsonc -v"
+    "publishDry": "deno publish --dry-run --allow-dirty"
   },
   "imports": {
-    "@asla/yoursql": "jsr:@asla/yoursql@^0.13.1",
+    "#abstract": "./src/abstract/mod.ts",
     "@types/pg": "npm:@types/pg@^8.20.0",
     "@types/pg-cursor": "npm:@types/pg-cursor@^2.7.2",
     "pg": "npm:pg@^8.20.0",
@@ -29,7 +26,7 @@
     ".": "./src/mod.ts"
   },
   "fmt": {
-    "lineWidth": 100
+    "lineWidth": 120
   },
   "publish": {
     "include": ["README.md", "LICENSE", "src"]

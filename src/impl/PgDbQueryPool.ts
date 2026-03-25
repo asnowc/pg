@@ -12,7 +12,7 @@ import {
   QueryInput,
   SqlLike,
   TransactionMode,
-} from "@asla/yoursql/client";
+} from "#abstract";
 import { createPgClient } from "./_pg_client.ts";
 import { ResourcePool } from "../lib/pool.ts";
 import { PgConnection } from "./_PgConnection.ts";

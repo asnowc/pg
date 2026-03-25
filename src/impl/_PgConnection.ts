@@ -9,7 +9,7 @@ import {
   QueryRowsResult,
   SqlLike,
   sqlLikeToString,
-} from "@asla/yoursql/client";
+} from "#abstract";
 import { addPgErrorInfo } from "../driver/util.ts";
 import type { Client } from "../driver/mod.js";
 

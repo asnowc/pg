@@ -1,4 +1,4 @@
-import { DbCursor, DbPoolConnection, ParallelQueryError } from "@asla/yoursql/client";
+import { DbCursor, DbPoolConnection, ParallelQueryError } from "#abstract";
 import { Cursor } from "../driver/mod.js";
 
 export class PgCursor<T> extends DbCursor<T> {
