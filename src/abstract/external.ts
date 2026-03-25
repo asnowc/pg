@@ -6,11 +6,7 @@ export interface SqlTemplate<T extends readonly any[] = readonly unknown[]> {
   readonly args: T;
   toTextArgs(): string[];
 }
-/** @public */
-export interface SqlTextTemplate {
-  readonly textTemplate: string;
-  readonly textArgs: readonly string[];
-}
+
 /**
  * 推断查询结果的类型
  * @public
