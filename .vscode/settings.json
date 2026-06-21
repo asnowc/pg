@@ -1,4 +1,5 @@
 {
   "editor.defaultFormatter": "denoland.vscode-deno",
-  "vitest.runtime": "deno"
+  "vitest.runtime": "deno",
+  "deno.codeLens.test": false
 }

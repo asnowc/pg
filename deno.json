@@ -12,15 +12,15 @@
     "#abstract": "./src/abstract/mod.ts",
     "@types/pg": "npm:@types/pg@^8.20.0",
     "@types/pg-cursor": "npm:@types/pg-cursor@^2.7.2",
-    "pg": "npm:pg@^8.20.0",
-    "pg-cursor": "npm:pg-cursor@^2.19.0",
+    "pg": "npm:pg@^8.22.0",
+    "pg-cursor": "npm:pg-cursor@^2.21.0",
 
     "@asla/pg": "./src/mod.ts",
     "@/": "./src/",
     "@test/": "./test/",
 
-    "vitest": "npm:vitest@^4.1.1",
-    "@deno/vite-plugin": "npm:@deno/vite-plugin@^1.0.6"
+    "vitest": "npm:vitest@^4.1.9",
+    "@deno/vite-plugin": "npm:@deno/vite-plugin@^2.0.2"
   },
   "exports": {
     ".": "./src/mod.ts"
