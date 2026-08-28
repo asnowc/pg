@@ -3,7 +3,9 @@
 ## 仓库定位
 
 - 这是一个以 Deno 为优先的 PostgreSQL 库，发布名为 `@asla/pg`。
-- 公共 API 从 [src/mod.ts](src/mod.ts) 对外导出，并经由 [src/abstract/mod.ts](src/abstract/mod.ts)、[src/impl/mod.ts](src/impl/mod.ts) 和 [src/util.ts](src/util.ts) 重新导出。
+- 公共 API 从 [src/mod.ts](src/mod.ts) 对外导出，并经由
+  [src/abstract/mod.ts](src/abstract/mod.ts)、[src/impl/mod.ts](src/impl/mod.ts) 和 [src/util.ts](src/util.ts)
+  重新导出。
 - 修改应尽量小而集中，并围绕现有抽象展开：`DbQuery`、`DbQueryPool`、池连接、事务与游标。
 
 ## 编码约定

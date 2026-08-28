@@ -10,13 +10,7 @@ PostgreSQL 查询与连接池工具，面向 Deno，兼容字符串 SQL、SQL �
 ## 安装
 
 ```ts
-import {
-  createDbConnection,
-  DbManage,
-  execSqlFile,
-  parserDbConnectUrl,
-  PgDbQueryPool,
-} from "jsr:@asla/pg";
+import { createDbConnection, DbManage, execSqlFile, parserDbConnectUrl, PgDbQueryPool } from "jsr:@asla/pg";
 ```
 
 这个库运行在 Deno 上，并通过 npm 兼容层使用 `pg` 与 `pg-cursor`。
@@ -86,7 +80,8 @@ const pool = new PgDbQueryPool({
 - 返回上述类型的函数
 - 多语句场景下可传数组或返回数组的函数
 
-单语句查询建议使用 `query()`、`queryRows()` 等方法；多语句查询建议使用 `query([sql1, sql2])`。`multipleQuery()` 仍可用，但已不推荐继续扩展新调用场景。
+单语句查询建议使用 `query()`、`queryRows()` 等方法；多语句查询建议使用 `query([sql1, sql2])`。`multipleQuery()`
+仍可用，但已不推荐继续扩展新调用场景。
 
 ## 查询辅助方法
 
@@ -170,7 +165,8 @@ await tx.query("INSERT INTO logs(message) VALUES('updated user 1')");
 await tx.commit();
 ```
 
-未显式 `commit()` 或 `rollback()` 时，离开 `await using` 作用域会自动回滚并释放连接。测试已经覆盖这个行为，因此事务示例和业务代码都建议采用 `await using`。
+未显式 `commit()` 或 `rollback()` 时，离开 `await using`
+作用域会自动回滚并释放连接。测试已经覆盖这个行为，因此事务示例和业务代码都建议采用 `await using`。
 
 也支持事务隔离级别：
 
@@ -309,9 +305,9 @@ deno task ci:test
 
 ```ts
 import {
+  DbQuery,
   type MultipleQueryInput,
   type MultipleQueryResult,
-  DbQuery,
   type QueryDataInput,
   type QueryInput,
   type QueryRowsResult,
