@@ -3,122 +3,330 @@
 [jsr]: https://jsr.io/badges/@asla/pg
 [jsr-url]: https://jsr.io/@asla/pg
 
-SQL 生成器
+PostgreSQL 查询与连接池工具，面向 Deno，兼容字符串 SQL、SQL 模板对象以及带类型信息的语句对象。
 
 [API 文档](https://jsr.io/@asla/pg/doc)
 
-## 抽象类
-
-#### DbQuery 抽象类
+## 安装
 
 ```ts
-class YourQuery extends DbQuery {
-  execute(sql: QueryInput | MultipleQueryInput): Promise<void> {
-    // implement
-  }
-
-  query<T extends MultipleQueryResult = MultipleQueryResult>(sql: MultipleQueryInput): Promise<T>;
-  query<T = any>(sql: QueryDataInput<T>): Promise<QueryRowsResult<T>>;
-  query<T = any>(sql: QueryInput): Promise<QueryRowsResult<T>>;
-  query<T = any>(sql: QueryInput | MultipleQueryInput): Promise<QueryRowsResult<T>> {
-    // implement
-  }
-  multipleQuery<T extends MultipleQueryResult = MultipleQueryResult>(sql: StringLike): Promise<T> {
-    // implement
-  }
-  /**
-   * 执行多语句的方法
-   * @deprecated 不建议使用。改用 query()
-   */
-  abstract multipleQuery<T extends MultipleQueryResult = MultipleQueryResult>(sql: SqlLike | SqlLike[]): Promise<T>;
-}
-const db: DbQuery = new YourQuery();
+import { createDbConnection, DbManage, execSqlFile, parserDbConnectUrl, PgDbQueryPool } from "jsr:@asla/pg";
 ```
+
+这个库运行在 Deno 上，并通过 npm 兼容层使用 `pg` 与 `pg-cursor`。
+
+## 核心能力
+
+- 单连接查询：`createDbConnection()`
+- 连接池查询：`PgDbQueryPool`
+- 查询辅助方法：`queryRows()`、`queryFirstRow()`、`queryCount()`、`queryMap()`
+- 事务：`begin()`、`commit()`、`rollback()`、`savePoint()`
+- 游标：`cursor()`、异步迭代、按批读取
+- 数据库管理：`DbManage`
+- 执行 SQL 文件：`execSqlFile()`
+- 连接串解析：`parserDbConnectUrl()`
+
+## 快速开始
+
+### 单连接
 
 ```ts
-declare const db: DbQuery;
+import { createDbConnection } from "jsr:@asla/pg";
 
-type Row = { name: string; age: number };
-const sqlText = "SELECT * FROM user";
+await using db = await createDbConnection("postgres://postgres:password@127.0.0.1:5432/app");
 
-const rows: Row[] = await db.queryRows<Row>(sqlText);
-const count: number = await db.queryCount(sqlText);
-const rows: Map<string, Row> = await db.queryMap<Row>(sqlText, "name");
+const rows = await db.queryRows<{ id: number; name: string }>(
+  "SELECT id, name FROM users ORDER BY id LIMIT 10",
+);
+
+const firstUser = await db.queryFirstRow<{ id: number; name: string }>(
+  "SELECT id, name FROM users WHERE id = 1",
+);
+
+const affected = await db.queryCount("UPDATE users SET active = true WHERE id = 1");
 ```
 
-#### DbQueryPool 抽象类
+### 连接池
 
 ```ts
-class YourPool extends DbQueryPool {
-  // implement
-}
-const pool: DbQueryPool = new YourPool();
+import { PgDbQueryPool } from "jsr:@asla/pg";
+
+await using pool = new PgDbQueryPool("postgres://postgres:password@127.0.0.1:5432/app");
+
+const rows = await pool.queryRows<{ id: number; name: string }>(
+  "SELECT id, name FROM users ORDER BY id LIMIT 10",
+);
 ```
 
-##### 普通查询
+也可以传入对象形式的连接参数：
+
+```ts
+const pool = new PgDbQueryPool({
+  database: "app",
+  hostname: "127.0.0.1",
+  port: 5432,
+  user: "postgres",
+  password: "password",
+});
+```
+
+## 查询输入类型
+
+库中的查询方法接受以下输入：
+
+- `string`
+- 带 `genSql()` 方法的对象
+- 形如 `SqlTemplate` 的 SQL 模板对象
+- 返回上述类型的函数
+- 多语句场景下可传数组或返回数组的函数
+
+单语句查询建议使用 `query()`、`queryRows()` 等方法；多语句查询建议使用 `query([sql1, sql2])`。`multipleQuery()`
+仍可用，但已不推荐继续扩展新调用场景。
+
+## 查询辅助方法
+
+### `query()`
+
+返回原始查询结果：
+
+```ts
+const result = await pool.query<{ id: number }>("SELECT id FROM users");
+console.log(result.rowCount, result.rows);
+```
+
+### `queryRows()`
+
+只返回 `rows`：
+
+```ts
+const rows = await pool.queryRows<{ id: number }>("SELECT id FROM users");
+```
+
+### `queryFirstRow()`
+
+只返回第一行；如果没有结果会抛错：
+
+```ts
+const row = await pool.queryFirstRow<{ id: number }>("SELECT id FROM users LIMIT 1");
+```
+
+### `queryCount()`
+
+返回受影响行数：
+
+```ts
+const count = await pool.queryCount("DELETE FROM users WHERE deleted_at IS NOT NULL");
+```
+
+### `queryMap()`
+
+按指定字段生成 `Map`：
+
+```ts
+const userMap = await pool.queryMap<{ id: number; name: string }, "id">(
+  "SELECT id, name FROM users",
+  "id",
+);
+```
+
+## 连接池与资源释放
+
+### 普通连接
 
 ```ts
 const conn = await pool.connect();
 try {
-  await conn.queryRows(sqlText);
+  await conn.queryRows("SELECT 1");
 } finally {
   conn.release();
 }
 ```
 
-或者，使用 `using` 语法更优雅 (推荐)
+更推荐使用 `using` 自动释放：
 
 ```ts
 using conn = await pool.connect();
-await conn.queryRows(sqlText);
+await conn.queryRows("SELECT 1");
 ```
 
-##### 事务查询
+行为说明：
+
+- `release()` 后继续查询会抛出 `ConnectionNotAvailableError`
+- 单次查询报错不会直接销毁连接对象，连接仍可继续执行后续语句
+- `begin()` 创建事务对象时不会立刻占用连接，首次执行语句时才会真正建立连接
+
+## 事务
 
 ```ts
-const conn = pool.begin();
-try {
-  await conn.queryRows(sqlText);
-  await conn.queryRows(sqlText);
-  await conn.commit();
-} catch (e) {
-  await conn.rollback();
-  throw e;
-}
+await using tx = pool.begin();
+
+await tx.query("UPDATE users SET score = score + 1 WHERE id = 1");
+await tx.query("INSERT INTO logs(message) VALUES('updated user 1')");
+await tx.commit();
 ```
 
-或者，使用 `using` 语法更优雅 (推荐)
+未显式 `commit()` 或 `rollback()` 时，离开 `await using`
+作用域会自动回滚并释放连接。测试已经覆盖这个行为，因此事务示例和业务代码都建议采用 `await using`。
+
+也支持事务隔离级别：
 
 ```ts
-await using conn = pool.begin();
-
-await conn.queryRows(sqlText);
-await conn.queryRows(sqlText);
-await conn.commit();
+const tx = pool.begin("SERIALIZABLE");
 ```
 
-##### 游标查询
+## 游标
+
+按批读取：
 
 ```ts
-const cursor = await pool.cursor(sqlText);
+await using cursor = await pool.cursor<{ id: number }>(
+  "SELECT id FROM users ORDER BY id",
+  { defaultSize: 100 },
+);
 
-let rows = await cursor.read(20);
-while (rows.length) {
+let rows = await cursor.read();
+while (rows.length > 0) {
   console.log(rows);
-  rows = await cursor.read(20);
-  if (conditions) {
-    await cursor.close(); // 提前关闭游标
-    break;
-  }
+  rows = await cursor.read();
 }
 ```
 
-或者使用 `for await of` 更优雅 (推荐)
+或者直接异步迭代：
 
 ```ts
-const cursor = await pool.cursor(sqlText);
-for await (const element of cursor) {
-  console.log(element);
-  if (conditions) break; //提前关闭游标
+const cursor = await pool.cursor<{ id: number }>("SELECT id FROM users ORDER BY id", {
+  defaultSize: 100,
+});
+
+for await (const row of cursor) {
+  console.log(row);
+  if (row.id > 1000) break;
+}
+```
+
+行为说明：
+
+- `close()` 可重复调用
+- 游标关闭后会释放其占用的池连接
+- 不支持并行 `read()`，否则会抛出 `ParallelQueryError`
+
+## 可等待 SQL 对象
+
+`DbQueryPool` 提供两个便于组合调用的对象工厂：
+
+### `createExecutableSQL()`
+
+对象可直接 `await`，执行后返回 `void`：
+
+```ts
+const sql = pool.createExecutableSQL("DELETE FROM temp_data");
+await sql;
+```
+
+### `createQueryableSQL()`
+
+对象既可 `await`，也可继续链式调用查询辅助方法：
+
+```ts
+const users = pool.createQueryableSQL<{ id: number; name: string }>(
+  "SELECT id, name FROM users ORDER BY id",
+);
+
+console.log(users.genSql());
+const rows = await users.queryRows();
+```
+
+如果需要自定义 `await` 的结果，可以传入 `transform`：
+
+```ts
+const total = await pool.createQueryableSQL(
+  "SELECT id FROM users",
+  async (queryable, statement) => {
+    return await queryable.queryCount(statement);
+  },
+);
+```
+
+## 工具函数
+
+### 解析连接串
+
+```ts
+import { parserDbConnectUrl } from "jsr:@asla/pg";
+
+const option = parserDbConnectUrl("postgres://postgres:password@127.0.0.1:5432/app");
+```
+
+### 执行 SQL 文件
+
+```ts
+import { createDbConnection, execSqlFile } from "jsr:@asla/pg";
+
+await using db = await createDbConnection("postgres://postgres:password@127.0.0.1:5432/app");
+await execSqlFile("./migrations/init.sql", db);
+```
+
+### 管理测试或临时数据库
+
+```ts
+import { DbManage } from "jsr:@asla/pg";
+
+await using manage = await DbManage.connect("postgres://postgres:password@127.0.0.1:5432/postgres");
+await manage.recreateDb("app_test");
+```
+
+## 开发与测试
+
+安装依赖后，可直接使用 Deno task：
+
+```sh
+deno task type:check
+deno task ci:test
+```
+
+集成测试依赖环境变量 `TEST_LOGIN_DB`，它应该指向一个有权限创建和删除数据库的 PostgreSQL 登录库，例如：
+
+```sh
+export TEST_LOGIN_DB='postgres://postgres:password@127.0.0.1:5432/postgres'
+deno task ci:test
+```
+
+测试会为每个 worker 创建临时数据库，并在结束后自动清理。
+
+## 抽象类扩展
+
+如果你要对接其它驱动，可以基于抽象类实现自己的适配层：
+
+- `DbQuery`：最小查询抽象
+- `DbQueryPool`：连接池抽象
+- `DbConnection` / `DbPoolConnection` / `DbTransaction`：连接与事务接口
+
+示意：
+
+```ts
+import {
+  DbQuery,
+  type MultipleQueryInput,
+  type MultipleQueryResult,
+  type QueryDataInput,
+  type QueryInput,
+  type QueryRowsResult,
+} from "jsr:@asla/pg";
+
+class YourQuery extends DbQuery {
+  execute(sql: QueryInput | MultipleQueryInput): Promise<void> {
+    throw new Error("implement me");
+  }
+
+  query<T extends MultipleQueryResult = MultipleQueryResult>(sql: MultipleQueryInput): Promise<T>;
+  query<T = unknown>(sql: QueryDataInput<T>): Promise<QueryRowsResult<T>>;
+  query<T = unknown>(sql: QueryInput): Promise<QueryRowsResult<T>>;
+  query<T = unknown>(sql: QueryInput | MultipleQueryInput): Promise<any> {
+    throw new Error("implement me");
+  }
+
+  multipleQuery<T extends MultipleQueryResult = MultipleQueryResult>(sql: string | string[]): Promise<T> {
+    throw new Error("implement me");
+  }
 }
 ```

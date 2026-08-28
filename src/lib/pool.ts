@@ -110,7 +110,7 @@ export class ResourcePool<T> {
   usageLimit: number;
   /** 空闲时间超过这个数后将自动释放连接，如果为0则关闭空闲超时。 */
   freeTimeout: number;
-  #timer?: number;
+  #timer?: NodeJS.Timeout;
 
   #closeResolver?: () => void;
   #closedError?: Error;

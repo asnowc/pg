@@ -29,7 +29,7 @@ jobs:
         with:
           deno-version: ^2
           cache: true
-      - run: deno install --frozen 
+      - run: deno ci
       - name: Test
         run: deno task ci:test
         env:
@@ -43,6 +43,6 @@ jobs:
         with:
           deno-version: ^2
           cache: true
-      - run: deno install --frozen
+      - run: deno ci
       - name: publish dry-run
         run: deno publish --dry-run
