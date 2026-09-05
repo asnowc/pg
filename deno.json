@@ -28,6 +28,14 @@
   "fmt": {
     "lineWidth": 120
   },
+  "lint": {
+    "rules": {
+      "exclude": ["require-await"]
+    }
+  },
+  "test": {
+    "include": []
+  },
   "publish": {
     "include": ["README.md", "LICENSE", "src"]
   }
