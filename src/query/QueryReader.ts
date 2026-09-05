@@ -44,7 +44,7 @@ export interface QueryReader<T = unknown> extends AsyncIterable<T> {
    */
   [Symbol.asyncIterator](): AsyncGenerator<T, QueryCompletion, void>;
 }
-export interface Cursor<T> {
+export interface DbCursor<T> extends AsyncDisposable, AsyncIterable<T> {
   /**
    * 记录已读取的行数。任何获取数据的方法都会更新该值。
    */
@@ -55,15 +55,11 @@ export interface Cursor<T> {
   /**
    * 提前关闭游标。重复关闭将被忽略。
    */
-  close(): void;
+  close(): Promise<void>;
   read(maxRows?: number): Promise<T[]>;
 
   getFields(): Promise<readonly Readonly<FieldInfo>[]>;
   getCompletion(): Promise<QueryCompletion>;
-
-  /** 关闭游标 */
-  [Symbol.dispose](): void;
-  [Symbol.asyncIterator](): AsyncGenerator<T, QueryCompletion, void>;
 }
 
 export interface SampleQueryReader<T = unknown> {

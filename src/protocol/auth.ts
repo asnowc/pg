@@ -24,7 +24,7 @@ export interface PgSaslExchange {
 export interface PgAuthenticationExchangeOptions {
   user: string;
   password?: string | (() => string | Promise<string>);
-  crypto: PgCryptoProvider;
+
   /** 覆盖或扩展内置 SCRAM-SHA-256 认证，例如 OAUTHBEARER。 */
   createSaslExchange?: (
     mechanisms: readonly string[],

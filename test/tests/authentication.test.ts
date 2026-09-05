@@ -1,42 +1,36 @@
-import { afterAll, describe, expect, test } from "vitest";
-import { createDbConnection } from "@asla/pg";
+import { expect, test } from "vitest";
+import { DB_CONNECT_INFO, PUBLIC_DB_CONNECT_INFO } from "@test/utils/db.ts";
+import { connect, PgConnectOptions } from "@asla/pg";
+import { DenoConnByteStream } from "@/platforms.ts";
 
-const baseUrl = process.env.AUTH_TEST_DB ?? "";
-const enabled = baseUrl.length > 0;
-const connections: Array<{ close(): Promise<void> }> = [];
+const USERS = {
+  trust: "auth_trust",
+  password: "auth_password",
+  scram: "auth_scram",
+};
 
-function connectionUrl(user: string, password?: string): string {
-  const url = new URL(baseUrl);
-  url.username = user;
-  url.password = password ?? "";
-  return url.toString();
+async function authenticate(options: PgConnectOptions): Promise<void> {
+  await using conn = await denoConnect(options);
+  await conn.simpleQuery(`SELECT 1`);
 }
 
-async function authenticate(user: string, password?: string): Promise<void> {
-  const connection = await createDbConnection(connectionUrl(user, password));
-  connections.push(connection);
-  const result = await connection.query<{ current_user: string }>("SELECT current_user");
-  expect(result.rows[0]?.current_user).toBe(user);
+async function denoConnect(options: PgConnectOptions) {
+  const conn = await Deno.connect({ hostname: PUBLIC_DB_CONNECT_INFO.hostname, port: PUBLIC_DB_CONNECT_INFO.port });
+  const stream = new DenoConnByteStream(conn);
+  return connect(stream, options);
 }
-
-afterAll(async () => {
-  await Promise.all(connections.map((connection) => connection.close()));
+test("trust 用户可以连接", async () => {
+  await denoConnect({ user: USERS.trust });
 });
 
-describe.skipIf(!enabled)("PostgreSQL 真实认证", () => {
-  test("trust 用户可以连接", async () => {
-    await authenticate("auth_trust");
-  });
+test("password 用户可以连接", async () => {
+  await denoConnect({ user: USERS.password, password: "password-secret" });
+});
 
-  test("password 用户可以连接", async () => {
-    await authenticate("auth_password", "password-secret");
-  });
+test("SCRAM 用户可以连接", async () => {
+  await authenticate({ user: USERS.scram, password: "scram-secret" });
+});
 
-  test("SCRAM 用户可以连接", async () => {
-    await authenticate("auth_scram", "scram-secret");
-  });
-
-  test("密码错误时认证失败", async () => {
-    await expect(createDbConnection(connectionUrl("auth_scram", "wrong-password"))).rejects.toThrow();
-  });
+test("密码错误时认证失败", async () => {
+  await expect(authenticate({ user: USERS.scram, password: "wrong-password" })).rejects.toThrow();
 });

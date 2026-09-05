@@ -1,5 +1,5 @@
 import type {
-  Cursor,
+  DbCursor,
   QueryReader,
   SampleQueryReader,
   SqlStatementData,
@@ -23,7 +23,7 @@ export type CopyToOptions = QueryCommonOptions & {};
 /**
  * 已经完成认证的 PostgreSQL 连接接口，提供执行 SQL 查询、打开游标以及复制数据的功能。
  */
-export interface PgConnection {
+export interface PgConnection extends AsyncDisposable {
   /**
    * 从流中读取 SQL 并执行简单查询
    */
@@ -54,7 +54,7 @@ export interface PgConnection {
   /**
    * 提供接近 PostgreSQL 原生的高级查询接口
    */
-  openCursor<T>(queryable: SqlStatement<T>, options?: OpenCursorOptions): Cursor<T>;
+  openCursor<T>(queryable: SqlStatement<T>, options?: OpenCursorOptions): DbCursor<T>;
 
   copyForm(queryable: SqlStatement<unknown>, options?: CopyFormOptions): CopyFormHandle;
   copyTo(queryable: SqlStatement<unknown>, options?: CopyToOptions): ReadableStream<Uint8Array>;
