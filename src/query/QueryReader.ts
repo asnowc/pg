@@ -8,6 +8,7 @@ import type { FieldInfo, QueryCompletion } from "./MessageData.ts";
  *  for await (const item of query) {
  *    console.log(item);
  *  }
+ * @public
  */
 export interface QueryReader<T = unknown> extends AsyncIterable<T> {
   /** 受影响的行数 */
@@ -44,7 +45,8 @@ export interface QueryReader<T = unknown> extends AsyncIterable<T> {
    */
   [Symbol.asyncIterator](): AsyncGenerator<T, QueryCompletion, void>;
 }
-export interface DbCursor<T> extends AsyncDisposable, AsyncIterable<T> {
+/** @public */
+export interface PgCursor<T> extends AsyncDisposable, AsyncIterable<T> {
   /**
    * 记录已读取的行数。任何获取数据的方法都会更新该值。
    */
@@ -62,6 +64,7 @@ export interface DbCursor<T> extends AsyncDisposable, AsyncIterable<T> {
   getCompletion(): Promise<QueryCompletion>;
 }
 
+/** @public */
 export interface SampleQueryReader<T = unknown> {
   rowCount: number | null;
   get fields(): readonly Readonly<FieldInfo>[];

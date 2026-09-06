@@ -1,4 +1,7 @@
-/** TCP、Unix Socket 或 TLS 连接需要实现的字节流。 */
+/**
+ * TCP、Unix Socket 或 TLS 连接需要实现的字节流。
+ * @public
+ */
 export interface ByteStream {
   /**
    * 读取指定字节长度的数据，返回包含读取数据的 Uint8Array。如果 EOF 提前到达，则抛出异常。

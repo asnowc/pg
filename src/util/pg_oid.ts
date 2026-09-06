@@ -1,6 +1,7 @@
 /**
  * PostgreSQL 内置数据类型的对象标识符（OID）。扩展和自定义类型的 OID 由数据库动态分配。
  * @see https://www.postgresql.org/docs/current/datatype.html
+ * @public
  */
 export enum PgOid {
   BOOL = 16,

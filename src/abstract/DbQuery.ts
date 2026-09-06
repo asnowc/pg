@@ -2,16 +2,26 @@ import type { SqlLike } from "./interfaces.ts";
 import type { MultipleQueryResult, QueryRowsResult } from "./DbQueryBase.ts";
 import type { SqlStatementDataset } from "./external.ts";
 
-/** @public */
+/**
+ * @public
+ * @deprecated 请改用 `SqlStatement`。
+ */
 export type QueryInput = SqlLike | (() => SqlLike);
-/** @public */
+/**
+ * @public
+ * @deprecated 请改用 `SqlStatement`。
+ */
 export type QueryDataInput<T> = SqlStatementDataset<T> | (() => SqlStatementDataset<T>);
-/** @public */
+/**
+ * @public
+ * @deprecated 请改用 `PgConnection.simpleQuery()`。
+ */
 export type MultipleQueryInput = SqlLike[] | (() => SqlLike[]);
 
 /**
  * SQL 查询相关操作
  * @public
+ * @deprecated 请改用 `PgConnection`。
  */
 export abstract class DbQuery {
   abstract execute(sql: QueryInput | MultipleQueryInput): Promise<void>;

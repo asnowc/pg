@@ -5,6 +5,7 @@ import type { SqlStatementDataset, SqlTemplate } from "./external.ts";
 /**
  * 数据库连接
  * @public
+ * @deprecated 请改用 `PgConnection`。
  */
 export interface DbConnection extends DbQuery, AsyncDisposable {
   close(): Promise<void>;
@@ -13,6 +14,7 @@ export interface DbConnection extends DbQuery, AsyncDisposable {
 /**
  * 数据库池连接
  * @public
+ * @deprecated 旧连接池 API 将在后续版本移除。
  */
 export interface DbPoolConnection extends DbQuery, Disposable {
   release(): void;
@@ -23,7 +25,10 @@ export interface DbPoolConnection extends DbQuery, Disposable {
   get released(): boolean;
 }
 
-/** @public */
+/**
+ * @public
+ * @deprecated 旧事务 API 将在后续版本移除。
+ */
 export type TransactionMode =
   | "SERIALIZABLE"
   | "REPEATABLE READ"
@@ -58,6 +63,7 @@ export type TransactionMode =
  *
  * ```
  * @public
+ * @deprecated 旧事务 API 将在后续版本移除。
  */
 export interface DbTransaction extends DbQuery, AsyncDisposable {
   /** 回滚，并释放连接 */
@@ -71,6 +77,7 @@ export interface DbTransaction extends DbQuery, AsyncDisposable {
 /**
  * @public
  * 池连接事务
+ * @deprecated 旧事务 API 将在后续版本移除。
  */
 export interface DbPoolTransaction extends DbTransaction {
   readonly mode?: TransactionMode;
@@ -80,6 +87,7 @@ export interface DbPoolTransaction extends DbTransaction {
 /**
  * 数据库连接池
  * @public
+ * @deprecated 请直接使用 `PgConnection`，或在应用层管理原生连接池。
  */
 export interface DbPool {
   connect(): Promise<DbPoolConnection>;
@@ -90,5 +98,8 @@ export interface DbPool {
   cursor<T>(sql: SqlLike, option?: DbCursorOption): Promise<DbCursor<T>>;
 }
 
-/** @public */
+/**
+ * @public
+ * @deprecated 请改用 `SqlStatement` 或 `sql` 模板。
+ */
 export type SqlLike = { genSql(): string } | SqlTemplate | string;

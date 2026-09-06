@@ -1,7 +1,7 @@
 import { PgProtocolError } from "./errors.ts";
 import { AUTH_CODE, BACKEND_MSG_CODE, PgFormat, PgTransactionStatus } from "./const.ts";
-import type { ByteReader } from "@/protocol/pg_message/_data_type_bin.ts";
 import type { PgAuthenticationMessage, PgBackendMessage, PgErrorFields, PgFieldDescription } from "./messages.ts";
+import { ByteReader } from "./_data_type_bin.ts";
 
 export function assertHasBeenFullyRead(reader: ByteReader, messageCode: number): void {
   if (reader.remaining !== 0) {
@@ -277,54 +277,48 @@ export function decodeRowDescription(reader: ByteReader): PgBackendMessage {
   assertHasBeenFullyRead(reader, code);
   return { type: code, byteLength: reader.byteLength, fields };
 }
-// function decodeBackendMessage(code: number, body: Uint8Array): PgBackendMessage {
-//   const reader = new ByteReader(body);
-//   switch (code) {
-//     case BACKEND_MSG_CODE.authentication:
-//       return decodeAuthentication(reader);
-//     case BACKEND_MSG_CODE.backendKeyData:
-//       return decodeBackendKeyData(reader);
-//     case BACKEND_MSG_CODE.bindComplete:
-//     case BACKEND_MSG_CODE.closeComplete:
-//     case BACKEND_MSG_CODE.copyDone:
-//     case BACKEND_MSG_CODE.emptyQuery:
-//     case BACKEND_MSG_CODE.noData:
-//     case BACKEND_MSG_CODE.parseComplete:
-//     case BACKEND_MSG_CODE.portalSuspended: {
-//       assertHasBeenFullyRead(reader, code);
-//       return { type: code, byteLength: reader.byteLength };
-//     }
-//     case BACKEND_MSG_CODE.commandComplete:
-//       return decodeCommandComplete(reader);
-//     case BACKEND_MSG_CODE.copyData:
-//       return { type: BACKEND_MSG_CODE.copyData, byteLength: reader.byteLength, data: reader.readBytes() };
-//     case BACKEND_MSG_CODE.copyInResponse:
-//     case BACKEND_MSG_CODE.copyOutResponse:
-//     case BACKEND_MSG_CODE.copyBothResponse:
-//       return decodeCopyResponse(reader, code);
-//     case BACKEND_MSG_CODE.dataRow:
-//       return decodeDataRow(reader);
-//     case BACKEND_MSG_CODE.error:
-//     case BACKEND_MSG_CODE.notice:
-//       return decodeNoticeResponse(reader, code);
-//     case BACKEND_MSG_CODE.negotiateProtocolVersion:
-//       return decodeNegotiateProtocolVersion(reader);
-//     case BACKEND_MSG_CODE.notification:
-//       return decodeNotification(reader);
-//     case BACKEND_MSG_CODE.parameterDescription:
-//       return decodeParameterDescription(reader);
-//     case BACKEND_MSG_CODE.parameterStatus:
-//       return decodeParameterStatus(reader);
-//     case BACKEND_MSG_CODE.readyForQuery:
-//       return decodeReadyForQuery(reader);
-//     case BACKEND_MSG_CODE.rowDescription:
-//       return decodeRowDescription(reader);
-//     default:
-//       return {
-//         type: BACKEND_MSG_CODE.unknown,
-//         byteLength: reader.byteLength,
-//         code,
-//         data: reader.readBytes(),
-//       };
-//   }
-// }
+export function decodeBackendMessage(code: number, body: Uint8Array): PgBackendMessage {
+  const reader = new ByteReader(body);
+  switch (code) {
+    case BACKEND_MSG_CODE.authentication:
+      return decodeAuthentication(reader);
+    case BACKEND_MSG_CODE.backendKeyData:
+      return decodeBackendKeyData(reader);
+    case BACKEND_MSG_CODE.bindComplete:
+    case BACKEND_MSG_CODE.closeComplete:
+    case BACKEND_MSG_CODE.copyDone:
+    case BACKEND_MSG_CODE.emptyQuery:
+    case BACKEND_MSG_CODE.noData:
+    case BACKEND_MSG_CODE.parseComplete:
+    case BACKEND_MSG_CODE.portalSuspended:
+      assertHasBeenFullyRead(reader, code);
+      return { type: code, byteLength: reader.byteLength };
+    case BACKEND_MSG_CODE.commandComplete:
+      return decodeCommandComplete(reader);
+    case BACKEND_MSG_CODE.copyData:
+      return { type: BACKEND_MSG_CODE.copyData, byteLength: reader.byteLength, data: reader.readBytes() };
+    case BACKEND_MSG_CODE.copyInResponse:
+    case BACKEND_MSG_CODE.copyOutResponse:
+    case BACKEND_MSG_CODE.copyBothResponse:
+      return decodeCopyResponse(reader, code);
+    case BACKEND_MSG_CODE.dataRow:
+      return decodeDataRow(reader);
+    case BACKEND_MSG_CODE.error:
+    case BACKEND_MSG_CODE.notice:
+      return decodeNoticeResponse(reader, code);
+    case BACKEND_MSG_CODE.negotiateProtocolVersion:
+      return decodeNegotiateProtocolVersion(reader);
+    case BACKEND_MSG_CODE.notification:
+      return decodeNotification(reader);
+    case BACKEND_MSG_CODE.parameterDescription:
+      return decodeParameterDescription(reader);
+    case BACKEND_MSG_CODE.parameterStatus:
+      return decodeParameterStatus(reader);
+    case BACKEND_MSG_CODE.readyForQuery:
+      return decodeReadyForQuery(reader);
+    case BACKEND_MSG_CODE.rowDescription:
+      return decodeRowDescription(reader);
+    default:
+      return { type: BACKEND_MSG_CODE.unknown, byteLength: reader.byteLength, code, data: reader.readBytes() };
+  }
+}

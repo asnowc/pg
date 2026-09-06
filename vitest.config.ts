@@ -7,9 +7,11 @@ export default defineConfig({
   plugins: [deno()],
   test: {
     alias: [
-      { find: /^@asla\/pg/, replacement: path.join(dirname, "./src") + "/mod.ts" },
+      { find: "@asla/pg", replacement: path.join(dirname, "./src/mod.ts") },
       { find: /^@\//, replacement: path.join(dirname, "./src") + "/" },
     ],
     setupFiles: ["./test/utils/setup.ts"],
+    hookTimeout: 30_000,
+    testTimeout: 15_000,
   },
 });

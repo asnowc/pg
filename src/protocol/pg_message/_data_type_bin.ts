@@ -36,8 +36,16 @@ export function encodeCString(value: string): Uint8Array {
   if (value.includes("\0")) throw new Error("PostgreSQL strings cannot contain NUL bytes");
   return textEncoder.encode(value);
 }
-export declare function encodeCStringInto(value: string, output: Uint8Array): number;
-export declare function calcCStringByteLength(value: string): number;
+export function encodeCStringInto(value: string, output: Uint8Array): number {
+  const encoded = encodeCString(value);
+  if (output.byteLength < encoded.byteLength + 1) throw new RangeError("Output buffer is too small");
+  output.set(encoded);
+  output[encoded.byteLength] = 0;
+  return encoded.byteLength + 1;
+}
+export function calcCStringByteLength(value: string): number {
+  return encodeCString(value).byteLength + 1;
+}
 
 export class ByteReader {
   constructor(data: Uint8Array, offset = 0) {

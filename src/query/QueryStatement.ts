@@ -6,8 +6,10 @@ type ListWithLength<T> = ArrayLike<T> | (Iterable<T> & { length: number });
 type SqlStatementTextData = string | ArrayLike<string> | Iterable<string>;
 type SqlStatementBinaryData = Uint8Array | ArrayLike<Uint8Array> | Iterable<Uint8Array>;
 
+/** @public */
 export type SqlStatementData = SqlStatementBinaryData | SqlStatementTextData;
 
+/** @public */
 export type QueryDecoder<T> = {
   /**
    * typeID -> ColumnParser
@@ -18,6 +20,7 @@ export type QueryDecoder<T> = {
   __infer?(input: T): never;
 };
 
+/** @public */
 export type TypedSqlStatementTemplate<T = unknown> = QueryDecoder<T> & {
   /** 单条 SQL 语句片段 */
   readonly sqlTemplate: SqlStatementData;
@@ -28,14 +31,18 @@ export type TypedSqlStatementTemplate<T = unknown> = QueryDecoder<T> & {
   readonly args: ListWithLength<Uint8Array | string>;
 };
 
+/** @public */
 export type TypedSqlStatement<T = unknown> = QueryDecoder<T> & {
   /** 单条 SQL 语句片段 */
   readonly sqlStatement: SqlStatementData;
 };
 
+/** @public */
 export type ColumnDecoderGetter = (field: FieldInfo) => ColumnDecoder;
+/** @public */
 export type ColumnDecoderMap = ReadonlyMap<number, ColumnDecoder>;
 
+/** @public */
 export type ColumnDecoder<T = unknown> = {
   text(value: string, field: Readonly<FieldInfo> & PgDataDecodeContext): T;
   binary(value: Uint8Array, field: Readonly<FieldInfo> & PgDataDecodeContext): T;

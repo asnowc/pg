@@ -82,7 +82,10 @@ class DbPoolConnectionImpl extends DbQuery implements DbPoolConnection {
     return this.release();
   }
 }
-/** @public */
+/**
+ * @public
+ * @deprecated 旧连接池适配 API 将在后续版本移除。
+ */
 export function createDbPoolConnection(
   conn: DbQueryBase,
   onRelease: (conn: DbQueryBase) => void,

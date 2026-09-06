@@ -13,7 +13,77 @@ PostgreSQL 查询与连接池工具，面向 Deno，兼容字符串 SQL、SQL �
 import { createDbConnection, DbManage, execSqlFile, parserDbConnectUrl, PgDbQueryPool } from "jsr:@asla/pg";
 ```
 
-这个库运行在 Deno 上，并通过 npm 兼容层使用 `pg` 与 `pg-cursor`。
+这个库以 Deno 为优先，同时支持 Node.js，连接、认证、查询、游标和 COPY 均由内置 PostgreSQL 协议实现提供，不依赖 `pg` 或
+`pg-cursor`。
+
+## 原生协议 API
+
+原生协议 API 从 `@asla/pg` 根入口导出，并作为长期支持 API。它支持 trust、明文密码、
+SCRAM-SHA-256、TLS、简单/参数查询、游标以及 COPY IN/OUT。`createDbConnection()` 和 `PgDbQueryPool`
+也使用同一套原生协议实现。
+
+### Deno 连接
+
+```ts
+import { connectFromStream, DenoConnByteStream, sql } from "jsr:@asla/pg";
+
+const tcp = await Deno.connect({ hostname: "127.0.0.1", port: 5432 });
+await using connection = await connectFromStream(new DenoConnByteStream(tcp), {
+  user: "postgres",
+  database: "app",
+  password: () => Deno.env.get("PGPASSWORD") ?? "",
+});
+
+const row = await connection.query(sql`SELECT ${42}::int4 AS value`).getFirstRow();
+console.log(row);
+```
+
+### Node.js 连接与 TLS
+
+```ts
+import { connect as connectTcp } from "node:net";
+import { connect as connectTls } from "node:tls";
+import { connectFromStream, NodeDuplexByteStream } from "jsr:@asla/pg";
+
+const socket = connectTcp({ host: "127.0.0.1", port: 5432 });
+await using connection = await connectFromStream(new NodeDuplexByteStream(socket), {
+  user: "postgres",
+  database: "app",
+  password: process.env.PGPASSWORD,
+  tls: {
+    mode: "require",
+    upgrade: () => new NodeDuplexByteStream(connectTls({ socket, servername: "localhost" })),
+  },
+});
+```
+
+`tls.mode` 可为 `disable`、`prefer` 或 `require`。TLS 证书校验由传入的 `upgrade`
+回调负责；认证或协议失败后应丢弃该底层流。
+
+### 查询、游标与 COPY
+
+```ts
+const rows = await connection.query("SELECT id, name FROM users").getRows();
+
+await using cursor = connection.openCursor<{ id: number }>("SELECT id FROM users", {
+  iteratorMaxRows: 100,
+});
+for await (const row of cursor) console.log(row);
+
+const input = connection.copyFrom("COPY users(name) FROM STDIN");
+await input.write(new TextEncoder().encode("Ada\nGrace\n"));
+console.log(await input.closeWrite());
+
+for await (const chunk of connection.copyTo("COPY users TO STDOUT")) {
+  await Deno.stdout.write(chunk);
+}
+```
+
+同一连接上的操作按调用顺序执行。SQL 错误会排空到 `ReadyForQuery` 后再把错误交给调用方，
+因此连接通常可以复用；网络错误或协议错误会使连接不可复用。提前结束简单查询迭代或取消 COPY OUT
+时，实现仍会排空当前查询周期。`copyForm()` 暂时保留为 `copyFrom()` 的废弃别名。
+
+迁移细节见 [迁移到原生协议 API](docs/migration-native-protocol.md)。
 
 ## 核心能力
 

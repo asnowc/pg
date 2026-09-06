@@ -6,22 +6,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:
-      POSTGRES_USER: ci_test
-      POSTGRES_DB: postgres
-    services:
-      postgres:
-        image: postgres
-        env:
-          POSTGRES_HOST_AUTH_METHOD: trust
-          POSTGRES_USER: ${{env.POSTGRES_USER}}
-          POSTGRES_DB: ${{env.POSTGRES_DB}}
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -30,10 +14,19 @@ jobs:
           deno-version: ^2
           cache: true
       - run: deno ci
+      - name: Start PostgreSQL test environment
+        run: docker compose up --build --wait
       - name: Test
         run: deno task ci:test
         env:
-          TEST_LOGIN_DB: pg://${{env.POSTGRES_USER}}@127.0.0.1:5432/${{env.POSTGRES_DB}}
+          TEST_LOGIN_DB: pg://postgres@127.0.0.1:5432/postgres
+          TEST_PASSWORD_DB: pg://auth_password:password-secret@127.0.0.1:5432/auth_test
+          TEST_SCRAM_DB: pg://auth_scram:scram-secret@127.0.0.1:5432/auth_test
+          TEST_TLS_DB: pg://auth_tls:tls-secret@localhost:5432/auth_test
+          TEST_TLS_CA: ./test/fixtures/tls/ca.crt
+      - name: Stop PostgreSQL test environment
+        if: always()
+        run: docker compose down -v
   check:
     runs-on: ubuntu-latest
     steps:

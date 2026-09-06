@@ -1,10 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { BACKEND_MSG_CODE, PgFormat, PgTransactionStatus } from "@/driver/protocol/pg_message/const.ts";
-import { PgMessageReader } from "@/driver/protocol/pg_message.ts";
+import { BACKEND_MSG_CODE, PgFormat, PgTransactionStatus } from "@/protocol/pg_message/const.ts";
+import { decodeBackendMessage } from "@/protocol/pg_message/decode.ts";
+import { PgMessageReader } from "@/protocol/PgMessageReader.ts";
 import { concat, cstring, frame, int16, int32, readable, uint32 } from "./PgMessageStream.test-helpers.ts";
 
-async function createPgMessageStream(input: Uint8Array): Promise<PgMessageReader> {
-  return new PgMessageReader(readable(input));
+async function createPgMessageStream(input: Uint8Array) {
+  const reader = new PgMessageReader(readable(input));
+  return {
+    async read() {
+      const message = await reader.read();
+      if (!message) return null;
+      return decodeBackendMessage(message.type, await message.readBody());
+    },
+  };
 }
 
 describe("PgMessageStream read", () => {

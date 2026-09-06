@@ -1,12 +1,18 @@
 import type { DbConnection } from "#abstract";
 import { createDbConnection, DbConnectOption } from "../impl/mod.ts";
 
-/** @public */
+/**
+ * @public
+ * @deprecated 数据库管理辅助 API 将在后续版本移除。
+ */
 export interface CreateDataBaseOption {
   owner?: string;
 }
 
-/** @public */
+/**
+ * @public
+ * @deprecated 请使用 `PgConnection` 执行数据库管理语句。
+ */
 export class DbManage {
   static async connect(url: string | URL | DbConnectOption): Promise<DbManage> {
     const client = await createDbConnection(url);

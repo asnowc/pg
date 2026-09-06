@@ -111,6 +111,7 @@ export interface PgFieldDescription {
   format: PgFormat;
 }
 
+/** @public */
 export interface PgErrorFields {
   severity: string;
   severityNonLocalized?: string;

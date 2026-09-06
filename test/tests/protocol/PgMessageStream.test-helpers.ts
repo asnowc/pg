@@ -1,13 +1,8 @@
-import type { ByteStream } from "@/driver/protocol/ByteStream.ts";
-import { PgMessageReader } from "@/driver/protocol/pg_message.ts";
+import type { ByteStream } from "@/protocol/ByteStream.ts";
 
 type Bytes = Uint8Array<ArrayBufferLike>;
 
 const encoder = new TextEncoder();
-
-export async function createPgMessageStream(stream: ByteStream): Promise<PgMessageReader> {
-  return new PgMessageReader(stream);
-}
 
 export function concat(...parts: Bytes[]): Uint8Array {
   const output = new Uint8Array(parts.reduce((length, part) => length + part.byteLength, 0));
