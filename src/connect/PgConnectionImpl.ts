@@ -1,5 +1,15 @@
-import type { FieldInfo, PgCursor, QueryCompletion, QueryReader, SampleQueryReader } from "@/query.ts";
-import { PG_DATA_DECODER_V1, QueryReaderImpl, SampleQueryReaderImpl } from "@/query.ts";
+import type {
+  FieldInfo,
+  PgCursor,
+  QueryCompletion,
+  QueryReader,
+  SampleQueryReader,
+  SqlStatementData,
+  TypedSqlStatement,
+  TypedSqlStatementTemplate,
+} from "@/query.ts";
+import { PG_DATA_DECODER_V1 } from "@/query.ts";
+import { QueryReaderImpl, SampleQueryReaderImpl } from "@/query/QueryReaderImpl.ts";
 import {
   BACKEND_MSG_CODE,
   decodeBackendMessage,
@@ -10,16 +20,18 @@ import {
 import type { PgBackendMessage, PgFieldDescription } from "@/protocol/pg_message.ts";
 import type { ByteStream, PgMessageReader, PgSessionInfo } from "@/protocol.ts";
 import { PgDatabaseError } from "./PgDatabaseError.ts";
-import type {
-  CopyFromHandle,
-  CopyFromOptions,
-  CopyToOptions,
-  OpenCursorOptions,
-  PgConnection,
-  QueryOptions,
-  SqlStatement,
-  SqlStatements,
-} from "./PgConnection.ts";
+
+import type { PgConnection } from "./PgConnection.ts";
+import type { CopyFromHandle, CopyFromOptions, CopyToOptions, OpenCursorOptions, QueryOptions } from "@/query.ts";
+
+/**
+ * 表示可以包含单条 SQL 语句的查询对象
+ */
+type SqlStatement<T> = TypedSqlStatementTemplate<T> | TypedSqlStatement<T> | SqlStatementData;
+/**
+ * 表示可以包含多条 SQL 语句的查询对象
+ */
+type SqlStatements = TypedSqlStatement<unknown> | SqlStatementData;
 
 interface MaterializedResult<T = unknown> {
   rows: T[];
@@ -29,7 +41,14 @@ interface MaterializedResult<T = unknown> {
 }
 
 export class PgConnectionImpl implements PgConnection {
-  constructor(private stream: ByteStream, readonly session: PgSessionInfo, private reader: PgMessageReader) {}
+  constructor(config: { stream: ByteStream; session: PgSessionInfo; reader: PgMessageReader }) {
+    this.stream = config.stream;
+    this.session = config.session;
+    this.reader = config.reader;
+  }
+  private stream: ByteStream;
+  readonly session: PgSessionInfo;
+  private reader: PgMessageReader;
   #queue = Promise.resolve();
   #closed = false;
   #cursorId = 0;
@@ -113,10 +132,6 @@ export class PgConnectionImpl implements PgConnection {
       }
     }).catch(() => undefined);
     return new CopyFromHandleImpl(this, ready.promise, finish, complete.promise);
-  }
-
-  copyForm(queryable: SqlStatement<unknown>, options?: CopyFromOptions): CopyFromHandle {
-    return this.copyFrom(queryable, options);
   }
 
   copyTo(queryable: SqlStatement<unknown>, options?: CopyToOptions): ReadableStream<Uint8Array> {
@@ -423,6 +438,14 @@ export class PgConnectionImpl implements PgConnection {
   #assertOpen(): void {
     if (this.#closed) throw new Error("PgConnection is closed");
   }
+
+  close(): Promise<void> {
+    return this.#enqueue(async () => {
+      if (this.#closed) return;
+      this.#closed = true;
+      this.stream.close();
+    });
+  }
 }
 
 export class PgCursorImpl<T> implements PgCursor<T> {
@@ -612,7 +635,7 @@ function decodeRow(
         ? options.columnDecoders.get(index)
         : typeof options?.columnDecoders === "function"
         ? options.columnDecoders(toFields(fields)[index])
-        : options?.typeDecoders?.[field.dataTypeOid] ?? PG_DATA_DECODER_V1[field.dataTypeOid];
+        : options?.typeDecoders?.get(field.dataTypeOid) ?? PG_DATA_DECODER_V1.get(field.dataTypeOid);
       const context = { typeId: field.dataTypeOid, typeSize: field.dataTypeSize, typeModifier: field.typeModifier };
       row[field.name] = decoder
         ? field.format === PgFormat.binary

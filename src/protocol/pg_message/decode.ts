@@ -1,7 +1,7 @@
 import { PgProtocolError } from "./errors.ts";
 import { AUTH_CODE, BACKEND_MSG_CODE, PgFormat, PgTransactionStatus } from "./const.ts";
 import type { PgAuthenticationMessage, PgBackendMessage, PgErrorFields, PgFieldDescription } from "./messages.ts";
-import { ByteReader } from "./_data_type_bin.ts";
+import { ByteReader } from "@/_utils/data_type_bin.ts";
 
 export function assertHasBeenFullyRead(reader: ByteReader, messageCode: number): void {
   if (reader.remaining !== 0) {

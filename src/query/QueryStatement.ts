@@ -47,3 +47,9 @@ export type ColumnDecoder<T = unknown> = {
   text(value: string, field: Readonly<FieldInfo> & PgDataDecodeContext): T;
   binary(value: Uint8Array, field: Readonly<FieldInfo> & PgDataDecodeContext): T;
 };
+
+/**
+ * 推断查询结果的类型
+ * @public
+ */
+export type InferQueryResult<T> = T extends { __infer?(v: infer P): never } ? P : unknown;

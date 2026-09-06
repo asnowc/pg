@@ -13,14 +13,7 @@ PostgreSQL 查询与连接池工具，面向 Deno，兼容字符串 SQL、SQL �
 import { createDbConnection, DbManage, execSqlFile, parserDbConnectUrl, PgDbQueryPool } from "jsr:@asla/pg";
 ```
 
-这个库以 Deno 为优先，同时支持 Node.js，连接、认证、查询、游标和 COPY 均由内置 PostgreSQL 协议实现提供，不依赖 `pg` 或
-`pg-cursor`。
-
-## 原生协议 API
-
-原生协议 API 从 `@asla/pg` 根入口导出，并作为长期支持 API。它支持 trust、明文密码、
-SCRAM-SHA-256、TLS、简单/参数查询、游标以及 COPY IN/OUT。`createDbConnection()` 和 `PgDbQueryPool`
-也使用同一套原生协议实现。
+这个库以 Deno 为优先，同时支持 Node.js
 
 ### Deno 连接
 
@@ -38,7 +31,7 @@ const row = await connection.query(sql`SELECT ${42}::int4 AS value`).getFirstRow
 console.log(row);
 ```
 
-### Node.js 连接与 TLS
+### Node.js 连接
 
 ```ts
 import { connect as connectTcp } from "node:net";

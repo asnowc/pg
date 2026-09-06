@@ -1,6 +1,6 @@
 import { FRONTEND_MSG_CODE } from "./const.ts";
 import type { PgFrontendMessage } from "./messages.ts";
-import { assertInt32, assertUint16, assertUint32, encodeCString, writeUint16, writeUint32 } from "./_data_type_bin.ts";
+import { assertInt32, assertUint16, assertUint32, encodeCString, writeUint16, writeUint32 } from "@/_utils/data_type_bin.ts";
 import { COPY_DONE, FLUSH, SYNC, TERMINATE } from "./_static_frame.ts";
 
 const FRAME_HEADER_LENGTH = 5;

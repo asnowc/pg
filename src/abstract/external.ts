@@ -11,13 +11,6 @@ export interface SqlTemplate<T extends readonly any[] = readonly unknown[]> {
 }
 
 /**
- * 推断查询结果的类型
- * @public
- * @deprecated 请使用 `TypedSqlStatement` 的类型参数。
- */
-export type InferQueryResult<T> = T extends SqlStatementDataset<infer P> ? P : never;
-
-/**
  * @public
  * @deprecated 请改用 `TypedSqlStatement`。
  */

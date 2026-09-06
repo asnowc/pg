@@ -1,6 +1,7 @@
 import type { DbQuery } from "./DbQuery.ts";
 import type { DbCursor, DbCursorOption } from "./DbCursor.ts";
 import type { SqlStatementDataset, SqlTemplate } from "./external.ts";
+import type { TransactionMode } from "@/query.ts";
 
 /**
  * 数据库连接
@@ -24,16 +25,6 @@ export interface DbPoolConnection extends DbQuery, Disposable {
   rollback(): Promise<void>;
   get released(): boolean;
 }
-
-/**
- * @public
- * @deprecated 旧事务 API 将在后续版本移除。
- */
-export type TransactionMode =
-  | "SERIALIZABLE"
-  | "REPEATABLE READ"
-  | "READ COMMITTED"
-  | "READ UNCOMMITTED";
 
 /**
  * SQL 事务查询操作

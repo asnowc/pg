@@ -24,11 +24,15 @@ export type MultipleQueryInput = SqlLike[] | (() => SqlLike[]);
  * @deprecated 请改用 `PgConnection`。
  */
 export abstract class DbQuery {
+  /** @deprecated 已废弃 */
   abstract execute(sql: QueryInput | MultipleQueryInput): Promise<void>;
+  /** @deprecated 已废弃 */
   abstract query<T extends MultipleQueryResult = MultipleQueryResult>(
     sql: MultipleQueryInput,
   ): Promise<T>;
+  /** @deprecated 已废弃 */
   abstract query<T = any>(sql: QueryDataInput<T>): Promise<QueryRowsResult<T>>;
+  /** @deprecated 已废弃 */
   abstract query<T = any>(sql: QueryInput): Promise<QueryRowsResult<T>>;
   /**
    * 执行多语句的方法
@@ -38,6 +42,7 @@ export abstract class DbQuery {
     sql: SqlLike | SqlLike[],
   ): Promise<T>;
 
+  /** @deprecated 已废弃 */
   /** 单语句查询受影响的行 */
   queryCount(sql: QueryInput): Promise<number> {
     return this.query(sql).then((res) => {
@@ -45,16 +50,22 @@ export abstract class DbQuery {
       return res.rowCount;
     });
   }
+  /** @deprecated 已废弃 */
   /** 单语句查询，不应查询多语句，否则返回错误值  */
   queryRows<T = any>(sql: QueryDataInput<T>): Promise<T[]>;
 
+  /** @deprecated 已废弃 */
   /** 单语句查询，不应查询多语句，否则返回错误值  */
   queryRows<T = any>(sql: QueryInput): Promise<T[]>;
   queryRows<T = any>(sql: QueryDataInput<T> | QueryInput): Promise<T[]> {
     return this.query<T>(sql).then((res) => res.rows);
   }
-  /** 单语句查询，只返回第一行。如果查询没有返回行，则抛出异常。 */
+  /**
+   * 单语句查询，只返回第一行。如果查询没有返回行，则抛出异常。
+   * @deprecated 已废弃
+   */
   queryFirstRow<T = any>(sql: QueryDataInput<T>): Promise<T>;
+  /** @deprecated 已废弃 */
   queryFirstRow<T = any>(sql: QueryInput): Promise<T>;
   queryFirstRow<T = any>(sql: QueryDataInput<T> | QueryInput): Promise<T> {
     return this.query<T>(sql).then(({ rows, rowCount }) => {
@@ -75,6 +86,7 @@ export abstract class DbQuery {
   /**
    * 指定某一列为key，返回 key 到 row 的映射
    * 单语句查询，不应查询多语句，否则返回错误值
+   * @deprecated 已废弃
    */
   queryMap<T extends Record<string, any> = Record<string, any>, K extends keyof T = string>(
     sql: QueryDataInput<T>,
@@ -83,6 +95,7 @@ export abstract class DbQuery {
   /**
    * 指定某一列为key，返回 key 到 row 的映射
    * 单语句查询，不应查询多语句，否则返回错误值
+   * @deprecated 已废弃
    */
   queryMap<T extends Record<string, any> = Record<string, any>, K extends keyof T = string>(
     sql: QueryInput,
