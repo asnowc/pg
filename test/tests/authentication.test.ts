@@ -1,7 +1,6 @@
 import { expect, test } from "vitest";
-import { DB_CONNECT_INFO, PUBLIC_DB_CONNECT_INFO } from "@test/utils/db.ts";
-import { connect, PgConnectOptions } from "@asla/pg";
-import { DenoConnByteStream } from "@/platforms.ts";
+import type { PgConnectOptions } from "@asla/pg";
+import { denoConnect } from "@test/utils/connect.ts";
 
 const USERS = {
   trust: "auth_trust",
@@ -14,11 +13,6 @@ async function authenticate(options: PgConnectOptions): Promise<void> {
   await conn.simpleQuery(`SELECT 1`);
 }
 
-async function denoConnect(options: PgConnectOptions) {
-  const conn = await Deno.connect({ hostname: PUBLIC_DB_CONNECT_INFO.hostname, port: PUBLIC_DB_CONNECT_INFO.port });
-  const stream = new DenoConnByteStream(conn);
-  return connect(stream, options);
-}
 test("trust 用户可以连接", async () => {
   await denoConnect({ user: USERS.trust });
 });

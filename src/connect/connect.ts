@@ -1,6 +1,6 @@
 import type { ByteStream, PgAuthenticationExchangeOptions, PgStartupOptions, PgTlsOptions } from "@/protocol.ts";
 import { auth, negotiateTls, PgMessageReader, startup } from "@/protocol.ts";
-import type { PgConnection } from "./PgConnection.ts";
+import { PgConnection } from "./PgConnection.ts";
 
 export type { PgTlsOptions } from "@/protocol.ts";
 export { PgAuthenticationError, PgProtocolError } from "@/protocol.ts";
@@ -13,7 +13,7 @@ export interface PgConnectOptions extends PgStartupOptions, PgAuthenticationExch
 }
 
 /** 链接 postgresql 数据库，并进行认证和初始化。 */
-export async function connect(
+export async function connectFromStream(
   byteStream: ByteStream,
   options: PgConnectOptions,
 ): Promise<PgConnection> {
@@ -21,6 +21,5 @@ export async function connect(
   await startup(stream, options);
   const reader = new PgMessageReader(stream);
   const session = await auth(reader, options);
-
-  throw new Error("Not implemented");
+  return new PgConnection(stream, session);
 }

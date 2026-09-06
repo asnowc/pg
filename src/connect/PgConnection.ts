@@ -6,6 +6,7 @@ import type {
   TypedSqlStatement,
   TypedSqlStatementTemplate,
 } from "@/query.ts";
+import type { ByteStream, PgSessionInfo } from "@/protocol.ts";
 
 type QueryCommonOptions = {
   onNotice?: (info: { notice: string }) => void;
@@ -23,7 +24,8 @@ export type CopyToOptions = QueryCommonOptions & {};
 /**
  * 已经完成认证的 PostgreSQL 连接接口，提供执行 SQL 查询、打开游标以及复制数据的功能。
  */
-export interface PgConnection extends AsyncDisposable {
+export declare class PgConnection implements AsyncDisposable {
+  constructor(byteStream: ByteStream, session: PgSessionInfo);
   /**
    * 从流中读取 SQL 并执行简单查询
    */
@@ -58,6 +60,7 @@ export interface PgConnection extends AsyncDisposable {
 
   copyForm(queryable: SqlStatement<unknown>, options?: CopyFormOptions): CopyFormHandle;
   copyTo(queryable: SqlStatement<unknown>, options?: CopyToOptions): ReadableStream<Uint8Array>;
+  [Symbol.asyncDispose](): Promise<void>;
 }
 
 export interface CopyFormHandle {
