@@ -1,5 +1,5 @@
 import { expect } from "vitest";
-import { test } from "../fixtures/db_connect.ts";
+import { test } from "@test/fixtures/db_connect.ts";
 import type { DbQuery, QueryRowsResult } from "@asla/pg";
 async function createTable(query: DbQuery, rowNum: number) {
   await query.query(

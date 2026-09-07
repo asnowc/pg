@@ -12,7 +12,7 @@ export async function execSqlFile(pathname: string, client: DbQuery): Promise<vo
     await client.query(file);
   } catch (error) {
     if (error instanceof PgDatabaseError) {
-      const detail = genPgSqlErrorMsg(error, { sqlFileName: pathname, sqlText: file });
+      const detail = genPgSqlErrorMsg(error.info, { sqlFileName: pathname, sqlText: file });
       error.message = `执行SQL文件失败:${error.message}\n${detail}`;
       throw error;
     } else {

@@ -3,7 +3,6 @@ import { PgProtocolError } from "./pg_message.ts";
 
 /**
  * 已完成 PostgreSQL 普通消息编解码的客户端流。
- * @public
  */
 export class PgMessageReader {
   constructor(stream: ByteStream, maxMessageSize = 16 * 1024 * 1024) {
@@ -73,7 +72,6 @@ export class PgMessageReader {
   };
 }
 
-/** @public */
 export interface Message {
   readonly type: number;
   readBody(): Promise<Uint8Array>;

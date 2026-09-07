@@ -19,6 +19,7 @@ import {
 } from "@/protocol/pg_message.ts";
 import type { PgBackendMessage, PgFieldDescription } from "@/protocol/pg_message.ts";
 import type { ByteStream, PgMessageReader, PgSessionInfo } from "@/protocol.ts";
+import { copyDataMessage, copyDoneMessage, copyFailMessage, isCopyDataMessage } from "@/protocol/copy.ts";
 import { PgDatabaseError } from "./PgDatabaseError.ts";
 
 import type { PgConnection } from "./PgConnection.ts";
@@ -118,11 +119,7 @@ export class PgConnectionImpl implements PgConnection {
         await this.#waitFor(BACKEND_MSG_CODE.copyInResponse, options);
         ready.resolve();
         const ending = await finish.promise;
-        await this.#send(
-          ending.failure
-            ? { type: FRONTEND_MSG_CODE.copyFail, reason: ending.failure }
-            : { type: FRONTEND_MSG_CODE.copyDone },
-        );
+        await this.#send(ending.failure ? copyFailMessage(ending.failure) : copyDoneMessage());
         const result = await this.#drainCompletion(options);
         complete.resolve({ rows: result });
       } catch (error) {
@@ -145,7 +142,7 @@ export class PgConnectionImpl implements PgConnection {
           let databaseError: PgDatabaseError | undefined;
           while (true) {
             const message = await this.#read();
-            if (message.type === BACKEND_MSG_CODE.copyData && !cancelled) {
+            if (isCopyDataMessage(message) && !cancelled) {
               if ((controller.desiredSize ?? 1) <= 0) {
                 await resume.promise;
                 resume = deferred<void>();
@@ -184,7 +181,7 @@ export class PgConnectionImpl implements PgConnection {
   }
 
   async writeCopyData(data: Uint8Array): Promise<void> {
-    await this.#send({ type: FRONTEND_MSG_CODE.copyData, data });
+    await this.#send(copyDataMessage(data));
   }
 
   async #simple(sql: string, options?: QueryOptions): Promise<MaterializedResult[]> {

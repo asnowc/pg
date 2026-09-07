@@ -28,7 +28,7 @@ export async function connectFromStream(
     await startup(stream, options);
     const reader = new PgMessageReader(stream, options.maxMessageSize);
     const session = await auth(reader, options);
-    return new PgConnectionImpl(stream, session, reader);
+    return new PgConnectionImpl({ stream, session, reader });
   } catch (error) {
     stream.close();
     throw error;

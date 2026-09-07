@@ -1,7 +1,7 @@
 import { DbQuery, ParallelQueryError } from "@asla/pg";
 import { beforeEach, expect } from "vitest";
 
-import { BaseContext, test } from "../fixtures/db_connect.ts";
+import { BaseContext, test } from "@test/fixtures/db_connect.ts";
 
 async function createTable(query: DbQuery, rowNum: number) {
   await query.query(

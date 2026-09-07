@@ -43,7 +43,6 @@ export class QueryReaderImpl<T> implements QueryReader<T> {
   }
 }
 
-/** @public */
 export class SampleQueryReaderImpl<T> implements SampleQueryReader<T> {
   constructor(
     readonly rows: T[],
