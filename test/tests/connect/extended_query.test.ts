@@ -4,12 +4,22 @@ import { createSqlBuilder, JS_DATA_ENCODER_V1 } from "@asla/pg";
 const sql = createSqlBuilder(JS_DATA_ENCODER_V1);
 
 test("扩展查询编码参数并解码 NULL", async ({ connect }) => {
-  const query = connect.query<{ value: number; nullable: string | null }>({
-    sqlTemplate: "SELECT $1::int AS value, $2::text AS nullable",
+  const query = connect.query<{ value: number; nullable: string | null; empty: string }>({
+    sqlTemplate: "SELECT $1::int AS value, $2::text AS nullable, $3::text AS empty",
     argsFormat: 0,
-    args: ["42", ""],
+    args: ["42", null, ""],
   });
-  await expect(query.getFirstRow()).resolves.toEqual({ value: 42, nullable: "" });
+  await expect(query.getFirstRow()).resolves.toEqual({ value: 42, nullable: null, empty: "" });
+});
+
+test("扩展查询绑定 SQL 模板中的 NULL 并保持相邻参数位置", async ({ connect }) => {
+  const statement = sql`SELECT ${null}::text AS nullable, ${42} AS value, ${null}::int AS other, ${""} AS empty`;
+  await expect(connect.query(statement).getFirstRow()).resolves.toEqual({
+    nullable: null,
+    value: 42,
+    other: null,
+    empty: "",
+  });
 });
 
 test("reader 只能消费一次", async ({ connect }) => {

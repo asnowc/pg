@@ -5,6 +5,8 @@ import type {
   QueryReader,
   SampleQueryReader,
   SqlStatementData,
+  Transaction,
+  TransactionMode,
   TypedSqlStatement,
   TypedSqlStatementTemplate,
 } from "@/query.ts";
@@ -16,11 +18,13 @@ import {
   encodeFrontendMessage,
   FRONTEND_MSG_CODE,
   PgFormat,
+  PgTransactionStatus,
 } from "@/protocol/pg_message.ts";
 import type { PgBackendMessage, PgFieldDescription } from "@/protocol/pg_message.ts";
 import type { ByteStream, PgMessageReader, PgSessionInfo } from "@/protocol.ts";
 import { copyDataMessage, copyDoneMessage, copyFailMessage, isCopyDataMessage } from "@/protocol/copy.ts";
 import { PgDatabaseError } from "./PgDatabaseError.ts";
+import { PgTransactionImpl } from "./PgTransactionImpl.ts";
 
 import type { PgConnection } from "./PgConnection.ts";
 import type { CopyFromHandle, CopyFromOptions, CopyToOptions, OpenCursorOptions, QueryOptions } from "@/query.ts";
@@ -58,16 +62,39 @@ export class PgConnectionImpl implements PgConnection {
     return this.#closed;
   }
 
+  begin(mode: TransactionMode = "READ COMMITTED"): Transaction {
+    this.#assertOpen();
+    if (!["SERIALIZABLE", "REPEATABLE READ", "READ COMMITTED", "READ UNCOMMITTED"].includes(mode)) {
+      throw new TypeError("Invalid transaction isolation level");
+    }
+    const finished = deferred<void>();
+    return new PgTransactionImpl(mode, () => {
+      const ready = deferred<PgConnection>();
+      this.#enqueue(async () => {
+        if (this.session.transactionStatus !== PgTransactionStatus.Idle) {
+          ready.reject(new Error("Connection already has an active transaction"));
+          return;
+        }
+        await this.#simple(`BEGIN ISOLATION LEVEL ${mode}`);
+        // A private queue lets transaction operations run while ordinary operations wait.
+        const scoped = new PgConnectionImpl({ stream: this.stream, session: this.session, reader: this.reader });
+        ready.resolve(scoped);
+        await finished.promise;
+        if (scoped.closed) this.#closed = true;
+      }).catch(ready.reject);
+      return ready.promise;
+    }, () => finished.resolve());
+  }
+
   queryStream(options?: QueryOptions): ReadableWritablePair<SampleQueryReader, Uint8Array> {
     this.#assertOpen();
     const chunks: Uint8Array[] = [];
-    const connection = this;
     return new TransformStream<Uint8Array, SampleQueryReader>({
       transform(chunk) {
         chunks.push(chunk.slice());
       },
-      async flush(controller) {
-        for await (const result of connection.simpleQuery(chunks, options)) controller.enqueue(result);
+      flush: async (controller) => {
+        for await (const result of this.simpleQuery(chunks, options)) controller.enqueue(result);
       },
     });
   }
@@ -119,7 +146,7 @@ export class PgConnectionImpl implements PgConnection {
         await this.#waitFor(BACKEND_MSG_CODE.copyInResponse, options);
         ready.resolve();
         const ending = await finish.promise;
-        await this.#send(ending.failure ? copyFailMessage(ending.failure) : copyDoneMessage());
+        await this.#send(ending.failure !== undefined ? copyFailMessage(ending.failure) : copyDoneMessage());
         const result = await this.#drainCompletion(options);
         complete.resolve({ rows: result });
       } catch (error) {
@@ -151,6 +178,7 @@ export class PgConnectionImpl implements PgConnection {
             } else if (message.type === BACKEND_MSG_CODE.error) databaseError = new PgDatabaseError(message.fields);
             else if (isAsync(message)) await this.#async(message, options);
             else if (message.type === BACKEND_MSG_CODE.readyForQuery) {
+              this.session.transactionStatus = message.status;
               if (databaseError) throw databaseError;
               if (!cancelled) controller.close();
               return;
@@ -269,8 +297,7 @@ export class PgConnectionImpl implements PgConnection {
         await this.#send({ type: FRONTEND_MSG_CODE.close, target: "statement", name: statement });
         await this.#send({ type: FRONTEND_MSG_CODE.sync });
         await this.#drainReady(options);
-        controller.closed = true;
-        controller.completion.resolve({ status: "closed", fields: await controller.fields.promise, notices });
+        controller.finish({ status: "closed", notices });
         request.response.resolve();
         return;
       }
@@ -292,11 +319,9 @@ export class PgConnectionImpl implements PgConnection {
           await this.#send({ type: FRONTEND_MSG_CODE.close, target: "statement", name: statement });
           await this.#send({ type: FRONTEND_MSG_CODE.sync });
           await this.#drainReady(options);
-          controller.closed = true;
-          controller.completion.resolve({
+          controller.finish({
             status: "complete",
             rowCount: parseRowCount(commandTag, controller.rowsRead + rows.length),
-            fields: await controller.fields.promise,
             notices,
           });
           request.response.resolve(rows);
@@ -380,7 +405,10 @@ export class PgConnectionImpl implements PgConnection {
     while (true) {
       const message = await this.#read();
       if (message.type === type) return;
-      if (message.type === BACKEND_MSG_CODE.error) throw new PgDatabaseError(message.fields);
+      if (message.type === BACKEND_MSG_CODE.error) {
+        await this.#drainReady(options);
+        throw new PgDatabaseError(message.fields);
+      }
       if (isAsync(message)) await this.#async(message, options);
     }
   }
@@ -394,6 +422,7 @@ export class PgConnectionImpl implements PgConnection {
       else if (message.type === BACKEND_MSG_CODE.error) databaseError = new PgDatabaseError(message.fields);
       else if (isAsync(message)) await this.#async(message, options);
       else if (message.type === BACKEND_MSG_CODE.readyForQuery) {
+        this.session.transactionStatus = message.status;
         if (databaseError) throw databaseError;
         return rows;
       }
@@ -448,6 +477,7 @@ export class PgConnectionImpl implements PgConnection {
 export class PgCursorImpl<T> implements PgCursor<T> {
   constructor(private controller: CursorController<T>, private iteratorMaxRows = 100) {}
   #reading = false;
+  #iteratorTaken = false;
   get rowsRead(): number {
     return this.controller.rowsRead;
   }
@@ -455,6 +485,10 @@ export class PgCursorImpl<T> implements PgCursor<T> {
     return this.controller.closed;
   }
   async read(maxRows = this.iteratorMaxRows): Promise<T[]> {
+    if (this.#iteratorTaken) return [];
+    return await this.#read(maxRows);
+  }
+  async #read(maxRows = this.iteratorMaxRows): Promise<T[]> {
     if (this.controller.closed) return [];
     if (!Number.isSafeInteger(maxRows) || maxRows <= 0) throw new RangeError("maxRows must be a positive integer");
     if (this.#reading) throw new Error("Cursor read is already in progress");
@@ -476,10 +510,15 @@ export class PgCursorImpl<T> implements PgCursor<T> {
   get completion(): Promise<QueryCompletion> {
     return this.controller.completion.promise;
   }
-  async *[Symbol.asyncIterator](): AsyncIterator<T> {
+  [Symbol.asyncIterator](): AsyncIterator<T> {
+    if (this.#iteratorTaken) return (async function* () {})();
+    this.#iteratorTaken = true;
+    return this.#iterate();
+  }
+  async *#iterate(): AsyncGenerator<T> {
     try {
       while (!this.controller.closed) {
-        const rows = await this.read();
+        const rows = await this.#read();
         if (!rows.length) break;
         yield* rows;
       }
@@ -504,6 +543,7 @@ class CursorController<T> {
   #requests: CursorRequest<T>[] = [];
   #available = deferred<void>();
   #failure?: unknown;
+  #active?: CursorRequest<T>;
 
   async read(maxRows: number): Promise<T[]> {
     if (this.#failure) throw this.#failure;
@@ -524,13 +564,23 @@ class CursorController<T> {
       await this.#available.promise;
       this.#available = deferred<void>();
     }
-    return this.#requests.shift()!;
+    return this.#active = this.#requests.shift()!;
+  }
+  finish(completion: QueryCompletion): void {
+    this.closed = true;
+    this.completion.resolve(completion);
+    for (const request of this.#requests) {
+      if (request.type === "read") request.response.resolve([]);
+      else request.response.resolve();
+    }
+    this.#requests.length = 0;
   }
   fail(error: unknown): void {
     this.#failure = error;
     this.closed = true;
     this.fields.reject(error);
     this.completion.reject(error);
+    this.#active?.response.reject(error);
     for (const request of this.#requests) request.response.reject(error);
     this.#requests.length = 0;
     this.#available.resolve();
@@ -557,8 +607,16 @@ export class CopyFromHandleImpl implements CopyFromHandle {
   });
   async write(chunk: Uint8Array): Promise<void> {
     if (this.#closed) throw new Error("COPY input is closed");
-    await this.ready;
-    this.#writes = this.#writes.then(() => this.connection.writeCopyData(chunk));
+    // Register before awaiting readiness, so close/abort cannot overtake this write.
+    this.#writes = this.#writes.then(async () => {
+      await this.ready;
+      await this.connection.writeCopyData(chunk);
+    }).catch((error) => {
+      this.#closed = true;
+      // Wake the queue owner on a transport failure; waiting for finish would deadlock.
+      this.finish.reject(error);
+      throw error;
+    });
     await this.#writes;
   }
   async closeWrite(): Promise<{ rows: number }> {
@@ -652,7 +710,7 @@ function parseRowCount(tag: string, fallback: number): number {
 }
 
 function completion(result: MaterializedResult): QueryCompletion {
-  return { status: "complete", rowCount: result.rowCount, fields: result.fields, notices: result.notices };
+  return { status: "complete", rowCount: result.rowCount, notices: result.notices };
 }
 
 function isAsync(message: PgBackendMessage): boolean {
@@ -683,5 +741,6 @@ function deferred<T>() {
     resolve = res;
     reject = rej;
   });
+  promise.catch(() => undefined);
   return { promise, resolve, reject };
 }

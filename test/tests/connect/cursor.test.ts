@@ -1,6 +1,33 @@
 import { describe, expect } from "vitest";
 import { test } from "@test/fixtures/db_connect.ts";
+import { createSqlBuilder, JS_DATA_ENCODER_V1 } from "@asla/pg";
 import type { FieldInfo, QueryCompletion } from "@asla/pg";
+
+const sql = createSqlBuilder(JS_DATA_ENCODER_V1);
+
+for (const argsFormat of [0, 1] as const) {
+  test(`游标绑定手工 statement 的 NULL（格式 ${argsFormat}）`, async ({ connect }) => {
+    await using cursor = connect.openCursor<{ nullable: string | null; empty: string }>({
+      sqlTemplate: "SELECT $1::text AS nullable, $2::text AS empty",
+      argsFormat,
+      args: [null, argsFormat === 0 ? "" : new Uint8Array()],
+    });
+    await expect(cursor.read(2)).resolves.toEqual([{ nullable: null, empty: "" }]);
+    await expect(cursor.completion).resolves.toMatchObject({ status: "complete", rowCount: 1 });
+  });
+}
+
+test("游标分页读取包含 NULL 的 SQL 模板参数", async ({ connect }) => {
+  const statement = sql`SELECT ${null}::text AS nullable, ${42} AS value, ${null}::int AS other,
+    ${""} AS empty, generate_series(1, 3)::int AS n`;
+  await using cursor = connect.openCursor(statement);
+  const row = { nullable: null, value: 42, other: null, empty: "" };
+  await expect(cursor.read(2)).resolves.toEqual([{ ...row, n: 1 }, { ...row, n: 2 }]);
+  await expect(cursor.read(2)).resolves.toEqual([{ ...row, n: 3 }]);
+  expect(cursor.rowsRead).toBe(3);
+  expect(cursor.isClosed).toBe(true);
+  await expect(cursor.completion).resolves.toMatchObject({ status: "complete" });
+});
 
 describe("read()", function () {
   test("游标分页读取并报告完成", async ({ connect }) => {
@@ -14,17 +41,13 @@ describe("read()", function () {
     await expect(cursor.read(2)).resolves.toEqual([]);
     expect(cursor.isClosed).toBe(true);
   });
-  test("read() 可进入队列", async ({ connect }) => {
+  test("read() 拒绝并发读取，完成后可继续读取", async ({ connect }) => {
     await using cursor = connect.openCursor<{ value: number }>("SELECT generate_series(1, 5)::int AS value");
-
-    const [r1, r2, r3] = await Promise.all([
-      cursor.read(2),
-      cursor.read(2),
-      cursor.read(2),
-    ]);
-    await expect(r1).resolves.toEqual([{ value: 1 }, { value: 2 }]);
-    await expect(r2).resolves.toEqual([{ value: 3 }, { value: 4 }]);
-    await expect(r3).resolves.toEqual([{ value: 5 }]);
+    const first = cursor.read(2);
+    await expect(cursor.read(2)).rejects.toThrow("already in progress");
+    await expect(first).resolves.toEqual([{ value: 1 }, { value: 2 }]);
+    await expect(cursor.read(2)).resolves.toEqual([{ value: 3 }, { value: 4 }]);
+    await expect(cursor.read(2)).resolves.toEqual([{ value: 5 }]);
 
     expect(cursor.rowsRead).toBe(5);
   });
@@ -42,8 +65,10 @@ describe("info", function () {
     await cursor.read(2);
     await cursor.close();
     await expect(cursor.completion).resolves.toMatchObject(
-      { status: "closed", rowCount: 5, notices: [] } satisfies Partial<QueryCompletion>,
+      { status: "closed", notices: [] } satisfies Partial<QueryCompletion>,
     );
+    expect((await cursor.completion).rowCount).toBeUndefined();
+    expect(cursor.rowsRead).toBe(2);
   });
   test("get fields", async function ({ connect }) {
     await using cursor = connect.openCursor<{ value: number }>("SELECT generate_series(1, 5)::int AS value");
@@ -61,7 +86,7 @@ describe("异步迭代器", () => {
     });
     const results = await Array.fromAsync(cursor);
     expect(cursor.isClosed).toBe(true);
-    await expect(results.map((r) => r.value)).resolves.toEqual([1, 2, 3, 4, 5]);
+    expect(results.map((r) => r.value)).toEqual([1, 2, 3, 4, 5]);
   });
 
   test("提前结束异步迭代会关闭 portal", async ({ connect }) => {
@@ -69,18 +94,18 @@ describe("异步迭代器", () => {
       iteratorMaxRows: 2,
     });
     for await (const _row of cursor) {
-      expect(cursor.rowsRead).toBe(1);
+      expect(cursor.rowsRead).toBe(2);
       expect(_row).toEqual({ value: 1 });
       break;
     }
     expect(cursor.isClosed).toBe(true);
-    //TODO: 断言只执行了一次 Execute 或者只读取了一行数据
+    await expect(connect.query("SELECT 1").getRowCount()).resolves.toBe(1);
   });
   test("返回空数据", async ({ connect }) => {
     await using cursor = connect.openCursor<{ value: number }>("SELECT generate_series(1, 0)::int AS value");
     const results = await Array.fromAsync(cursor);
     expect(cursor.isClosed).toBe(true);
-    await expect(results).resolves.toEqual([]);
+    expect(results).toEqual([]);
   });
   test("迭代器只有第一次能调用会有数据", async ({ connect }) => {
     await using cursor = connect.openCursor<{ value: number }>("SELECT generate_series(1, 5)::int AS value");
@@ -100,7 +125,7 @@ describe("异步迭代器", () => {
     const r1 = cursor.read(1);
     const r = await iterator.next();
     expect(r.done).toBe(false);
-    expect(r.value).toHaveLength(2);
+    expect(r.value).toEqual({ value: 1 });
     await expect(r1).resolves.toHaveLength(0);
 
     await cursor.close();
@@ -112,7 +137,7 @@ describe("异步迭代器", () => {
     await expect(cursor.read(2)).resolves.toEqual([{ value: 1 }, { value: 2 }]);
     const results = await Array.fromAsync(cursor);
     expect(cursor.isClosed).toBe(true);
-    await expect(results.map((r) => r.value)).resolves.toEqual([3, 4, 5]);
+    expect(results.map((r) => r.value)).toEqual([3, 4, 5]);
   });
 });
 describe("关闭游标", () => {
@@ -127,11 +152,27 @@ describe("关闭游标", () => {
   });
   test("close() 可重复关闭（多次调用）", async ({ connect }) => {
     await using cursor = connect.openCursor<{ value: number }>("SELECT generate_series(1, 5)::int AS value");
-    await cursor.read(5);
-    await cursor.read(5);
+    await cursor.read(1);
     await Promise.all([cursor.close(), cursor.close()]);
     expect(cursor.isClosed).toBe(true);
     await cursor.close();
     expect(cursor.isClosed).toBe(true);
   });
+});
+
+test("游标初始化失败结算 fields、completion 和排队读取，并恢复连接", async ({ connect }) => {
+  const cursor = connect.openCursor("SELECT FROM");
+  await expect(cursor.read()).rejects.toThrow();
+  await expect(cursor.fields).rejects.toThrow();
+  await expect(cursor.completion).rejects.toThrow();
+  await cursor.close();
+  await expect(connect.query("SELECT 1").getRowCount()).resolves.toBe(1);
+});
+
+test("游标执行失败结算当前 read 并恢复连接", async ({ connect }) => {
+  const cursor = connect.openCursor("SELECT 1 / 0");
+  await expect(cursor.read()).rejects.toThrow();
+  await expect(cursor.completion).rejects.toThrow();
+  await cursor.close();
+  await expect(connect.query("SELECT 1").getRowCount()).resolves.toBe(1);
 });

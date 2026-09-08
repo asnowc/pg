@@ -8,8 +8,15 @@ export interface QueryResult<T> {
 }
 
 export class QueryReaderImpl<T> implements QueryReader<T> {
-  constructor(private result: Promise<QueryResult<T>>) {}
+  constructor(private result: Promise<QueryResult<T>>) {
+    // Queries start eagerly; callers may attach a consumer later.
+    result.catch(() => undefined);
+  }
   #consumed = false;
+
+  then(onfulfilled?: (value: void) => void, onrejected?: (reason: unknown) => void): void {
+    this.result.then(() => onfulfilled?.(), onrejected);
+  }
 
   async getRowCount(): Promise<number> {
     return (await this.result).completion.rowCount ?? 0;

@@ -9,7 +9,13 @@ v0.3.0 实现了 Postgresql 的连接协议，不再依赖 npm `pg` 或 `pg-curs
 import { createDbConnection, PgDbQueryPool } from "jsr:@asla/pg";
 
 // 原生协议 API
-import { connectFromStream, DenoConnByteStream, NodeDuplexByteStream, sql } from "jsr:@asla/pg";
+import {
+  connectFromStream,
+  createPgPool,
+  createSqlBuilder,
+  DenoConnByteStream,
+  NodeDuplexByteStream,
+} from "jsr:@asla/pg";
 ```
 
 ## API 映射
@@ -23,7 +29,9 @@ import { connectFromStream, DenoConnByteStream, NodeDuplexByteStream, sql } from
 | `pool.cursor(sql)`        | `connection.openCursor(sql)`                                   |
 | 无对应稳定方法            | `connection.copyFrom(sql)` / `connection.copyTo(sql)`          |
 
-`PgDbQueryPool` 已在内部使用原生连接池；需要直接控制字节流、TLS 或 COPY 时使用 `connectFromStream()`。
+`PgDbQueryPool` 的迁移目标是 `createPgPool({ create, maxCount })`。`create` 回调通过 `connectFromStream()`
+返回已认证的连接，池按需调用它；无需显式 `open()`。用 `await using` 关闭池，用 `using` 归还 `pool.connect()`
+借出的连接。池级 `query()` 返回原生 `QueryReader`，使用 `.getRows()` 等方法获取结果。
 
 ## 连接与 TLS
 

@@ -1,11 +1,18 @@
 {
-  "tasks": {
-    "dev": "deno run --watch --allow-net main.ts"
+  "private": true,
+  "scripts": {
+    "bench": "deno task bench",
+    "bench:query": "deno task bench:query",
+    "bench:pool": "deno task bench:pool"
   },
   "dependencies": {
     "@types/pg": "^8.23.1",
     "pg": "^8.23.0",
     "pg-promise": "^12.7.1",
     "postgres": "^3.4.9"
+  },
+  "devDependencies": {
+    "@deno/vite-plugin": "^2.0.3",
+    "vitest": "^5.0.0"
   }
 }

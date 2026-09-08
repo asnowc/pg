@@ -217,6 +217,21 @@ describe("空闲连接超时", function () {
 });
 
 describe("使用次数上限", function () {
+  test("排队交接计入 usageLimit，淘汰后继续满足等待者", async ({ resourceManage }) => {
+    const pool = new ResourcePool(resourceManage, { maxCount: 1, usageLimit: 2 });
+    const first = await pool.get();
+    const second = pool.get();
+    const third = pool.get();
+    pool.release(first);
+    expect(await second).toBe(first);
+    expect(pool.idleCount).toBe(0);
+    pool.release(await second);
+    const replacement = await third;
+    expect(replacement).not.toBe(first);
+    expect(resourceManage.dispose).toHaveBeenCalledWith(first);
+    pool.release(replacement);
+    await pool.close();
+  });
   test("连接使用次数超过上限后被移除", async function ({ resourceManage }) {
     const pool = new ResourcePool(resourceManage, { usageLimit: 3 });
 
@@ -242,4 +257,81 @@ describe("使用次数上限", function () {
     expect(pool.idleCount).toBe(1);
     expect(resourceManage.dispose).not.toBeCalled();
   });
+});
+
+test("建连失败后排队请求会重新建连", async ({ resourceManage }) => {
+  const failure = Promise.withResolvers<MockConn>();
+  resourceManage.create.mockImplementationOnce(() => failure.promise);
+  const pool = new ResourcePool(resourceManage, { maxCount: 1 });
+  const first = pool.get();
+  const queued = pool.get();
+  const rejected = expect(first).rejects.toThrow("connect failed");
+  failure.reject(new Error("connect failed"));
+  await rejected;
+  const connection = await queued;
+  pool.release(connection);
+  await pool.close();
+});
+
+test("同步建连异常不会占用容量", async ({ resourceManage }) => {
+  resourceManage.create.mockImplementationOnce(() => {
+    throw new Error("sync failure");
+  });
+  const pool = new ResourcePool(resourceManage, { maxCount: 1 });
+  const first = pool.get();
+  const queued = pool.get();
+  await expect(first).rejects.toThrow("sync failure");
+  pool.release(await queued);
+  await pool.close();
+});
+
+test("断连移除唤醒等待者，关闭期间移除也结束 close", async ({ resourceManage }) => {
+  const pool = new ResourcePool(resourceManage, { maxCount: 1 });
+  const first = await pool.get();
+  const queued = pool.get();
+  pool.remove(first);
+  resourceManage.dispose(first);
+  const replacement = await queued;
+  const closing = pool.close();
+  pool.remove(replacement);
+  resourceManage.dispose(replacement);
+  await closing;
+});
+
+test("重复关闭返回同一 Promise，dispose 只接收移除通知", async () => {
+  const dispose = vi.fn<(resource: object) => void>();
+  const pool = new ResourcePool({ create: async () => ({}), dispose });
+  pool.release(await pool.get());
+  const closing = pool.close();
+  expect(pool.close()).toBe(closing);
+  await closing;
+  expect(dispose).toHaveBeenCalledTimes(1);
+});
+
+test("关闭时仍在建连，等待创建完成并通知 dispose", async () => {
+  const created = Promise.withResolvers<object>();
+  const dispose = vi.fn<(resource: object) => void>();
+  const pool = new ResourcePool({ create: () => created.promise, dispose });
+  const borrowing = pool.get();
+  const rejected = expect(borrowing).rejects.toThrow("Pool is closed");
+  let closed = false;
+  const closing = pool.close().then(() => {
+    closed = true;
+  });
+  created.resolve({});
+  await rejected;
+  await closing;
+  expect(dispose).toHaveBeenCalledTimes(1);
+  expect(closed).toBe(true);
+});
+
+test("关闭期间建连失败不会使 close 悬挂", async () => {
+  const created = Promise.withResolvers<object>();
+  const pool = new ResourcePool({ create: () => created.promise, dispose() {} });
+  const borrowing = pool.get();
+  const rejected = expect(borrowing).rejects.toThrow("failed");
+  const closing = pool.close();
+  created.reject(new Error("failed"));
+  await rejected;
+  await closing;
 });

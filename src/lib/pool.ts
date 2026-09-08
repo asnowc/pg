@@ -26,7 +26,9 @@ export class ResourcePool<T> {
     this.#pool.delete(conn);
     if (info.isFree) {
       const index = this.#free.findIndex((item) => item.conn == conn);
-      this.#free.splice(index, 1);
+      if (index >= 0) {
+        this.#free.splice(index, 1);
+      }
     }
   }
   #queue: { resolve(conn: T): void; reject(e: any): void }[] = [];
@@ -69,8 +71,8 @@ export class ResourcePool<T> {
 
     // 池已经关闭
     if (this.#closedError) {
-      this.#handler.dispose(conn);
       this.#pool.delete(conn);
+      this.#handler.dispose(conn);
       if (this.#pool.size === 0) this.#closeResolver?.();
       return;
     }
@@ -126,8 +128,8 @@ export class ResourcePool<T> {
     }
     this.#queue.length = 0;
     for (const item of this.#free) {
-      this.#handler.dispose(item.conn);
       this.#pool.delete(item.conn);
+      this.#handler.dispose(item.conn);
     }
     this.#free.length = 0;
 
@@ -175,8 +177,8 @@ export class ResourcePool<T> {
     for (; i < limit; i++) {
       const info = this.#free[i];
       if (now - info.date > idleTimeout) {
-        this.#handler.dispose(info.conn);
         this.#pool.delete(info.conn);
+        this.#handler.dispose(info.conn);
       } else break;
     }
     if (i) this.#free = this.#free.slice(i);

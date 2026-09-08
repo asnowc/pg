@@ -1,5 +1,9 @@
 {
+  "jsrDepsInNodeModules": true,
   "imports": {
-    "@asla/pg": "../src/mod.ts"
-  }
+    "@asla/pg": "../src/mod.ts",
+    "#abstract": "../src/abstract/mod.ts",
+    "@/": "../src/"
+  },
+  "fmt": { "lineWidth": 120 }
 }

@@ -35,7 +35,8 @@ export interface QueryReader<T = unknown> extends AsyncIterable<T> {
    */
   getMap<K extends keyof T>(key: K): Promise<Map<T[K], T>>;
   // reduce<R>(reducer: (accumulator: R, currentValue: T) => R, initialValue: R): Promise<R>;
-  then(onfulfilled?: (value:void) => void, onrejected?: (reason: any) => void): void
+  /** 等待查询完成，忽略行数据；不会消耗后续 getRows() 的读取机会。 */
+  then(onfulfilled?: (value: void) => void, onrejected?: (reason: unknown) => void): void;
   /**
    * 获取异步迭代器，用于遍历查询结果。
    * @example
@@ -55,9 +56,7 @@ export enum CursorStatus {
 
 /** @public */
 export interface PgCursor<T> extends AsyncDisposable, AsyncIterable<T> {
-  /**
-   * 记录已读取的行数。任何获取数据的方法都会更新该值。
-   */
+  /** 已从服务端读取的行数，包含迭代器预取批次中尚未产出的行。 */
   get rowsRead(): number;
 
   /** 查询是否已关闭 */
@@ -66,6 +65,7 @@ export interface PgCursor<T> extends AsyncDisposable, AsyncIterable<T> {
    * 提前关闭游标。重复关闭将被忽略。
    */
   close(): Promise<void>;
+  /** 不允许并发读取；迭代器取得读取权后返回空数组。 */
   read(maxRows?: number): Promise<T[]>;
 
   get fields(): Promise<readonly Readonly<FieldInfo>[]>;

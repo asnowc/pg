@@ -4,11 +4,15 @@ import deno from "@deno/vite-plugin";
 const dirname = import.meta.dirname!;
 
 export default defineConfig({
+  root: dirname,
   plugins: [deno()],
   test: {
     alias: [
-      { find: "@asla/pg", replacement: path.join(dirname, "../dist/src/mod.ts") },
+      { find: "@asla/pg", replacement: path.join(dirname, "../src/mod.ts") },
+      { find: "#abstract", replacement: path.join(dirname, "../src/abstract/mod.ts") },
+      { find: /^@\//, replacement: path.join(dirname, "../src/") + "/" },
     ],
+    benchmark: { include: ["*.bench.ts"] },
     hookTimeout: 30_000,
     testTimeout: 15_000,
   },
