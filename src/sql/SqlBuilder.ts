@@ -109,7 +109,7 @@ export function getJsDataEncoder(map: JsDataEncoderMap, data: unknown): JsDataEn
 export class SqlStatementTemplate<T = unknown> implements TypedSqlStatementTemplate<T>, TypedSqlStatement<T> {
   constructor(private chunks: TemplateStringsArray, values: unknown[], encoderMap: JsDataEncoderMap) {
     const sql: string[] = [chunks[0]];
-    const args: Uint8Array[] = [];
+    const args: (Uint8Array | null)[] = [];
     const oids: number[] = [];
     for (let index = 0; index < values.length; index++) {
       const value = values[index];
@@ -117,11 +117,17 @@ export class SqlStatementTemplate<T = unknown> implements TypedSqlStatementTempl
         sql.push(String(value), chunks[index + 1]);
         continue;
       }
-      const dataEncoder = getJsDataEncoder(encoderMap, value);
-      if (!dataEncoder) throw new TypeError(`No PostgreSQL encoder for ${value === null ? "null" : typeof value}`);
-      const oid = dataEncoder.getOid(value);
-      args.push(dataEncoder.binary(value, oid));
-      oids.push(oid);
+      if (value === null) {
+        args.push(null);
+        // NULL 的类型由 PostgreSQL 根据 SQL 上下文推断，保留 OID 位置。
+        oids.push(0);
+      } else {
+        const dataEncoder = getJsDataEncoder(encoderMap, value);
+        if (!dataEncoder) throw new TypeError(`No PostgreSQL encoder for ${typeof value}`);
+        const oid = dataEncoder.getOid(value);
+        args.push(dataEncoder.binary(value, oid));
+        oids.push(oid);
+      }
       sql.push(`$${args.length}`, chunks[index + 1]);
     }
     this.#sql = sql;
@@ -137,7 +143,7 @@ export class SqlStatementTemplate<T = unknown> implements TypedSqlStatementTempl
   }
   readonly argsFormat = 1 as const;
   readonly argsOid: ReadonlyArray<number>;
-  readonly args: ReadonlyArray<Uint8Array>;
+  readonly args: ReadonlyArray<Uint8Array | null>;
 
   /**
    * @example

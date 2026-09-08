@@ -6,7 +6,9 @@
   "tasks": {
     "type:check": "deno check",
     "ci:test": "deno x vitest run",
-    "publishDry": "deno publish --dry-run --allow-dirty"
+    "publishDry": "deno publish --dry-run --allow-dirty",
+    "bundle": "deno bundle src/mod.ts -o dist/mod.js",
+    "transpile": "deno transpile src/**/*.ts --outdir dist --declaration"
   },
   "imports": {
     "#abstract": "./src/abstract/mod.ts",

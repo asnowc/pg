@@ -1,0 +1,5 @@
+{
+  "imports": {
+    "@asla/pg": "../src/mod.ts"
+  }
+}

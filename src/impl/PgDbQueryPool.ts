@@ -9,7 +9,6 @@ import type {
   MultipleQueryResult,
   QueryInput,
   SqlLike,
-  TransactionMode,
 } from "#abstract";
 import { createPgClient } from "./_pg_client.ts";
 import { ResourcePool } from "../lib/pool.ts";
@@ -17,6 +16,7 @@ import { PgConnection } from "./_PgConnection.ts";
 import { parserDbConnectUrl } from "./connect.ts";
 import type { DbConnectOption } from "./connect.ts";
 import type { PgConnection as NativePgConnection } from "../connect.ts";
+import type { TransactionMode } from "@/query.ts";
 /**
  * @public
  * @deprecated 请直接使用 `PgConnection`，或在应用层管理原生连接池。

@@ -35,7 +35,7 @@ export interface QueryReader<T = unknown> extends AsyncIterable<T> {
    */
   getMap<K extends keyof T>(key: K): Promise<Map<T[K], T>>;
   // reduce<R>(reducer: (accumulator: R, currentValue: T) => R, initialValue: R): Promise<R>;
-
+  then(onfulfilled?: (value:void) => void, onrejected?: (reason: any) => void): void
   /**
    * 获取异步迭代器，用于遍历查询结果。
    * @example

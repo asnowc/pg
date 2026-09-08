@@ -28,7 +28,8 @@ export type TypedSqlStatementTemplate<T = unknown> = QueryDecoder<T> & {
   /** 0 为文本格式，1 为二进制格式 */
   readonly argsFormat: 0 | 1 | ListWithLength<0 | 1>;
   readonly argsOid?: ListWithLength<number>;
-  readonly args: ListWithLength<Uint8Array | string>;
+  /** null 表示 SQL NULL，不进行文本或二进制编码。 */
+  readonly args: ListWithLength<Uint8Array | string | null>;
 };
 
 /** @public */
