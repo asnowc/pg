@@ -12,12 +12,12 @@
   },
   "imports": {
     "#abstract": "./src/abstract/mod.ts",
-    "@types/node": "npm:@types/node@^24.2.0",
+    "@types/node": "npm:@types/node@^26.5.0",
     "@asla/pg": "./src/mod.ts",
     "@/": "./src/",
     "@test/": "./test/",
 
-    "vitest": "npm:vitest@^4.1.11",
+    "vitest": "npm:vitest@^5.0.0",
     "@deno/vite-plugin": "npm:@deno/vite-plugin@^2.0.3"
   },
   "exports": "./src/mod.ts",

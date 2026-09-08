@@ -100,7 +100,15 @@ export function getJsDataEncoder(map: JsDataEncoderMap, data: unknown): JsDataEn
   if (data === null || data === undefined) return undefined;
   if (typeof data === "object") {
     const flag = Reflect.get(data, DATA_TYPE_KEY) as string | number | undefined;
-    return map.get(flag ?? data.constructor);
+    if (flag !== undefined) return map.get(flag);
+    let encoder: JsDataEncoder | undefined;
+    let constructor = data.constructor;
+    while (constructor) {
+      encoder = map.get(constructor);
+      if (encoder) return encoder;
+      constructor = Object.getPrototypeOf(constructor);
+    }
+    return undefined;
   }
   return map.get(typeof data);
 }
@@ -123,7 +131,11 @@ export class SqlStatementTemplate<T = unknown> implements TypedSqlStatementTempl
         oids.push(0);
       } else {
         const dataEncoder = getJsDataEncoder(encoderMap, value);
-        if (!dataEncoder) throw new TypeError(`No PostgreSQL encoder for ${typeof value}`);
+        if (!dataEncoder) {
+          const type = typeof value;
+          const name = type === "object" ? (value as {}).constructor.name : type;
+          throw new TypeError(`No PostgreSQL encoder for ${name}`);
+        }
         const oid = dataEncoder.getOid(value);
         args.push(dataEncoder.binary(value, oid));
         oids.push(oid);

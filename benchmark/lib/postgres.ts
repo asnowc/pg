@@ -1,9 +1,32 @@
-import postgres from "postgres";
+import postgres, { ReservedSql, Sql } from "postgres";
 import { DB_CONNECT_INFO } from "../utils/db.ts";
+import { Bench } from "tinybench";
+import { AddPoolConfig, createPoolBench } from "./common.ts";
 
-export async function connect() {
-  const postgresPool = postgres({ ...DB_CONNECT_INFO, max: 1, idle_timeout: 0, max_lifetime: 0, prepare: false });
-  const postgresClient = await postgresPool.reserve();
+function createPool() {
+  return postgres({ ...DB_CONNECT_INFO, max: 1, prepare: false });
+}
 
-  return postgresClient;
+export function addToBench(bench: Bench, name: string, benchFn: (data: Sql) => Promise<void>) {
+  let pool: Sql;
+  let connect: ReservedSql;
+
+  bench.add(name, () => benchFn(pool), {
+    beforeAll: async () => {
+      pool = createPool();
+      connect = await pool.reserve();
+    },
+    afterAll: async () => {
+      connect.release();
+      await pool.end();
+    },
+  });
+}
+
+export function addPoolToBench(config: AddPoolConfig<Sql>) {
+  return createPoolBench({
+    ...config,
+    createPool: () => postgres({ ...DB_CONNECT_INFO, max: config.poolSize, prepare: false }),
+    closePool: (pool) => pool.end(),
+  });
 }

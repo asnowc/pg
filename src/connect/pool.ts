@@ -28,6 +28,7 @@ export interface PgPool extends Query, AsyncDisposable {
   get idleCount(): number;
   get totalCount(): number;
 
+  close(): Promise<void>;
   /** 拒绝新的借用，等待已借出的资源归还及物理连接关闭。 */
   [Symbol.asyncDispose](): Promise<void>;
 }
@@ -324,8 +325,11 @@ class PgPoolImpl extends PoolQuery implements PgPool {
   get totalCount(): number {
     return this.resources.totalCount;
   }
-  [Symbol.asyncDispose](): Promise<void> {
+  close() {
     return this.#closePromise ??= this.#close();
+  }
+  [Symbol.asyncDispose](): Promise<void> {
+    return this.close();
   }
   async #close(): Promise<void> {
     await this.resources.close();

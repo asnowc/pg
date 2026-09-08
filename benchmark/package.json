@@ -9,7 +9,8 @@
     "@types/pg": "^8.23.1",
     "pg": "^8.23.0",
     "pg-promise": "^12.7.1",
-    "postgres": "^3.4.9"
+    "postgres": "^3.4.9",
+    "tinybench": "^6.1.6"
   },
   "devDependencies": {
     "@deno/vite-plugin": "^2.0.3",

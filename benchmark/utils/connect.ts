@@ -9,5 +9,19 @@ export async function connect() {
   const pgPromise = await pgPromiseConnect();
   const postgres = await postgresConnect();
 
-  return { asla, pg, pgPromise, postgres };
+  return {
+    asla,
+    pg,
+    pgPromise,
+    postgres: postgres.postgresClient,
+    [Symbol.asyncDispose]: async () => {
+      await Promise.all([
+        asla.close(),
+        pg.end(),
+        pgPromise.done(),
+        postgres.postgresClient.release(),
+        postgres.pool.end(),
+      ]);
+    },
+  };
 }
