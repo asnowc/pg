@@ -3,7 +3,6 @@ export interface QueryCompletion {
   readonly status: "complete" | "closed";
   /** 受影响的行数 */
   readonly rowCount?: number;
-  readonly fields: readonly Readonly<FieldInfo>[];
   readonly notices: string[];
 }
 /** @public */

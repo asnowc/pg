@@ -1,6 +1,14 @@
 import { expect } from "vitest";
 import { test } from "@test/fixtures/db_connect.ts";
 
+// test("", async ({ connect }) => {});
+// test("单条查询", async ({ connect }) => {
+//   const result = await connect.simpleQuery("SELECT 1::int AS value");
+// });
+// test("多条查询", async ({ connect }) => {});
+// test("空查询", async ({ connect }) => {});
+// test("提前结束结果迭代", async ({ connect }) => {});
+
 test("简单查询返回多结果、NULL 和命令完成信息", async ({ connect }) => {
   const results = [];
   for await (

@@ -470,10 +470,10 @@ export class PgCursorImpl<T> implements PgCursor<T> {
   close(): Promise<void> {
     return this.controller.close();
   }
-  getFields(): Promise<readonly Readonly<FieldInfo>[]> {
+  get fields(): Promise<readonly Readonly<FieldInfo>[]> {
     return this.controller.fields.promise;
   }
-  getCompletion(): Promise<QueryCompletion> {
+  get completion(): Promise<QueryCompletion> {
     return this.controller.completion.promise;
   }
   async *[Symbol.asyncIterator](): AsyncIterator<T> {

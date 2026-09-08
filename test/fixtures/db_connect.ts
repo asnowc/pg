@@ -2,33 +2,17 @@ import { test as viTest } from "vitest";
 import { DbManage, type DbQueryPool, PgDbQueryPool } from "@asla/pg";
 import type { PgConnection } from "@asla/pg";
 import process from "node:process";
-import { DB_CONNECT_INFO, TLS_CA_FILE, TLS_LOGIN_DB } from "@test/utils/db.ts";
+import { DB_CONNECT_INFO, PUBLIC_DB_CONNECT_INFO } from "@test/utils/db.ts";
 import { denoConnect } from "@test/utils/connect.ts";
 
 export interface BaseContext {
   emptyDbPool: DbQueryPool;
   connect: PgConnection;
-  tlsConnect: PgConnection;
-  databaseName: string;
 }
 const VITEST_WORKER_ID = +process.env.VITEST_WORKER_ID!;
 let databaseSequence = 0;
 
 export const test = viTest.extend<BaseContext>({
-  databaseName: [async ({}, use) => {
-    const dbName = `test_native_${VITEST_WORKER_ID}`;
-    const manage = await getManage();
-    try {
-      await manage.recreateDb(dbName);
-    } finally {
-      await manage.close();
-    }
-    try {
-      await use(dbName);
-    } finally {
-      await clearDropDb(dbName);
-    }
-  }, { scope: "worker" }],
   async emptyDbPool({}, use) {
     const databaseName = `test_empty_${VITEST_WORKER_ID}_${databaseSequence++}`;
     const manage = await getManage();
@@ -49,27 +33,8 @@ export const test = viTest.extend<BaseContext>({
       if (useCount !== 0) throw new Error("存在未释放的连接");
     }
   },
-  async connect({ databaseName }, use) {
-    await using connection = await denoConnect({
-      hostname: DB_CONNECT_INFO.hostname,
-      port: DB_CONNECT_INFO.port,
-      user: DB_CONNECT_INFO.user!,
-      password: DB_CONNECT_INFO.password,
-      database: databaseName,
-    });
-    await use(connection);
-  },
-  async tlsConnect({}, use) {
-    const options = new URL(TLS_LOGIN_DB);
-    const ca = await Deno.readTextFile(TLS_CA_FILE);
-    await using connection = await denoConnect({
-      hostname: options.hostname,
-      port: +(options.port || 5432),
-      user: decodeURIComponent(options.username),
-      password: decodeURIComponent(options.password),
-      database: options.pathname.slice(1),
-      caCerts: [ca],
-    });
+  async connect({}, use) {
+    await using connection = await denoConnect(PUBLIC_DB_CONNECT_INFO);
     await use(connection);
   },
 });

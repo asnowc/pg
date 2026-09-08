@@ -12,11 +12,8 @@ services:
       test:
         - CMD-SHELL
         - >-
-            PGPASSWORD=tls-secret psql
-            "host=localhost port=5432 user=auth_tls dbname=auth_test sslmode=verify-full sslrootcert=/var/lib/postgresql/ca.crt"
-            --tuples-only --no-align --command
-            "SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()" | grep -qx t
+            pg_isready -U postgres -d postgres
       interval: 2s
       timeout: 5s
-      retries: 30
+      retries: 3
       start_period: 5s

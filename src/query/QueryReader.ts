@@ -45,6 +45,14 @@ export interface QueryReader<T = unknown> extends AsyncIterable<T> {
    */
   [Symbol.asyncIterator](): AsyncGenerator<T, QueryCompletion, void>;
 }
+
+/** @public */
+export enum CursorStatus {
+  Open = "opening",
+  Closed = "closed",
+  Completed = "completed",
+}
+
 /** @public */
 export interface PgCursor<T> extends AsyncDisposable, AsyncIterable<T> {
   /**
@@ -60,8 +68,8 @@ export interface PgCursor<T> extends AsyncDisposable, AsyncIterable<T> {
   close(): Promise<void>;
   read(maxRows?: number): Promise<T[]>;
 
-  getFields(): Promise<readonly Readonly<FieldInfo>[]>;
-  getCompletion(): Promise<QueryCompletion>;
+  get fields(): Promise<readonly Readonly<FieldInfo>[]>;
+  get completion(): Promise<QueryCompletion>;
 }
 
 /** @public */

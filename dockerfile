@@ -1,7 +1,7 @@
 FROM postgres:18-alpine
 
 COPY pg_hba.conf /etc/postgresql/pg_hba.conf
-COPY init-auth.sql /docker-entrypoint-initdb.d/10-auth.sql
+COPY init-db.sql /docker-entrypoint-initdb.d/10-auth.sql
 COPY --chown=postgres:postgres test/fixtures/tls/server.crt /var/lib/postgresql/server.crt
 COPY --chown=postgres:postgres test/fixtures/tls/server.key /var/lib/postgresql/server.key
 COPY --chown=postgres:postgres test/fixtures/tls/ca.crt /var/lib/postgresql/ca.crt

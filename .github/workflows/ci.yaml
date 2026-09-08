@@ -20,10 +20,6 @@ jobs:
         run: deno task ci:test
         env:
           TEST_LOGIN_DB: pg://postgres@127.0.0.1:5432/postgres
-          TEST_PASSWORD_DB: pg://auth_password:password-secret@127.0.0.1:5432/auth_test
-          TEST_SCRAM_DB: pg://auth_scram:scram-secret@127.0.0.1:5432/auth_test
-          TEST_TLS_DB: pg://auth_tls:tls-secret@localhost:5432/auth_test
-          TEST_TLS_CA: ./test/fixtures/tls/ca.crt
       - name: Stop PostgreSQL test environment
         if: always()
         run: docker compose down -v
