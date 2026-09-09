@@ -1,51 +1,61 @@
 import { Bench, BenchOptions } from "tinybench";
-import { addToBench as addAslaPg, aslaSql } from "./lib/asla-pg.ts";
-import { addToBench as addPg } from "./lib/pg.ts";
-import { addToBench as addPgPromise } from "./lib/pgPromise.ts";
-import { addToBench as addPostgres } from "./lib/postgres.ts";
+import * as aslaPg from "./lib/asla-pg.ts";
+import * as pg from "./lib/pg.ts";
+import * as pgPromise from "./lib/pgPromise.ts";
+import * as postgres from "./lib/postgres.ts";
+import * as slonik from "./lib/slonik.ts";
 
-const options: BenchOptions = { time: 500, iterations: 1000, warmupTime: 100, warmupIterations: 10 };
+const slonkSql = slonik.slonkSql;
+const aslaSql = aslaPg.aslaSql;
+
+const options: BenchOptions = { time: 500, iterations: 3, warmupTime: 100, warmupIterations: 10 };
 function select(options: BenchOptions) {
   const bench = new Bench({ ...options, name: "select" });
 
-  addAslaPg(bench, "@asla/pg", async (conn) => {
+  aslaPg.addToBench(bench, async (conn) => {
     await conn.query("select 1 as x").getRows();
   });
-  addPg(bench, "pg", async (conn) => {
+  pg.addToBench(bench, async (conn) => {
     await conn.query("select 1 as x");
   });
 
-  addPgPromise(bench, "pg-promise", async (pgPromise) => {
+  pgPromise.addToBench(bench, async (pgPromise) => {
     await pgPromise.any("select 1 as x");
   });
 
-  addPostgres(bench, "postgres (reserved connection)", async (sql) => {
+  postgres.addToBench(bench, async (sql) => {
     await sql`select 1 as x`;
   });
 
+  slonik.addToBench(bench, async (client) => {
+    await client.query(slonik.slonkSql.unsafe`select 1 as x`);
+  });
   return bench;
 }
 function select_arg(options: BenchOptions) {
   const bench = new Bench({ ...options, name: "select_arg" });
-  addAslaPg(bench, "@asla/pg", async (client) => {
-    await client.query(aslaSql`select ${1} as x`).getRows();
+  aslaPg.addToBench(bench, async (client) => {
+    await client.query(aslaPg.aslaSql`select ${1} as x`).getRows();
   });
-  addPg(bench, "pg", async (client) => {
+  pg.addToBench(bench, async (client) => {
     await client.query("select $1 as x", [1]);
   });
-  addPgPromise(bench, "pg-promise", async (client) => {
+  pgPromise.addToBench(bench, async (client) => {
     await client.any("select $1 as x", [1]);
   });
-  addPostgres(bench, "postgres (reserved connection)", async (client) => {
+  postgres.addToBench(bench, async (client) => {
     await client`select ${1} as x`;
+  });
+  slonik.addToBench(bench, async (client) => {
+    await client.query(slonik.slonkSql.unsafe`select ${1} as x`);
   });
   return bench;
 }
 function select_args(options: BenchOptions) {
   const bench = new Bench({ ...options, name: "select_args" });
 
-  addAslaPg(bench, "@asla/pg", async (conn) => {
-    await conn.query(aslaSql`select
+  aslaPg.addToBench(bench, async (conn) => {
+    await conn.query(aslaPg.aslaSql`select
         ${1337}::int as int,
         ${"wat"} as string,
         ${new Date()}::timestamp with time zone as timestamp,
@@ -55,7 +65,7 @@ function select_args(options: BenchOptions) {
         ${JSON.stringify([{ some: "json" }, { array: "object" }])}::jsonb as json
             `).getRows();
   });
-  addPg(bench, "pg", async (client) => {
+  pg.addToBench(bench, async (client) => {
     const sql = `select
         $1::int as int,
         $2 as string,
@@ -76,7 +86,7 @@ function select_args(options: BenchOptions) {
     ];
     await client.query(sql, args);
   });
-  addPgPromise(bench, "pg-promise", async (client) => {
+  pgPromise.addToBench(bench, async (client) => {
     const sql = `select
         $1::int as int,
         $2 as string,
@@ -97,7 +107,7 @@ function select_args(options: BenchOptions) {
     ];
     await client.query(sql, args);
   });
-  addPostgres(bench, "postgres (reserved connection)", async (sql) => {
+  postgres.addToBench(bench, async (sql) => {
     await sql`select
       ${1337} as int,
       ${"wat"} as string,
@@ -108,27 +118,48 @@ function select_args(options: BenchOptions) {
       ${sql.json([{ some: "json" }, { array: "object" }])} as json
     `;
   });
+  slonik.addToBench(bench, async (client) => {
+    const sql = slonik.slonkSql.unsafe`select
+      ${1337}::int as int,
+      ${"wat"} as string,
+      ${slonkSql.date(new Date())}::timestamp with time zone as timestamp,
+      ${null} as null,
+      ${false}::bool as boolean,
+      ${slonkSql.binary(Buffer.from("awesome"))}::bytea as bytea,
+      ${slonkSql.json([{ some: "json" }, { array: "object" }])}::jsonb as json
+    `;
+    await client.query(sql);
+  });
   return bench;
 }
 function select_where(options: BenchOptions) {
   const bench = new Bench({ ...options, name: "select_where" });
 
-  addAslaPg(bench, "@asla/pg", async (client) => {
+  aslaPg.addToBench(bench, async (client) => {
     await client.query(aslaSql`select * from pg_catalog.pg_type where typname = ${"bool"}`).getRows();
   });
-  addPg(bench, "pg", async (client) => {
+  pg.addToBench(bench, async (client) => {
     await client.query(`select * from pg_catalog.pg_type where typname = $1`, ["bool"]);
   });
-  addPgPromise(bench, "pg-promise", async (client) => {
+  pgPromise.addToBench(bench, async (client) => {
     await client.query(`select * from pg_catalog.pg_type where typname = $1`, ["bool"]);
   });
-  addPostgres(bench, "postgres (reserved connection)", async (sql) => {
-    await sql`select * from pg_catalog.pg_type where typname = ${"bool"}`;
+  postgres.addToBench(bench, async (client) => {
+    await client`select * from pg_catalog.pg_type where typname = ${"bool"}`;
+  });
+  slonik.addToBench(bench, async (client) => {
+    const sql = slonkSql.unsafe`select * from pg_catalog.pg_type where typname = ${"bool"}`;
+    await client.query(sql);
   });
   return bench;
 }
 
 async function run(bench: Bench) {
+  bench.remove(aslaPg.LIB_NAME);
+  // bench.remove(pg.LIB_NAME);
+  // bench.remove(pgPromise.LIB_NAME);
+  bench.remove(postgres.LIB_NAME);
+  bench.remove(slonik.LIB_NAME);
   await bench.run();
   console.log(bench.name);
   console.table(bench.table());

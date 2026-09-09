@@ -10,6 +10,7 @@
     "pg": "^8.23.0",
     "pg-promise": "^12.7.1",
     "postgres": "^3.4.9",
+    "slonik": "^49.10.9",
     "tinybench": "^6.1.6"
   },
   "devDependencies": {

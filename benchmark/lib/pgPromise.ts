@@ -1,8 +1,7 @@
 import pgPromise, { IDatabase } from "pg-promise";
 import { DB_CONNECT_INFO } from "../utils/db.ts";
 import { Bench } from "tinybench";
-import type { AddPoolConfig } from "./common.ts";
-import { createPoolBench } from "./common.ts";
+import { PoolInfo } from "./common.ts";
 const pgp = pgPromise();
 export async function connect() {
   const conn = await pgp({ ...DB_CONNECT_INFO, max: 1 }).connect({ direct: true });
@@ -11,10 +10,11 @@ export async function connect() {
 type Pool = IDatabase<{}>;
 type Connection = Awaited<ReturnType<typeof connect>>;
 
-export function addToBench(bench: Bench, name: string, benchFn: (data: Connection) => Promise<void>) {
+export const LIB_NAME = "pg-promise";
+export function addToBench(bench: Bench, benchFn: (data: Connection) => Promise<void>) {
   let pool: IDatabase<{}>;
   let conn: Connection;
-  bench.add(name, () => benchFn(conn), {
+  bench.add(LIB_NAME, () => benchFn(conn), {
     beforeAll: async () => {
       pool = await pgp({ ...DB_CONNECT_INFO, max: 1 });
       conn = await pool.connect({ direct: true });
@@ -25,10 +25,8 @@ export function addToBench(bench: Bench, name: string, benchFn: (data: Connectio
     },
   });
 }
-export function addPoolToBench(option: AddPoolConfig<Pool>) {
-  return createPoolBench({
-    ...option,
-    createPool: () => pgp({ ...DB_CONNECT_INFO, max: option.poolSize }),
-    closePool: (pool) => pool.$pool.end(),
-  });
-}
+export const poolInfo: PoolInfo<Pool> = {
+  name: LIB_NAME,
+  createPool: ({ poolSize }) => pgp({ ...DB_CONNECT_INFO, max: poolSize }),
+  closePool: (pool) => pool.$pool.end(),
+};

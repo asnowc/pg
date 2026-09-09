@@ -1,16 +1,17 @@
 import pg, { Client, Pool } from "pg";
 import { DB_CONNECT_INFO } from "../utils/db.ts";
 import { Bench } from "tinybench";
-import { AddPoolConfig, createPoolBench } from "./common.ts";
+import { PoolInfo } from "./common.ts";
 
 export function connect() {
   const pgClient = new pg.Client(DB_CONNECT_INFO);
   return pgClient.connect();
 }
-export function addToBench(bench: Bench, name: string, benchFn: (data: Client) => Promise<void>) {
+export const LIB_NAME = "pg";
+export function addToBench(bench: Bench, benchFn: (data: Client) => Promise<void>) {
   let pgClient: Client;
 
-  bench.add(name, () => benchFn(pgClient), {
+  bench.add(LIB_NAME, () => benchFn(pgClient), {
     beforeAll: async () => {
       pgClient = await connect();
     },
@@ -19,10 +20,8 @@ export function addToBench(bench: Bench, name: string, benchFn: (data: Client) =
     },
   });
 }
-export function addPoolToBench(config: AddPoolConfig<Pool>) {
-  return createPoolBench({
-    ...config,
-    createPool: () => new pg.Pool({ ...DB_CONNECT_INFO, max: config.poolSize }),
-    closePool: (pgPool) => pgPool.end(),
-  });
-}
+export const poolInfo: PoolInfo<Pool> = {
+  name: LIB_NAME,
+  createPool: ({ poolSize }) => new pg.Pool({ ...DB_CONNECT_INFO, max: poolSize }),
+  closePool: (pool) => pool.end(),
+};

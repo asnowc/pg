@@ -9,7 +9,7 @@ import {
 } from "@asla/pg";
 import { DB_CONNECT_INFO } from "../utils/db.ts";
 import { Bench } from "tinybench";
-import { AddPoolConfig, createPoolBench } from "./common.ts";
+import { PoolInfo } from "./common.ts";
 
 export async function connect() {
   const tcp = await Deno.connect({ hostname: DB_CONNECT_INFO.host, port: DB_CONNECT_INFO.port });
@@ -18,11 +18,11 @@ export async function connect() {
 }
 
 export const aslaSql = createSqlBuilder(JS_DATA_ENCODER_V1);
-
-export function addToBench(bench: Bench, name: string, benchFn: (data: PgConnection) => Promise<void>) {
+export const LIB_NAME = "@asla/pg";
+export function addToBench(bench: Bench, benchFn: (data: PgConnection) => Promise<void>) {
   let aslaPg: PgConnection;
 
-  bench.add(name, () => benchFn(aslaPg), {
+  bench.add(LIB_NAME, () => benchFn(aslaPg), {
     beforeAll: async () => {
       aslaPg = await connect();
     },
@@ -31,10 +31,8 @@ export function addToBench(bench: Bench, name: string, benchFn: (data: PgConnect
     },
   });
 }
-export function addPoolToBench(config: AddPoolConfig<PgPool>) {
-  return createPoolBench({
-    ...config,
-    createPool: () => createPgPool({ ...DB_CONNECT_INFO, maxCount: config.poolSize, create: connect }),
-    closePool: (pool) => pool.close(),
-  });
-}
+export const poolInfo: PoolInfo<PgPool> = {
+  name: LIB_NAME,
+  createPool: ({ poolSize }) => createPgPool({ ...DB_CONNECT_INFO, maxCount: poolSize, create: connect }),
+  closePool: (pool) => pool.close(),
+};
