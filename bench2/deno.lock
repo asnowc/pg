@@ -1,0 +1,293 @@
+{
+  "version": "5",
+  "specifiers": {
+    "npm:pg-promise@12.7.1": "12.7.1",
+    "npm:pg@8.23.0": "8.23.0",
+    "npm:postgres@3.4.9": "3.4.9",
+    "npm:slonik@49.10.9": "49.10.9"
+  },
+  "npm": {
+    "@opentelemetry/api@1.9.1": {
+      "integrity": "sha512-gLyJlPHPZYdAk1JENA9LeHejZe1Ti77/pTeFm/nMXmQH/HFZlcS/O2XJB+L8fkbrNSqhdtlvjBVjxwUYanNH5Q=="
+    },
+    "@slonik/driver@49.10.9_zod@4.5.4": {
+      "integrity": "sha512-PrrtTOVMzKh+5p9PMIjayDf3QtgXV+KxodqlBJt/67eZSdId7L9tbVhE6XqViyySrQT9GiqJOR9KjloKR8n/1g==",
+      "dependencies": [
+        "@slonik/types",
+        "@slonik/utilities",
+        "roarr",
+        "serialize-error",
+        "strict-event-emitter-types",
+        "zod"
+      ]
+    },
+    "@slonik/errors@49.10.9": {
+      "integrity": "sha512-fd0L5vmRoR9z+uifJYc3iA9xOCP9d7Fl7Bpj+ESHAcmLrqGmedmf5+UtdPd/975A/0HgonazjgI/aorJjFEZNA==",
+      "dependencies": [
+        "@slonik/types"
+      ]
+    },
+    "@slonik/pg-driver@49.10.9_zod@4.5.4": {
+      "integrity": "sha512-nxM2mKyqK6Lu4c8AUl/pNv+3AkD8+bnZCRt4coRuC2B/jSgPixRRLEwvYQ78b2MiSzzrQXRnXvgAfd75xCKcFQ==",
+      "dependencies": [
+        "@slonik/driver",
+        "@slonik/errors",
+        "@slonik/sql-tag",
+        "@slonik/types",
+        "@slonik/utilities",
+        "pg",
+        "pg-query-stream",
+        "pg-types@4.1.0",
+        "postgres-array@3.0.4",
+        "zod"
+      ]
+    },
+    "@slonik/sql-tag@49.10.9": {
+      "integrity": "sha512-gQcwmPBqgp9/B+iNmV6D/mjY43eP02ei+/LZESs2YBJ6agwaKFXvAs8qiyTkVZ0VdgI/yULlhmnFYiw9i6CJDQ==",
+      "dependencies": [
+        "@slonik/errors",
+        "@slonik/types",
+        "roarr",
+        "safe-stable-stringify",
+        "serialize-error",
+        "zod"
+      ]
+    },
+    "@slonik/types@49.10.9_zod@4.5.4": {
+      "integrity": "sha512-VYzPo+SDrEySKezO1g+k/pctZ1fynOoOoU1NI4ppxIp1j/8c2BJjbLYjzir+o3Q/sXOAPu7ygjC9DiWdlF+l0A==",
+      "dependencies": [
+        "zod"
+      ]
+    },
+    "@slonik/utilities@49.10.9_zod@4.5.4": {
+      "integrity": "sha512-4drCRum3M/5FxiyZ8tsfy1bcPzuMtESGYV7IXpJYhv2lxOwqgqnP2tR6Ib/L4wWzQ6HjrXRraPeOnrPsAnJsmg==",
+      "dependencies": [
+        "@slonik/errors",
+        "@slonik/types",
+        "zod"
+      ]
+    },
+    "@standard-schema/spec@1.1.0": {
+      "integrity": "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="
+    },
+    "assert-options@0.8.3": {
+      "integrity": "sha512-s6v4HnA+vYSGO4eZX+F+I3gvF74wPk+m6Z1Q3w1Dsg4Pnv/R24vhKAasoMVZGvDpOOfTg1Qz4ptZnEbuy95XsQ=="
+    },
+    "eventemitter3@5.0.4": {
+      "integrity": "sha512-mlsTRyGaPBjPedk6Bvw+aqbsXDtoAyAzm5MO7JgU+yVRyMQ5O8bD4Kcci7BS85f93veegeCPkL8R4GLClnjLFw=="
+    },
+    "fast-printf@1.6.10": {
+      "integrity": "sha512-GwTgG9O4FVIdShhbVF3JxOgSBY2+ePGsu2V/UONgoCPzF9VY6ZdBMKsHKCYQHZwNk3qNouUolRDsgVxcVA5G1w=="
+    },
+    "iso8601-duration@2.1.4": {
+      "integrity": "sha512-2TuWcuR6W0OhFZQDAY+jDUp9FC2fVTDgxTtbN0nFBfwmUA6HTqXc0wx2tIBVd/FhRp4CnJbDgCv3sCeTPMQbew=="
+    },
+    "obuf@1.1.2": {
+      "integrity": "sha512-PX1wu0AmAdPqOL1mWhqmlOd8kOIZQwGZw6rh7uby9fTc5lhaOWFLX3I6R1hrF9k3zUY40e6igsLGkDXK92LJNg=="
+    },
+    "p-queue@9.3.3": {
+      "integrity": "sha512-NXAOdnEe5FsZJfT4oK84lE1Y5cFFdWlRuOo5tww8DyNMxyRXwn39fIkUtNLKppcPC+UYU/bXujNCUGDv01y7CA==",
+      "dependencies": [
+        "eventemitter3",
+        "p-timeout"
+      ]
+    },
+    "p-timeout@7.0.1": {
+      "integrity": "sha512-AxTM2wDGORHGEkPCt8yqxOTMgpfbEHqF51f/5fJCmwFC3C/zNcGT63SymH2ttOAaiIws2zVg4+izQCjrakcwHg=="
+    },
+    "pg-cloudflare@1.4.0": {
+      "integrity": "sha512-Vo7z/6rrQYxpNRylp4Tlob2elzbh+N/MOQbxFVWCxS7oEx6jF53GTJFxK2WWpKuBRkmiin4Mt+xofFDjx09R0A=="
+    },
+    "pg-connection-string@2.14.0": {
+      "integrity": "sha512-XwWDGcLRGCXAR8F/AM5bG7Q+A3Wm2s6QeEjlOKZLlH3UYcguiqCWKyWXVag5TLTIjR7oOJUY8kcADaZgWPyLeg=="
+    },
+    "pg-cursor@2.22.0_pg@8.23.0": {
+      "integrity": "sha512-knzXLKqarTjOvb3qDSW0JiGsazmxwEKXrqHfWRte7XUsOYccQRafn3BLnQobWwInkzFJSyOej8y8cQRh2z3kGw==",
+      "dependencies": [
+        "pg"
+      ]
+    },
+    "pg-int8@1.0.1": {
+      "integrity": "sha512-WCtabS6t3c8SkpDBUlb1kjOs7l66xsGdKpIPZsg4wR+B3+u9UAum2odSsF9tnvxg80h4ZxLWMy4pRjOsFIqQpw=="
+    },
+    "pg-minify@1.8.0": {
+      "integrity": "sha512-jO/oJOununpx8DzKgvSsWm61P8JjwXlaxSlbbfTBo1nvSWoo/+I6qZYaSN96jm/KDwa5d+JMQwPGgcP6HXDRow=="
+    },
+    "pg-numeric@1.0.2": {
+      "integrity": "sha512-BM/Thnrw5jm2kKLE5uJkXqqExRUY/toLHda65XgFTBTFYZyopbKjBe29Ii3RbkvlsMoFwD+tHeGaCjjv0gHlyw=="
+    },
+    "pg-pool@3.14.0_pg@8.23.0": {
+      "integrity": "sha512-gKtPkFdQPU3DksooVLi9LsjZxrsBUZIpa+7aVx+LV5pNh0KzP4Zleud2po+ConrxbuXGBJ6Hfer6hdgpIBpBaw==",
+      "dependencies": [
+        "pg"
+      ]
+    },
+    "pg-promise@12.7.1": {
+      "integrity": "sha512-tsemfuBRsHMGaFZKMpkmCAA9iLeHXuuTq+0DucJwJyftyXk7crlMFXq7SY0AOVelIrdSL8qwdl5omfj/R8JN6A==",
+      "dependencies": [
+        "assert-options",
+        "pg",
+        "pg-minify",
+        "pg-query-stream",
+        "spex"
+      ]
+    },
+    "pg-protocol@1.16.0": {
+      "integrity": "sha512-sILXutLVjCLjcDuOmvhX5e2Z4cS5qG/6Bu3VkpFwdf/633ElGLpEh9bgmuI5I4sqKqkifQiGyiCcx1HdtrK7tg=="
+    },
+    "pg-query-stream@4.17.0_pg@8.23.0": {
+      "integrity": "sha512-69bug2CH/AJi1BN8r08eZ8tAGdbZZVp9kB0FG9OC2VkJPHIyj7d3Nk9V8tmporO60wqeWvhn7qtQ5oNimwlFug==",
+      "dependencies": [
+        "pg",
+        "pg-cursor"
+      ]
+    },
+    "pg-types@2.2.0": {
+      "integrity": "sha512-qTAAlrEsl8s4OiEQY69wDvcMIdQN6wdz5ojQiOy6YRMuynxenON0O5oCpJI6lshc6scgAY8qvJ2On/p+CXY0GA==",
+      "dependencies": [
+        "pg-int8",
+        "postgres-array@2.0.0",
+        "postgres-bytea@1.0.1",
+        "postgres-date@1.0.7",
+        "postgres-interval@1.2.0"
+      ]
+    },
+    "pg-types@4.1.0": {
+      "integrity": "sha512-o2XFanIMy/3+mThw69O8d4n1E5zsLhdO+OPqswezu7Z5ekP4hYDqlDjlmOpYMbzY2Br0ufCwJLdDIXeNVwcWFg==",
+      "dependencies": [
+        "pg-int8",
+        "pg-numeric",
+        "postgres-array@3.0.4",
+        "postgres-bytea@3.0.0",
+        "postgres-date@2.1.0",
+        "postgres-interval@3.0.0",
+        "postgres-range"
+      ]
+    },
+    "pg@8.23.0": {
+      "integrity": "sha512-Ip2EQCngowJLGOfCwkFhPXU7/ljlhn6Rxlmy4XYfL2Y+vyRM59+8uR2xqRWKdYmbXmxCFOAmKxBuSUCdF34qLg==",
+      "dependencies": [
+        "pg-connection-string",
+        "pg-pool",
+        "pg-protocol",
+        "pg-types@2.2.0",
+        "pgpass"
+      ],
+      "optionalDependencies": [
+        "pg-cloudflare"
+      ]
+    },
+    "pgpass@1.0.5": {
+      "integrity": "sha512-FdW9r/jQZhSeohs1Z3sI1yxFQNFvMcnmfuj4WBMUTxOrAyLMaTcE1aAMBiTlbMNaXvBCQuVi0R7hd8udDSP7ug==",
+      "dependencies": [
+        "split2"
+      ]
+    },
+    "postgres-array@2.0.0": {
+      "integrity": "sha512-VpZrUqU5A69eQyW2c5CA1jtLecCsN2U/bD6VilrFDWq5+5UIEVO7nazS3TEcHf1zuPYO/sqGvUvW62g86RXZuA=="
+    },
+    "postgres-array@3.0.4": {
+      "integrity": "sha512-nAUSGfSDGOaOAEGwqsRY27GPOea7CNipJPOA7lPbdEpx5Kg3qzdP0AaWC5MlhTWV9s4hFX39nomVZ+C4tnGOJQ=="
+    },
+    "postgres-bytea@1.0.1": {
+      "integrity": "sha512-5+5HqXnsZPE65IJZSMkZtURARZelel2oXUEO8rH83VS/hxH5vv1uHquPg5wZs8yMAfdv971IU+kcPUczi7NVBQ=="
+    },
+    "postgres-bytea@3.0.0": {
+      "integrity": "sha512-CNd4jim9RFPkObHSjVHlVrxoVQXz7quwNFpz7RY1okNNme49+sVyiTvTRobiLV548Hx/hb1BG+iE7h9493WzFw==",
+      "dependencies": [
+        "obuf"
+      ]
+    },
+    "postgres-date@1.0.7": {
+      "integrity": "sha512-suDmjLVQg78nMK2UZ454hAG+OAW+HQPZ6n++TNDUX+L0+uUlLywnoxJKDou51Zm+zTCjrCl0Nq6J9C5hP9vK/Q=="
+    },
+    "postgres-date@2.1.0": {
+      "integrity": "sha512-K7Juri8gtgXVcDfZttFKVmhglp7epKb1K4pgrkLxehjqkrgPhfG6OO8LHLkfaqkbpjNRnra018XwAr1yQFWGcA=="
+    },
+    "postgres-interval@1.2.0": {
+      "integrity": "sha512-9ZhXKM/rw350N1ovuWHbGxnGh/SNJ4cnxHiM0rxE4VN41wsg8P8zWn9hv/buK00RP4WvlOyr/RBDiptyxVbkZQ==",
+      "dependencies": [
+        "xtend"
+      ]
+    },
+    "postgres-interval@3.0.0": {
+      "integrity": "sha512-BSNDnbyZCXSxgA+1f5UU2GmwhoI0aU5yMxRGO8CdFEcY2BQF9xm/7MqKnYoM1nJDk8nONNWDk9WeSmePFhQdlw=="
+    },
+    "postgres-interval@4.1.0": {
+      "integrity": "sha512-nJLACcOHi2iyRuMJeW6CuIA0Dc0i1YEpRr26XDyHAfxPjYUJOFxwZjmOc5oFFctTTh/OlRAMlnlXEJvr170fJg=="
+    },
+    "postgres-range@1.1.4": {
+      "integrity": "sha512-i/hbxIE9803Alj/6ytL7UHQxRvZkI9O4Sy+J3HGc4F4oo/2eQAjTSNJ0bfxyse3bH0nuVesCk+3IRLaMtG3H6w=="
+    },
+    "postgres@3.4.9": {
+      "integrity": "sha512-GD3qdB0x1z9xgFI6cdRD6xu2Sp2WCOEoe3mtnyB5Ee0XrrL5Pe+e4CCnJrRMnL1zYtRDZmQQVbvOttLnKDLnaw=="
+    },
+    "roarr@7.21.7": {
+      "integrity": "sha512-6X9ID9jb83kPkDxm5xLb9rZdGm6ksdDjpeL0iW5weKelJFi+NVBSowRpEuH8CdpX2x+7RW0TZaezibE7yQB7pg==",
+      "dependencies": [
+        "fast-printf",
+        "safe-stable-stringify",
+        "semver-compare"
+      ]
+    },
+    "safe-stable-stringify@2.5.0": {
+      "integrity": "sha512-b3rppTKm9T+PsVCBEOUR46GWI7fdOs00VKZ1+9c1EWDaDMvjQc6tUwuFyIprgGgTcWoVHSKrU8H31ZHA2e0RHA=="
+    },
+    "semver-compare@1.0.0": {
+      "integrity": "sha512-YM3/ITh2MJ5MtzaM429anh+x2jiLVjqILF4m4oyQB18W7Ggea7BfqdH/wGMK7dDiMghv/6WG7znWMwUDzJiXow=="
+    },
+    "serialize-error@12.0.0": {
+      "integrity": "sha512-ZYkZLAvKTKQXWuh5XpBw7CdbSzagarX39WyZ2H07CDLC5/KfsRGlIXV8d4+tfqX1M7916mRqR1QfNHSij+c9Pw==",
+      "dependencies": [
+        "type-fest"
+      ]
+    },
+    "slonik@49.10.9": {
+      "integrity": "sha512-/RdMh8B1NtlEFuZ9sqMIHpeOTBmFhiko0clHgTMdz41KKmbMN+gaeo3d1dKaFoWF8sL0WVl1XJTAcdV842PIrw==",
+      "dependencies": [
+        "@opentelemetry/api",
+        "@slonik/driver",
+        "@slonik/errors",
+        "@slonik/pg-driver",
+        "@slonik/sql-tag",
+        "@slonik/utilities",
+        "@standard-schema/spec",
+        "iso8601-duration",
+        "p-queue",
+        "postgres-interval@4.1.0",
+        "roarr",
+        "serialize-error",
+        "strict-event-emitter-types",
+        "zod"
+      ]
+    },
+    "spex@4.1.0": {
+      "integrity": "sha512-ktgNAQ1X9x1A3IMChM6XBDeVjhGPbLgPQ8aEzGOaUIhZTnLeJSBApvi3gXT789hee6h73N3jOeWkXDwoPbYT/A=="
+    },
+    "split2@4.2.0": {
+      "integrity": "sha512-UcjcJOWknrNkF6PLX83qcHM6KHgVKNkV62Y8a5uYDVv9ydGQVwAHMKqHdJje1VTWpljG0WYpCDhrCdAOYH4TWg=="
+    },
+    "strict-event-emitter-types@2.0.0": {
+      "integrity": "sha512-Nk/brWYpD85WlOgzw5h173aci0Teyv8YdIAEtV+N88nDB0dLlazZyJMIsN6eo1/AR61l+p6CJTG1JIyFaoNEEA=="
+    },
+    "type-fest@4.41.0": {
+      "integrity": "sha512-TeTSQ6H5YHvpqVwBRcnLDCBnDOHWYu7IvGbHT6N8AOymcr9PJGjc1GTtiWZTYg0NCgYwvnYWEkVChQAr9bjfwA=="
+    },
+    "xtend@4.0.2": {
+      "integrity": "sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ=="
+    },
+    "zod@4.5.4": {
+      "integrity": "sha512-sC95tT5iHHH9gtpj6A81kh+NEaRAUFN+qlUPDUbRfOMvNf5QCBqsb3WgvnpVtK5Y+4UfA6KqufotuTvMGiTlsA=="
+    }
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:pg-promise@12.7.1",
+        "npm:pg@8.23.0",
+        "npm:postgres@3.4.9",
+        "npm:slonik@49.10.9"
+      ]
+    }
+  }
+}
