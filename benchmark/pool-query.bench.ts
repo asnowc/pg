@@ -9,7 +9,7 @@ import { getSortedResult } from "./utils/bench.ts";
 
 const poolSize = 4; // Example pool size, adjust as needed
 const concurrency = 10000;
-const options: BenchOptions = { time: 0, iterations: 10, warmupTime: 0, warmupIterations: 0 ,warmup:false};
+const options: BenchOptions = { time: 0, iterations: 1, warmup: false };
 function select(options: BenchOptions) {
   const bench = new Bench({ ...options, name: "select" });
   const addBench = createPoolBench(bench, { concurrency, poolSize });
@@ -26,6 +26,9 @@ function select(options: BenchOptions) {
 
   addBench(addPostgres, async (sql) => {
     await sql`select 1 as x`;
+  });
+  addBench(addSlonik, async (client) => {
+    await client.query(slonkSql.unsafe`select 1 as x`);
   });
 
   return bench;
@@ -44,6 +47,9 @@ function select_arg(options: BenchOptions) {
   });
   addBench(addPostgres, async (client) => {
     await client`select ${1} as x`;
+  });
+  addBench(addSlonik, async (client) => {
+    await client.query(slonkSql.unsafe`select ${1} as x`);
   });
   return bench;
 }
@@ -144,6 +150,9 @@ function select_where(options: BenchOptions) {
   });
   addBench(addPostgres, async (sql) => {
     await sql`select * from pg_catalog.pg_type where typname = ${"bool"}`;
+  });
+  addBench(addSlonik, async (client) => {
+    await client.query(slonkSql.unsafe`select * from pg_catalog.pg_type where typname = ${"bool"}`);
   });
   return bench;
 }

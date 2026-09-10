@@ -10,25 +10,34 @@ export type PoolInfo<T> = {
   closePool: (pool: T) => Promise<void>;
   name: string;
 };
-export type AddPoolBenchOptions<T> = PoolInfo<T> & {
-  benchFn: (data: T) => Promise<void>;
-};
-type AddPoolBench = <T>(info: PoolInfo<T>, benchFn: (data: T) => Promise<void>) => void;
+
+type AddPoolBench = <T>(info: PoolInfo<T>, benchFn: (data: T, index: number) => Promise<void>) => void;
 
 export function createPoolBench(bench: Bench, options: CreatePoolBenchOptions): AddPoolBench {
   const { concurrency, poolSize } = options;
-  return function <T>(info: PoolInfo<T>, benchFn: (data: T) => Promise<void>) {
+  return function <T>(info: PoolInfo<T>, benchFn: (data: T, index: number) => Promise<void>) {
     const { name, createPool, closePool } = info;
     let pool: T;
+
+    function run(pool: T, size: number) {
+      return new Promise((resolve) => {
+        let count = 0;
+        for (let i = 0; i < size; i++) {
+          benchFn(pool, i).finally(() => {
+            count++;
+            if (count >= size) {
+              resolve(undefined);
+            }
+          });
+        }
+      });
+    }
     bench.add(name, async () => {
-      const promises: Promise<void>[] = new Array<Promise<void>>(concurrency);
-      for (let i = 0; i < concurrency; i++) {
-        promises[i] = benchFn(pool);
-      }
-      await Promise.all(promises);
+      await run(pool, concurrency);
     }, {
       beforeAll: async () => {
         pool = await createPool({ poolSize });
+        await run(pool, poolSize * 2);
       },
       afterAll: async () => {
         await closePool(pool);

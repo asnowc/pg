@@ -3,9 +3,6 @@ import { DB_CONNECT_INFO } from "../utils/db.ts";
 import { Bench } from "tinybench";
 import { PoolInfo } from "./common.ts";
 
-function createPool() {
-  return postgres({ ...DB_CONNECT_INFO, max: 1, prepare: false });
-}
 export const LIB_NAME = "postgres";
 export function addToBench(bench: Bench, benchFn: (data: Sql) => Promise<void>) {
   let pool: Sql;
@@ -13,7 +10,7 @@ export function addToBench(bench: Bench, benchFn: (data: Sql) => Promise<void>) 
 
   bench.add(LIB_NAME, () => benchFn(connect), {
     beforeAll: async () => {
-      pool = createPool();
+      pool = postgres({ ...DB_CONNECT_INFO, max: 1, prepare: false });
       connect = await pool.reserve();
       await connect`select 1 as x`;
     },
@@ -26,6 +23,6 @@ export function addToBench(bench: Bench, benchFn: (data: Sql) => Promise<void>) 
 }
 export const poolInfo: PoolInfo<Sql> = {
   name: LIB_NAME,
-  createPool: ({ poolSize }) => postgres({ ...DB_CONNECT_INFO, max: poolSize, prepare: false }),
+  createPool: ({ poolSize }) => postgres({ ...DB_CONNECT_INFO, max: poolSize }),
   closePool: (pool) => pool.end(),
 };
