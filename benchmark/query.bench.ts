@@ -4,11 +4,12 @@ import * as pg from "./lib/pg.ts";
 import * as pgPromise from "./lib/pgPromise.ts";
 import * as postgres from "./lib/postgres.ts";
 import * as slonik from "./lib/slonik.ts";
+import { getSortedResult } from "./utils/bench.ts";
 
 const slonkSql = slonik.slonkSql;
 const aslaSql = aslaPg.aslaSql;
 
-const options: BenchOptions = { time: 500, iterations: 3, warmupTime: 100, warmupIterations: 10 };
+const options: BenchOptions = { time: 500, iterations: 5000, warmupTime: 0, warmupIterations: 10, warmup: false };
 function select(options: BenchOptions) {
   const bench = new Bench({ ...options, name: "select" });
 
@@ -155,14 +156,9 @@ function select_where(options: BenchOptions) {
 }
 
 async function run(bench: Bench) {
-  bench.remove(aslaPg.LIB_NAME);
-  // bench.remove(pg.LIB_NAME);
-  // bench.remove(pgPromise.LIB_NAME);
-  bench.remove(postgres.LIB_NAME);
-  bench.remove(slonik.LIB_NAME);
   await bench.run();
-  console.log(bench.name);
-  console.table(bench.table());
+  console.log(bench.name)
+  console.table(getSortedResult(bench));
 }
 await run(select(options));
 await run(select_arg(options));

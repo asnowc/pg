@@ -11,17 +11,16 @@ export function addToBench(bench: Bench, benchFn: (data: Sql) => Promise<void>) 
   let pool: Sql;
   let connect: ReservedSql;
 
-  bench.add(LIB_NAME, () => benchFn(pool), {
+  bench.add(LIB_NAME, () => benchFn(connect), {
     beforeAll: async () => {
       pool = createPool();
       connect = await pool.reserve();
+      await connect`select 1 as x`;
     },
+    async: true,
     afterAll: async () => {
-      console.log(`111`);
       connect.release();
-      await connect.end();
       await pool.end();
-      console.log(`$postgres connection closed`);
     },
   });
 }

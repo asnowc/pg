@@ -5,10 +5,11 @@ import { poolInfo as addPg } from "./lib/pg.ts";
 import { poolInfo as addPgPromise } from "./lib/pgPromise.ts";
 import { poolInfo as addPostgres } from "./lib/postgres.ts";
 import { poolInfo as addSlonik, slonkSql } from "./lib/slonik.ts";
+import { getSortedResult } from "./utils/bench.ts";
 
 const poolSize = 4; // Example pool size, adjust as needed
-const concurrency = 5000;
-const options: BenchOptions = { time: 0, iterations: 5, warmupTime: 0, warmupIterations: 0 };
+const concurrency = 10000;
+const options: BenchOptions = { time: 0, iterations: 10, warmupTime: 0, warmupIterations: 0 ,warmup:false};
 function select(options: BenchOptions) {
   const bench = new Bench({ ...options, name: "select" });
   const addBench = createPoolBench(bench, { concurrency, poolSize });
@@ -150,7 +151,7 @@ function select_where(options: BenchOptions) {
 async function run(bench: Bench) {
   await bench.run();
   console.log(bench.name);
-  console.table(bench.table());
+  console.table(getSortedResult(bench));
 }
 await run(select(options));
 await run(select_arg(options));

@@ -1,4 +1,4 @@
-import { createPool, DatabasePool, DatabasePoolConnection } from "slonik";
+import { createPool, DatabasePool, DatabasePoolConnection, sql } from "slonik";
 import { CONNECT_URL } from "../utils/db.ts";
 import { Bench } from "tinybench";
 import { PoolInfo } from "./common.ts";
@@ -15,9 +15,13 @@ export function addToBench(bench: Bench, benchFn: (data: DatabasePoolConnection)
     beforeAll: async () => {
       pool = await createPool(CONNECT_URL.toString());
       promise = Promise.withResolvers();
-      pool.connect(function (connection): Promise<void> {
-        connect = connection;
-        return promise.promise;
+      return new Promise<void>((resolve) => {
+        pool.connect(async function (connection): Promise<void> {
+          connect = connection;
+          await connect.query(sql.unsafe`select 1 as x`);
+          resolve();
+          return promise.promise;
+        });
       });
     },
     afterAll: async () => {

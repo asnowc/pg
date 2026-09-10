@@ -25,6 +25,7 @@ export function addToBench(bench: Bench, benchFn: (data: PgConnection) => Promis
   bench.add(LIB_NAME, () => benchFn(aslaPg), {
     beforeAll: async () => {
       aslaPg = await connect();
+      await aslaPg.query("select 1 as x");
     },
     afterAll: async () => {
       await aslaPg.close();

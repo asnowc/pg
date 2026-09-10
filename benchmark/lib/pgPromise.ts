@@ -18,6 +18,7 @@ export function addToBench(bench: Bench, benchFn: (data: Connection) => Promise<
     beforeAll: async () => {
       pool = await pgp({ ...DB_CONNECT_INFO, max: 1 });
       conn = await pool.connect({ direct: true });
+      await conn.query("select 1 as x");
     },
     afterAll: async () => {
       await conn.done();

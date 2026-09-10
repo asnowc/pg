@@ -14,6 +14,7 @@ export function addToBench(bench: Bench, benchFn: (data: Client) => Promise<void
   bench.add(LIB_NAME, () => benchFn(pgClient), {
     beforeAll: async () => {
       pgClient = await connect();
+      await pgClient.query("select 1 as x");
     },
     afterAll: async () => {
       await pgClient.end();
