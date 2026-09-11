@@ -1,33 +1,69 @@
 import pgPromise, { IDatabase } from "pg-promise";
 import { DB_CONNECT_INFO } from "../utils/db.ts";
-import { Bench } from "tinybench";
-import { PoolInfo } from "./common.ts";
+import { ConnectHandler, PoolInfo, PoolQueryTest, QueryTest, TestQueries } from "../utils/common.ts";
 const pgp = pgPromise();
-export async function connect() {
-  const conn = await pgp({ ...DB_CONNECT_INFO, max: 1 }).connect({ direct: true });
-  return conn;
-}
-type Pool = IDatabase<{}>;
-type Connection = Awaited<ReturnType<typeof connect>>;
+
+type Pool = IDatabase<Record<string, never>>;
+type Connection = Awaited<ReturnType<Pool["connect"]>>;
 
 export const LIB_NAME = "pg-promise";
-export function addToBench(bench: Bench, benchFn: (data: Connection) => Promise<void>) {
-  let pool: IDatabase<{}>;
-  let conn: Connection;
-  bench.add(LIB_NAME, () => benchFn(conn), {
-    beforeAll: async () => {
-      pool = await pgp({ ...DB_CONNECT_INFO, max: 1 });
-      conn = await pool.connect({ direct: true });
-      await conn.query("select 1 as x");
-    },
-    afterAll: async () => {
-      await conn.done();
-      await pool.$pool.end();
-    },
-  });
-}
+
 export const poolInfo: PoolInfo<Pool> = {
   name: LIB_NAME,
   createPool: ({ poolSize }) => pgp({ ...DB_CONNECT_INFO, max: poolSize }),
   closePool: (pool) => pool.$pool.end(),
+};
+
+const queries: TestQueries<Connection | Pool> = {
+  select: async (client) => {
+    await client.any("select 1 as x");
+  },
+  selectArg: async (client) => {
+    await client.any("select $1 as x", [1]);
+  },
+  selectArgs: async (client) => {
+    await client.any(
+      `select
+        $1::int as int,
+        $2 as string,
+        $3::timestamp with time zone as timestamp,
+        $4 as null,
+        $5::bool as boolean,
+        $6::bytea as bytea,
+        $7::jsonb as json`,
+      [
+        1337,
+        "wat",
+        new Date().toISOString(),
+        null,
+        false,
+        Buffer.from("awesome"),
+        JSON.stringify([{ some: "json" }, { array: "object" }]),
+      ],
+    );
+  },
+  selectWhere: async (client) => {
+    await client.query("select * from pg_catalog.pg_type where typname = $1", ["bool"]);
+  },
+};
+const connInfo: ConnectHandler<Connection, Pool> = {
+  name: LIB_NAME,
+  connect: async () => {
+    const pool = pgp({ ...DB_CONNECT_INFO, max: 1 });
+    return { conn: await pool.connect({ direct: true }), pool };
+  },
+  close: async (conn, pool) => {
+    conn.done();
+    await pool.$pool.end();
+  },
+};
+
+export const queryTest: QueryTest<Connection, Pool> = {
+  ...queries,
+  ...connInfo,
+};
+
+export const poolQueryTest: PoolQueryTest<Pool> = {
+  ...queries,
+  ...poolInfo,
 };
