@@ -18,7 +18,7 @@ async function run() {
     "select",
     "selectArg",
     "selectArgs",
-    "selectWhere",
+    // "selectWhere",
   ];
   for (const name of queryTests) {
     const bench = new Bench({

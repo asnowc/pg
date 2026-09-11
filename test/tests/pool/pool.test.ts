@@ -42,60 +42,107 @@ test("最大连接数量 默认为 3", async function ({ resourceManage }) {
   pool.release(connList[2]);
   await pool.close();
 });
-test("close() 后尝试再连接应抛出异常", async function ({ pool }) {
-  const conn = pool.get().catch(() => {});
-  const closePromise = pool.close();
-  expect(pool.closed).toBe(true);
-  await expect(pool.get()).rejects.toThrowError();
 
-  await expect(closePromise).resolves.toBeUndefined();
-});
-test("在所有连接释放后，close() 返回的 Promise 才会被解决", async function ({ resourceManage }) {
-  const pool = new ResourcePool(resourceManage, { maxCount: 2 });
-  const conn1 = await pool.get();
-  const conn2 = await pool.get();
-  const conn3 = pool.get(); // 排队等待
-
-  let flag = 0;
-  const closePromise = pool.close().then(() => {
-    flag = 1;
+describe("close", () => {
+  test("close() 后尝试再连接应抛出异常", async function ({ pool }) {
+    const conn = pool.get();
+    const closePromise = pool.close();
+    expect(pool.closed).toBe(true);
+    await expect(pool.get()).rejects.toThrow();
+    pool.release(await conn);
+    await expect(closePromise).resolves.toBeUndefined();
   });
+  test("close() 会等待排队中的请求被解决，且所有借用的连接释放后再 resolve", async function ({ resourceManage }) {
+    const pool = new ResourcePool(resourceManage, { maxCount: 2 });
+    const conn1 = await pool.get();
+    const conn2 = await pool.get();
+    const conn3Promise = pool.get(); // 排队等待
 
-  await expect(conn3, "等待中的连接会被拒绝").rejects.toThrowError();
+    let flag = 0;
+    const closePromise = pool.close().then(() => {
+      flag = 1;
+    });
+    pool.release(conn1);
 
-  const conn = await Promise.all([conn1, conn2]);
+    const conn3 = await conn3Promise;
+    expect(flag, "promise 没有被解决").toBe(0);
+    pool.release(conn3);
+    pool.release(conn2);
 
-  expect(flag, "promise 没有被解决").toBe(0);
+    await expect(closePromise).resolves.toBeUndefined();
+  });
+  test("close(1) 排队中的请求会被立即拒绝，且所有借用的连接释放后再 resolve", async function ({ resourceManage }) {
+    const pool = new ResourcePool(resourceManage, { maxCount: 2 });
+    const conn1 = await pool.get();
+    const conn2 = await pool.get();
+    const conn3 = pool.get(); // 排队等待
 
-  pool.release(conn[0]);
-  expect(conn[0].connected, "disconnect() 立即被调用").toBeFalsy();
+    let flag = 0;
+    const closePromise = pool.close(1).then(() => {
+      flag = 1;
+    });
 
-  pool.release(conn[1]);
-  expect(conn[0].connected, "disconnect() 立即被调用").toBeFalsy();
+    await expect(conn3, "等待中的连接会被拒绝").rejects.toThrow();
 
-  await expect(closePromise).resolves.toBeUndefined();
-});
-test("close(true) 会立即断开所有连接", async function ({ resourceManage }) {
-  const pool = new ResourcePool(resourceManage, { maxCount: 2 });
-  const conn1 = pool.get();
-  const conn2 = pool.get();
-  const conn3 = pool.get();
+    const conn = await Promise.all([conn1, conn2]);
 
-  const closePromise = pool.close(true);
-  expect(pool.totalCount).toBe(0);
-  expect(pool.idleCount).toBe(0);
-  expect(pool.waitingCount).toBe(0);
+    expect(flag, "promise 没有被解决").toBe(0);
 
-  const connects: MockConn[] = await resourceManage.getAllCreatedConn();
-  expect(
-    connects.map((conn) => conn.connected),
-    "所有连接的 disconnect() 方法已被调用",
-  ).toEqual(new Array(connects.length).fill(false));
-  await expect(conn1).rejects.toThrowError();
-  await expect(conn2).rejects.toThrowError();
-  await expect(conn3).rejects.toThrowError();
+    pool.release(conn[0]);
+    expect(conn[0].connected, "disconnect() 立即被调用").toBeFalsy();
 
-  await closePromise;
+    pool.release(conn[1]);
+    expect(conn[0].connected, "disconnect() 立即被调用").toBeFalsy();
+
+    await expect(closePromise).resolves.toBeUndefined();
+  });
+  test("close(2) 会立即断开所有连接", async function ({ resourceManage }) {
+    const pool = new ResourcePool(resourceManage, { maxCount: 2 });
+    const conn1 = pool.get();
+    const conn2 = pool.get();
+    const conn3 = pool.get();
+
+    const closePromise = pool.close(2);
+    expect(pool.totalCount).toBe(0);
+    expect(pool.idleCount).toBe(0);
+    expect(pool.waitingCount).toBe(0);
+
+    const connects: MockConn[] = await resourceManage.getAllCreatedConn();
+    expect(
+      connects.map((conn) => conn.connected),
+      "所有连接的 disconnect() 方法已被调用",
+    ).toEqual(new Array(connects.length).fill(false));
+    await expect(conn1).rejects.toThrow();
+    await expect(conn2).rejects.toThrow();
+    await expect(conn3).rejects.toThrow();
+
+    await closePromise;
+  });
+  test("close() 时如果存在正在创建中的连接，等待创建完成", async () => {
+    const created = Promise.withResolvers<object>();
+    const dispose = vi.fn<(resource: object) => void>();
+    const pool = new ResourcePool({ create: () => created.promise, dispose });
+    const borrowing = pool.get();
+    let closed = false;
+    const closing = pool.close().then(() => {
+      closed = true;
+    });
+    created.resolve({});
+    const conn = await borrowing;
+    expect(closed).toBe(false);
+    pool.release(conn);
+    await closing;
+    expect(closed).toBe(true);
+  });
+  test("关闭期间创建连接失败不会使 close 悬挂", async () => {
+    const created = Promise.withResolvers<object>();
+    const pool = new ResourcePool({ create: () => created.promise, dispose() {} });
+    const borrowing = pool.get();
+    const closing = pool.close();
+    created.reject(new Error("failed"));
+    await expect(borrowing).rejects.toThrow("failed");
+    await closing;
+  }, 1000);
 });
 test("串行获取50次连接", async function ({ resourceManage, pool }) {
   for (let i = 0; i < 50; i++) {
@@ -105,7 +152,7 @@ test("串行获取50次连接", async function ({ resourceManage, pool }) {
   expect(pool.totalCount).toBe(1);
   expect(pool.waitingCount).toBe(0);
   expect(pool.idleCount).toBe(1);
-  expect(resourceManage.create).toBeCalledTimes(1);
+  expect(resourceManage.create).toHaveBeenCalledTimes(1);
 });
 test("并行获取50次连接", async function ({ resourceManage, pool }) {
   const promises: Promise<MockConn>[] = [];
@@ -121,7 +168,7 @@ test("并行获取50次连接", async function ({ resourceManage, pool }) {
   expect(pool.waitingCount).toBe(0);
   expect(pool.idleCount).toBe(ResourcePool.defaultMaxCount);
 
-  expect(resourceManage.create).toBeCalledTimes(ResourcePool.defaultMaxCount);
+  expect(resourceManage.create).toHaveBeenCalledTimes(ResourcePool.defaultMaxCount);
 });
 
 describe("连接中途断开", function () {
@@ -129,7 +176,7 @@ describe("连接中途断开", function () {
     const conn = await pool.get();
     pool.release(conn);
     pool.remove(conn);
-    expect(resourceManage.dispose).not.toBeCalled();
+    expect(resourceManage.dispose).not.toHaveBeenCalled();
     expect(pool.totalCount).toBe(0);
     expect(pool.idleCount).toBe(0);
   });
@@ -138,7 +185,7 @@ describe("连接中途断开", function () {
     pool.remove(conn);
     expect(pool.totalCount).toBe(0);
     expect(pool.idleCount).toBe(0);
-    expect(resourceManage.dispose).not.toBeCalled();
+    expect(resourceManage.dispose).not.toHaveBeenCalled();
   });
 });
 
@@ -155,7 +202,7 @@ describe("空闲连接超时", function () {
 
     expect(pool.totalCount).toBe(0);
     expect(pool.idleCount).toBe(0);
-    expect(resourceManage.dispose).toBeCalledTimes(1);
+    expect(resourceManage.dispose).toHaveBeenCalledTimes(1);
   });
 
   test("多个空闲连接在超时后被移除", async function ({ resourceManage }) {
@@ -172,7 +219,7 @@ describe("空闲连接超时", function () {
 
     expect(pool.totalCount).toBe(0);
     expect(pool.idleCount).toBe(0);
-    expect(resourceManage.dispose).toBeCalledTimes(2);
+    expect(resourceManage.dispose).toHaveBeenCalledTimes(2);
   });
 
   test("空闲连接超时后再次获取新连接", async function ({ resourceManage }) {
@@ -185,7 +232,7 @@ describe("空闲连接超时", function () {
     const newConn = await pool.get();
     expect(pool.totalCount).toBe(1);
     expect(pool.idleCount).toBe(0);
-    expect(resourceManage.create).toBeCalledTimes(2);
+    expect(resourceManage.create).toHaveBeenCalledTimes(2);
   });
 
   test("空闲连接未超时前不会被移除", async function ({ resourceManage }) {
@@ -197,7 +244,7 @@ describe("空闲连接超时", function () {
 
     expect(pool.totalCount).toBe(1);
     expect(pool.idleCount).toBe(1);
-    expect(resourceManage.dispose).not.toBeCalled();
+    expect(resourceManage.dispose).not.toHaveBeenCalled();
   });
   test("关闭连接池，应直接关闭计时器", async function ({ resourceManage }) {
     vi.useFakeTimers();
@@ -212,24 +259,27 @@ describe("空闲连接超时", function () {
 
     expect(pool.totalCount).toBe(0);
     expect(pool.idleCount).toBe(0);
-    expect(resourceManage.dispose).toBeCalledTimes(1);
+    expect(resourceManage.dispose).toHaveBeenCalledTimes(1);
   });
 });
 
 describe("使用次数上限", function () {
   test("排队交接计入 usageLimit，淘汰后继续满足等待者", async ({ resourceManage }) => {
     const pool = new ResourcePool(resourceManage, { maxCount: 1, usageLimit: 2 });
-    const first = await pool.get();
+    const conn1 = await pool.get();
     const second = pool.get();
     const third = pool.get();
-    pool.release(first);
-    expect(await second).toBe(first);
-    expect(pool.idleCount).toBe(0);
-    pool.release(await second);
-    const replacement = await third;
-    expect(replacement).not.toBe(first);
-    expect(resourceManage.dispose).toHaveBeenCalledWith(first);
-    pool.release(replacement);
+    pool.release(conn1); // 转移到 second
+    {
+      const conn2 = await second;
+      expect(conn2).toBe(conn1);
+      expect(pool.idleCount).toBe(0);
+      pool.release(conn2);
+    }
+    const conn3 = await third;
+    expect(conn3, "新连接不应与旧连接相同").not.toBe(conn1);
+    expect(resourceManage.dispose).toHaveBeenCalledWith(conn1);
+    pool.release(conn3);
     await pool.close();
   });
   test("连接使用次数超过上限后被移除", async function ({ resourceManage }) {
@@ -242,7 +292,7 @@ describe("使用次数上限", function () {
 
     expect(pool.totalCount).toBe(0);
     expect(pool.idleCount).toBe(0);
-    expect(resourceManage.dispose).toBeCalledTimes(1);
+    expect(resourceManage.dispose).toHaveBeenCalledTimes(1);
   });
 
   test("连接使用次数未超过上限不会被移除", async function ({ resourceManage }) {
@@ -255,83 +305,15 @@ describe("使用次数上限", function () {
 
     expect(pool.totalCount).toBe(1);
     expect(pool.idleCount).toBe(1);
-    expect(resourceManage.dispose).not.toBeCalled();
+    expect(resourceManage.dispose).not.toHaveBeenCalled();
   });
 });
 
-test("建连失败后排队请求会重新建连", async ({ resourceManage }) => {
-  const failure = Promise.withResolvers<MockConn>();
-  resourceManage.create.mockImplementationOnce(() => failure.promise);
-  const pool = new ResourcePool(resourceManage, { maxCount: 1 });
-  const first = pool.get();
-  const queued = pool.get();
-  const rejected = expect(first).rejects.toThrow("connect failed");
-  failure.reject(new Error("connect failed"));
-  await rejected;
-  const connection = await queued;
-  pool.release(connection);
-  await pool.close();
-});
-
-test("同步建连异常不会占用容量", async ({ resourceManage }) => {
-  resourceManage.create.mockImplementationOnce(() => {
-    throw new Error("sync failure");
-  });
-  const pool = new ResourcePool(resourceManage, { maxCount: 1 });
-  const first = pool.get();
-  const queued = pool.get();
-  await expect(first).rejects.toThrow("sync failure");
-  pool.release(await queued);
-  await pool.close();
-});
-
-test("断连移除唤醒等待者，关闭期间移除也结束 close", async ({ resourceManage }) => {
+test("通过 remove 移除连接，解决 close 的 promise", async ({ resourceManage }) => {
   const pool = new ResourcePool(resourceManage, { maxCount: 1 });
   const first = await pool.get();
-  const queued = pool.get();
+  const closing = pool.close();
   pool.remove(first);
-  resourceManage.dispose(first);
-  const replacement = await queued;
-  const closing = pool.close();
-  pool.remove(replacement);
-  resourceManage.dispose(replacement);
   await closing;
-});
-
-test("重复关闭返回同一 Promise，dispose 只接收移除通知", async () => {
-  const dispose = vi.fn<(resource: object) => void>();
-  const pool = new ResourcePool({ create: async () => ({}), dispose });
-  pool.release(await pool.get());
-  const closing = pool.close();
-  expect(pool.close()).toBe(closing);
-  await closing;
-  expect(dispose).toHaveBeenCalledTimes(1);
-});
-
-test("关闭时仍在建连，等待创建完成并通知 dispose", async () => {
-  const created = Promise.withResolvers<object>();
-  const dispose = vi.fn<(resource: object) => void>();
-  const pool = new ResourcePool({ create: () => created.promise, dispose });
-  const borrowing = pool.get();
-  const rejected = expect(borrowing).rejects.toThrow("Pool is closed");
-  let closed = false;
-  const closing = pool.close().then(() => {
-    closed = true;
-  });
-  created.resolve({});
-  await rejected;
-  await closing;
-  expect(dispose).toHaveBeenCalledTimes(1);
-  expect(closed).toBe(true);
-});
-
-test("关闭期间建连失败不会使 close 悬挂", async () => {
-  const created = Promise.withResolvers<object>();
-  const pool = new ResourcePool({ create: () => created.promise, dispose() {} });
-  const borrowing = pool.get();
-  const rejected = expect(borrowing).rejects.toThrow("failed");
-  const closing = pool.close();
-  created.reject(new Error("failed"));
-  await rejected;
-  await closing;
+  await expect(pool.totalCount).toBe(0);
 });

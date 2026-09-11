@@ -1,12 +1,14 @@
 import { ResourceManager, ResourcePool } from "@/lib/pool.ts";
 import { expect, test as viTest, vi } from "vitest";
 export class MockConn {
+  constructor(readonly id: number) {}
   idle = false;
   connected = true;
 }
 export class MockResourceManage implements ResourceManager<MockConn> {
+  private static nextId = 1;
   create = vi.fn<() => Promise<MockConn>>(async function () {
-    return new MockConn();
+    return new MockConn(MockResourceManage.nextId++);
   });
   dispose = vi.fn<(conn: MockConn) => void>(function (conn) {
     if (conn.connected === false) throw new Error("connected 已经是 false");
