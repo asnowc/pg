@@ -1,11 +1,10 @@
 import type { PgDataDecodeContext, PgDataDecoderMap } from "./data_decoder.ts";
 import type { FieldInfo } from "./MessageData.ts";
 
-type SqlStatementTextData = string | ArrayLike<string> | Iterable<string>;
 type SqlStatementBinaryData = Uint8Array | ArrayLike<Uint8Array> | Iterable<Uint8Array>;
 
 /** @public */
-export type SqlStatementData = SqlStatementBinaryData | SqlStatementTextData;
+export type SqlStatementData = SqlStatementBinaryData | string;
 
 /** @public */
 export type QueryDecoder<T> = {
