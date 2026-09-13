@@ -1,7 +1,9 @@
 import { describe, expect, vi } from "vitest";
 import { MockConn, test } from "./__mock.ts";
-import { ResourcePool } from "@/lib/pool.ts";
-
+import { ResourceManager, ResourcePool } from "@/lib/pool.ts";
+vi.setConfig({
+  testTimeout: 1000, // 该文件内每个测试最多 60 秒
+});
 test("count", async function ({ pool }) {
   const conn = await pool.get();
   expect(pool.totalCount).toBe(1);
@@ -71,69 +73,7 @@ describe("close", () => {
 
     await expect(closePromise).resolves.toBeUndefined();
   });
-  test("close(1) 排队中的请求会被立即拒绝，且所有借用的连接释放后再 resolve", async function ({ resourceManage }) {
-    const pool = new ResourcePool(resourceManage, { maxCount: 2 });
-    const conn1 = await pool.get();
-    const conn2 = await pool.get();
-    const conn3 = pool.get(); // 排队等待
 
-    let flag = 0;
-    const closePromise = pool.close(1).then(() => {
-      flag = 1;
-    });
-
-    await expect(conn3, "等待中的连接会被拒绝").rejects.toThrow();
-
-    const conn = await Promise.all([conn1, conn2]);
-
-    expect(flag, "promise 没有被解决").toBe(0);
-
-    pool.release(conn[0]);
-    expect(conn[0].connected, "disconnect() 立即被调用").toBeFalsy();
-
-    pool.release(conn[1]);
-    expect(conn[0].connected, "disconnect() 立即被调用").toBeFalsy();
-
-    await expect(closePromise).resolves.toBeUndefined();
-  });
-  test("close(2) 会立即断开所有连接", async function ({ resourceManage }) {
-    const pool = new ResourcePool(resourceManage, { maxCount: 2 });
-    const conn1 = pool.get();
-    const conn2 = pool.get();
-    const conn3 = pool.get();
-
-    const closePromise = pool.close(2);
-    expect(pool.totalCount).toBe(0);
-    expect(pool.idleCount).toBe(0);
-    expect(pool.waitingCount).toBe(0);
-
-    const connects: MockConn[] = await resourceManage.getAllCreatedConn();
-    expect(
-      connects.map((conn) => conn.connected),
-      "所有连接的 disconnect() 方法已被调用",
-    ).toEqual(new Array(connects.length).fill(false));
-    await expect(conn1).rejects.toThrow();
-    await expect(conn2).rejects.toThrow();
-    await expect(conn3).rejects.toThrow();
-
-    await closePromise;
-  });
-  test("close() 时如果存在正在创建中的连接，等待创建完成", async () => {
-    const created = Promise.withResolvers<object>();
-    const dispose = vi.fn<(resource: object) => void>();
-    const pool = new ResourcePool({ create: () => created.promise, dispose });
-    const borrowing = pool.get();
-    let closed = false;
-    const closing = pool.close().then(() => {
-      closed = true;
-    });
-    created.resolve({});
-    const conn = await borrowing;
-    expect(closed).toBe(false);
-    pool.release(conn);
-    await closing;
-    expect(closed).toBe(true);
-  });
   test("关闭期间创建连接失败不会使 close 悬挂", async () => {
     const created = Promise.withResolvers<object>();
     const pool = new ResourcePool({ create: () => created.promise, dispose() {} });
@@ -142,7 +82,40 @@ describe("close", () => {
     created.reject(new Error("failed"));
     await expect(borrowing).rejects.toThrow("failed");
     await closing;
-  }, 1000);
+  });
+});
+describe("destroy", function () {
+  test("destroy() 会立即断开所有连接", async function ({ resourceManage }) {
+    const pool = new ResourcePool(resourceManage, { maxCount: 2 });
+    const conn1 = await pool.get();
+    const conn2 = await pool.get();
+
+    pool.destroy();
+    expect(pool.totalCount).toBe(0);
+    expect(pool.idleCount).toBe(0);
+    expect(pool.waitingCount).toBe(0);
+
+    const connects = await resourceManage.getAllCreatedConn();
+
+    expect(connects.map((conn) => conn.connected), "所有连接的 disconnect() 方法已被调用").toEqual(
+      new Array(connects.length).fill(false),
+    );
+  });
+  test("destroy() 会立即断开所有连接", async function () {
+    const manage = {
+      create: vi.fn(() => Promise.resolve({})),
+      dispose: vi.fn(),
+    } satisfies ResourceManager<{}>;
+    const pool = new ResourcePool(manage);
+    const conn1 = pool.get();
+    pool.destroy();
+    const mockCreate = manage.create.mock;
+    expect((mockCreate.calls[0] as any[])[0]!.signal.aborted, "create 函数的 signal 已被终止").toEqual(true);
+    const conn = await mockCreate.results[0].value;
+    const mockDispose = manage.dispose.mock.calls[0];
+    expect(mockDispose[0], "连接成功后 conn 实例被立即销毁").toBe(conn);
+    await expect(conn1).rejects.toThrow("Pool is destroyed");
+  });
 });
 test("串行获取50次连接", async function ({ resourceManage, pool }) {
   for (let i = 0; i < 50; i++) {

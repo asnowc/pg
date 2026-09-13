@@ -119,8 +119,12 @@ export class PgDbQueryPool extends DbQueryPool implements AsyncDisposable {
     );
     return new PgCursor(cursor, poolConn, option?.defaultSize);
   }
-  close(force?: boolean): Promise<void> {
-    return this.#pool.close(force);
+  async close(force?: boolean): Promise<void> {
+    if (force) {
+      return this.#pool.close();
+    } else {
+      this.#pool.destroy();
+    }
   }
   /** 打开连接 */
   open(): void {

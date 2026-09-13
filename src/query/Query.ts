@@ -20,8 +20,16 @@ export type CopyFromOptions = QueryCommonOptions;
 /** @public */
 export type CopyToOptions = QueryCommonOptions;
 
-/** @public */
-export interface SingleQuery {
+/**
+ * 表示可以包含单条 SQL 语句的查询对象
+ */
+type SqlStatement<T> = TypedSqlStatementTemplate<T> | TypedSqlStatement<T> | SqlStatementData;
+/**
+ * 表示可以包含多条 SQL 语句的查询对象
+ */
+type SqlStatements = TypedSqlStatement<unknown> | SqlStatementData;
+
+interface SingleQuery {
   /**
    * @param queryable 只能是单条 SQL 语句，Uint8Array[] 表示单条 SQL 语句的分片
    * @example
@@ -62,15 +70,6 @@ export interface Query extends SingleQuery {
   copyFrom(queryable: SqlStatement<unknown>, options?: CopyFromOptions): CopyFromHandle;
   copyTo(queryable: SqlStatement<unknown>, options?: CopyToOptions): ReadableStream<Uint8Array>;
 }
-
-/**
- * 表示可以包含单条 SQL 语句的查询对象
- */
-type SqlStatement<T> = TypedSqlStatementTemplate<T> | TypedSqlStatement<T> | SqlStatementData;
-/**
- * 表示可以包含多条 SQL 语句的查询对象
- */
-type SqlStatements = TypedSqlStatement<unknown> | SqlStatementData;
 
 /** @public */
 export interface CopyFromHandle {

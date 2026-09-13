@@ -14,3 +14,26 @@ export interface PgConnection extends Query, AsyncDisposable {
 
   [Symbol.asyncDispose](): Promise<void>;
 }
+/** @public */
+export interface PgPool extends Query, AsyncDisposable {
+  /** 借用连接；必须 release() 或使用 using / await using 释放。 */
+  connect(): Promise<PgPoolConnection>;
+
+  /** 空闲连接数 */
+  get idleCount(): number;
+  /** 总连接数 */
+  get totalCount(): number;
+
+  /** 关闭连接池。关闭后不再接受新的连接请求。Promise 在所有连接关闭后完成。 */
+  close(): Promise<void>;
+  /** 拒绝新的借用，等待已借出的资源归还及物理连接关闭。 */
+  [Symbol.asyncDispose](): Promise<void>;
+}
+
+/** @public */
+export interface PgPoolConnection extends Query, Disposable {
+  get released(): boolean;
+  /** 幂等释放。现有操作结束后才实际归还连接；此后不再接受新操作。 */
+  release(): void;
+  [Symbol.dispose](): void;
+}
