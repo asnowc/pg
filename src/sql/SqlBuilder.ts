@@ -1,4 +1,4 @@
-import type { TypedSqlStatement, TypedSqlStatementTemplate } from "../query/QueryStatement.ts";
+import type { StatementParameters, TypedSqlStatement, TypedSqlStatementTemplate } from "../query/QueryStatement.ts";
 import { PgOid } from "../util/pg_oid.ts";
 
 /** @public */
@@ -113,62 +113,84 @@ export function getJsDataEncoder(map: JsDataEncoderMap, data: unknown): JsDataEn
   return map.get(typeof data);
 }
 
+class Parameters implements StatementParameters {
+  constructor(private values: unknown[], private encoderMap: JsDataEncoderMap) {}
+
+  get length(): number {
+    return this.values.length;
+  }
+  #getEncoder(index: number): JsDataEncoder {
+    const value = this.values[index];
+    const dataEncoder = getJsDataEncoder(this.encoderMap, value);
+    if (!dataEncoder) {
+      const type = typeof value;
+      const name = type === "object" && value ? (value as {}).constructor.name : type;
+      throw new TypeError(`No JS data encoder for ${name}`);
+    }
+    return dataEncoder;
+  }
+  at(index: number): Uint8Array | null {
+    const value = this.values[index];
+    if (value === null) return null;
+    const dataEncoder = this.#getEncoder(index);
+    const oid = dataEncoder.getOid(value);
+    return dataEncoder.binary(value, oid);
+  }
+  encodeString(index: number): string {
+    const value = this.values[index];
+    if (value === null) return "NULL";
+    const dataEncoder = this.#getEncoder(index);
+    const oid = dataEncoder.getOid(value);
+    return dataEncoder.text(value, oid);
+  }
+  getOID(index: number): number {
+    const value = this.values[index];
+    if (value === null) return 0;
+    return this.#getEncoder(index).getOid(value);
+  }
+}
 /** @public */
 export class SqlStatementTemplate<T = unknown> implements TypedSqlStatementTemplate<T>, TypedSqlStatement<T> {
-  constructor(private chunks: TemplateStringsArray, values: unknown[], encoderMap: JsDataEncoderMap) {
-    const sql: string[] = [chunks[0]];
-    const args: (Uint8Array | null)[] = [];
-    const oids: number[] = [];
-    for (let index = 0; index < values.length; index++) {
-      const value = values[index];
-      if (value instanceof String) {
-        sql.push(String(value), chunks[index + 1]);
-        continue;
-      }
-      if (value === null) {
-        args.push(null);
-        // NULL 的类型由 PostgreSQL 根据 SQL 上下文推断，保留 OID 位置。
-        oids.push(0);
-      } else {
-        const dataEncoder = getJsDataEncoder(encoderMap, value);
-        if (!dataEncoder) {
-          const type = typeof value;
-          const name = type === "object" ? (value as {}).constructor.name : type;
-          throw new TypeError(`No PostgreSQL encoder for ${name}`);
-        }
-        const oid = dataEncoder.getOid(value);
-        args.push(dataEncoder.binary(value, oid));
-        oids.push(oid);
-      }
-      sql.push(`$${args.length}`, chunks[index + 1]);
-    }
-    this.#sql = sql;
-    this.args = args;
-    this.argsOid = oids;
+  constructor(chunks: TemplateStringsArray, values: unknown[], encoderMap: JsDataEncoderMap) {
+    this.#chunks = chunks;
+    this.#values = values;
+    this.args = new Parameters(values, encoderMap);
   }
-  #sql: string[];
+  #values: unknown[];
+  #chunks: TemplateStringsArray;
   get sqlTemplate(): ReadonlyArray<string> {
-    return this.#sql;
+    return this.#chunks;
   }
   get sqlStatement(): ReadonlyArray<string> {
-    return this.#sql;
+    return this.#chunks;
   }
   readonly argsFormat = 1 as const;
-  readonly argsOid: ReadonlyArray<number>;
-  readonly args: ReadonlyArray<Uint8Array | null>;
+  readonly args: Parameters;
 
-  /**
-   * @example
-   *  const statement = sql`SELECT * FROM t1 WHERE id = ${"1"}`.setDecoder<{ id: number }>(decoder);
-   */
-  setDecoder<U>(): SqlStatementTemplate<U> {
-    return this as unknown as SqlStatementTemplate<U>;
-  }
   toTemplate(): string {
-    return this.#sql.join("");
+    const chunks = this.#chunks;
+    const args = this.#values;
+    let template = chunks[0];
+    let argOffset = 1;
+    for (let i = 1; i < chunks.length; i++) {
+      if (args[i] instanceof String) {
+        template += args[i];
+      } else {
+        template += `$${argOffset++}`;
+      }
+      template += chunks[i];
+    }
+    return template;
   }
   toString(): string {
-    return this.toTemplate();
+    const chunks = this.#chunks;
+    let template = chunks[0];
+    const encoder = this.args;
+    for (let i = 1; i < chunks.length; i++) {
+      template += encoder.encodeString(i - 1);
+      template += chunks[i];
+    }
+    return template;
   }
 }
 /** @public */
@@ -187,7 +209,7 @@ export interface SqlStatementTemplate<T = unknown> {
  * @public
  */
 export interface SqlGenerator extends SqlGeneratorPrototype {
-  (chunks: TemplateStringsArray, ...args: unknown[]): SqlStatementTemplate;
+  <T = unknown>(chunks: TemplateStringsArray, ...args: unknown[]): SqlStatementTemplate<T>;
   raw(value: string): String;
 }
 interface SqlGeneratorPrototype {
@@ -212,7 +234,7 @@ interface SqlGeneratorPrototype {
  * @public
  */
 export function createSqlBuilder(chunksOrMap: JsDataEncoderMap): SqlGenerator {
-  function sqlBuilder(chunks: TemplateStringsArray, ...args: unknown[]): SqlStatementTemplate {
+  function sqlBuilder<T = unknown>(chunks: TemplateStringsArray, ...args: unknown[]): SqlStatementTemplate<T> {
     return new SqlStatementTemplate(chunks, args, chunksOrMap as JsDataEncoderMap);
   }
   sqlBuilder.raw = sqlGeneratorPrototype.raw;

@@ -1,8 +1,6 @@
 import type { PgDataDecodeContext, PgDataDecoderMap } from "./data_decoder.ts";
 import type { FieldInfo } from "./MessageData.ts";
 
-type ListWithLength<T> = ArrayLike<T> | (Iterable<T> & { length: number });
-
 type SqlStatementTextData = string | ArrayLike<string> | Iterable<string>;
 type SqlStatementBinaryData = Uint8Array | ArrayLike<Uint8Array> | Iterable<Uint8Array>;
 
@@ -22,16 +20,26 @@ export type QueryDecoder<T> = {
 
 /** @public */
 export type TypedSqlStatementTemplate<T = unknown> = QueryDecoder<T> & {
-  /** 单条 SQL 语句片段 */
+  /** 单条 SQL 语句片段。 */
   readonly sqlTemplate: SqlStatementData;
 
-  /** 0 为文本格式，1 为二进制格式 */
-  readonly argsFormat: 0 | 1 | ListWithLength<0 | 1>;
-  readonly argsOid?: ListWithLength<number>;
-  /** null 表示 SQL NULL，不进行文本或二进制编码。 */
-  readonly args: ListWithLength<Uint8Array | string | null>;
+  /**
+   * 0 为文本格式，1 为二进制格式。默认为 0。
+   */
+  readonly argsFormat?: 0 | 1;
+  /**
+   * null 表示 SQL NULL，不进行文本或二进制编码。
+   * 参数数量不能超过 65535.
+   */
+  readonly args: StatementParameters;
 };
 
+/** @public */
+export type StatementParameters = {
+  readonly length: number;
+  at(index: number): Uint8Array | null;
+  getOID?(index: number): number;
+};
 /** @public */
 export type TypedSqlStatement<T = unknown> = QueryDecoder<T> & {
   /** 单条 SQL 语句片段 */

@@ -1,4 +1,7 @@
+import type { PgMessageReader } from "@/protocol.ts";
 import type { FieldInfo, QueryCompletion } from "./MessageData.ts";
+import { encodeParseMsg } from "@/protocol/pg_message.ts";
+import { TypedSqlStatementTemplate } from "@/query/QueryStatement.ts";
 
 /**
  * `QueryReader.getRows()`、`QueryReader.getFirstRow()`、`QueryReader.getMap()`、方法在一次查询后只能调用一次，重复调用将抛出异常
@@ -10,9 +13,24 @@ import type { FieldInfo, QueryCompletion } from "./MessageData.ts";
  *  }
  * @public
  */
-export interface QueryReader<T = unknown> extends AsyncIterable<T> {
+export class QueryReader<T = unknown> implements AsyncIterable<T> {
+  constructor(reader: PgMessageReader, statement: TypedSqlStatementTemplate) {
+    this.#reader = { reader, statement };
+  }
+  #reader?: { reader: PgMessageReader; statement: TypedSqlStatementTemplate };
+  #query() {
+    const reader = this.#reader;
+    if (!reader) throw new Error("QueryReader is not initialized");
+    this.#reader = undefined;
+    return reader;
+  }
+  #parser() {
+    const { reader, statement } = this.#query();
+    encodeParseMsg({ statement: "", parameterTypeOids: 1, sql: statement.sqlTemplate });
+  }
   /** 受影响的行数 */
-  getRowCount(): Promise<number>;
+  async getRowCount(): Promise<number> {
+  }
   getCompletion(): Promise<Readonly<QueryCompletion>>;
   getFields(): Promise<readonly Readonly<FieldInfo>[]>;
   /**
