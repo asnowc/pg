@@ -1,10 +1,19 @@
 import type { PgDataDecodeContext, PgDataDecoderMap } from "./data_decoder.ts";
 import type { FieldInfo } from "./MessageData.ts";
 
-type SqlStatementBinaryData = Uint8Array | ArrayLike<Uint8Array> | Iterable<Uint8Array>;
-
 /** @public */
-export type SqlStatementData = SqlStatementBinaryData | string;
+export interface StatementEncoder {
+  calculateParseByteLength(): number;
+  encodeParseInto(data: Uint8Array, offset: number): number;
+
+  calculateBindByteLength(): number;
+  encodeBindInto(data: Uint8Array, offset: number): number;
+}
+/** @public */
+export interface SimpleQueryEncoder {
+  calculateByteLength(): number;
+  encodeQueryInto(data: Uint8Array, offset: number): number;
+}
 
 /** @public */
 export type QueryDecoder<T> = {
@@ -18,32 +27,29 @@ export type QueryDecoder<T> = {
 };
 
 /** @public */
-export type TypedSqlStatementTemplate<T = unknown> = QueryDecoder<T> & {
-  /** 单条 SQL 语句片段。 */
-  readonly sqlTemplate: SqlStatementData;
+export type TypedSqlStatementEncoder<T = unknown> = QueryDecoder<T> & StatementEncoder;
 
-  /**
-   * 0 为文本格式，1 为二进制格式。默认为 0。
-   */
-  readonly argsFormat?: 0 | 1;
+/** @public */
+export type TypedSqlStatement<T = unknown> = QueryDecoder<T> & {
+  /** 单条 SQL 语句片段 */
+  readonly sqlStatement: string;
   /**
    * null 表示 SQL NULL，不进行文本或二进制编码。
    * 参数数量不能超过 65535.
    */
-  readonly args: StatementParameters;
+  readonly args?: (string | null)[];
 };
 
-/** @public */
-export type StatementParameters = {
-  readonly length: number;
-  at(index: number): Uint8Array | null;
-  getOID?(index: number): number;
-};
-/** @public */
-export type TypedSqlStatement<T = unknown> = QueryDecoder<T> & {
-  /** 单条 SQL 语句片段 */
-  readonly sqlStatement: SqlStatementData;
-};
+/**
+ * 表示可以包含单条 SQL 语句的查询对象
+ * @public
+ */
+export type SqlStatement<T> = TypedSqlStatementEncoder<T> | TypedSqlStatement<T> | string;
+/**
+ * 表示可以包含多条 SQL 语句的查询对象
+ * @public
+ */
+export type SqlStatements = SimpleQueryEncoder | SqlStatement<unknown> | Iterable<SqlStatement<unknown>>;
 
 /** @public */
 export type ColumnDecoderGetter = (field: FieldInfo) => ColumnDecoder;

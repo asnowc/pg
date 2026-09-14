@@ -31,8 +31,8 @@ export class PgMessageReader {
     }
     return new this.MessageReader(this, header[0]);
   }
-  async write(buffer: Uint8Array): Promise<void> {
-    await this.#stream.write(buffer);
+  write(buffer: Uint8Array): Promise<void> {
+    return this.#stream.write(buffer);
   }
   async close(): Promise<void> {
     if (this.#lock) throw new Error("Cannot close while a read is in progress");

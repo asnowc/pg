@@ -1,7 +1,7 @@
 import type { PgMessageReader } from "@/protocol.ts";
 import type { FieldInfo, QueryCompletion } from "./MessageData.ts";
+import type { StatementEncoder } from "./QueryStatement.ts";
 import { encodeParseMessage } from "@/protocol/pg_message.ts";
-import { TypedSqlStatementTemplate } from "@/query/QueryStatement.ts";
 
 /**
  * `QueryReader.getRows()`、`QueryReader.getFirstRow()`、`QueryReader.getMap()`、方法在一次查询后只能调用一次，重复调用将抛出异常
@@ -14,10 +14,10 @@ import { TypedSqlStatementTemplate } from "@/query/QueryStatement.ts";
  * @public
  */
 export class QueryReader<T = unknown> implements AsyncIterable<T> {
-  constructor(reader: PgMessageReader, statement: TypedSqlStatementTemplate) {
+  constructor(reader: PgMessageReader, statement: StatementEncoder) {
     this.#reader = { reader, statement };
   }
-  #reader?: { reader: PgMessageReader; statement: TypedSqlStatementTemplate };
+  #reader?: { reader: PgMessageReader; statement: StatementEncoder };
   #query() {
     const reader = this.#reader;
     if (!reader) throw new Error("QueryReader is not initialized");

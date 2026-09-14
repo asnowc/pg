@@ -29,9 +29,6 @@ function createFrameHeader(code: FRONTEND_MSG_CODE, bodyLength: number): Uint8Ar
   return output;
 }
 
-/**
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-PASSWORDMESSAGE
- */
 function encodePasswordMsg(
   message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_CODE.password }>,
 ): Uint8Array[] {
@@ -51,88 +48,44 @@ function encodePasswordMsg(
   return [createFrameHeader(message.type, message.data.byteLength), message.data];
 }
 
-/**
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-QUERY
- */
 function encodeQueryMsg(message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_CODE.query }>): Uint8Array[] {
   const sql = encodeCString(message.sql);
   return [createFrameHeader(message.type, sql.byteLength + 1), sql, CSTRING_TERMINATOR];
 }
 
-/**
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-PARSE
- */
-export function encodeParseMsg(message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_CODE.parse }>): Uint8Array[] {
-  const statement = encodeCString(message.statement);
-  const sql = encodeCString(message.sql);
-  assertUint16(message.parameterTypeOids.length, "Parameter type count");
-  for (const oid of message.parameterTypeOids) assertUint32(oid, "Parameter type OID");
-  const bodyLength = statement.byteLength + sql.byteLength + 4 + message.parameterTypeOids.length * 4;
-  const parameterTypes = new Uint8Array(2 + message.parameterTypeOids.length * 4);
-  let offset = writeUint16(parameterTypes, 0, message.parameterTypeOids.length);
-  for (const oid of message.parameterTypeOids) offset = writeUint32(parameterTypes, offset, oid);
-  assertWrittenLength(parameterTypes, offset);
-  return [
-    createFrameHeader(message.type, bodyLength),
-    statement,
-    CSTRING_TERMINATOR,
-    sql,
-    CSTRING_TERMINATOR,
-    parameterTypes,
-  ];
-}
-type Writer = {
-  write(data: Uint8Array): void;
-};
-type SqlStatementBinaryData = Uint8Array | ArrayLike<Uint8Array>;
-
 type ParseData = {
-  getNameByteLength(): number;
-  encodeNameInto(data: Uint8Array, offset: number): number;
+  getStatementByteLength(): number;
+  encodeStatementInto(data: Uint8Array, offset: number): number;
 
-  getSqlTemplateByteLength(): number;
-  encodeSqlTemplateInto(data: Uint8Array, offset: number): number;
-
-  /** 单条 SQL 语句片段。 */
-  readonly sqlTemplate: SqlStatementBinaryData;
-
-  /**
-   * 0 为文本格式，1 为二进制格式。默认为 0。
-   */
-  readonly argsFormat?: 0 | 1;
-  /**
-   * null 表示 SQL NULL，不进行文本或二进制编码。
-   * 参数数量不能超过 65535.
-   */
-  readonly args: StatementParameters;
-};
-
-type StatementParameters = {
-  readonly length: number;
-  getArgsByteLength(): number;
-  encodeArgsInto(data: Uint8Array, offset: number): number;
+  getSqlByteLength(): number;
+  encodeSqlInto(data: Uint8Array, offset: number): number;
+  readonly argsLength: number;
   encodeOIDInto?(data: Uint8Array, offset: number): number;
 };
-export function encodeParseMessage(data: ParseData): Uint8Array {
-  const byteLength = data.getNameByteLength() + 1 + data.getSqlTemplateByteLength() + 1 + 2 +
-    (data.args.encodeOIDInto ? data.args.length * 4 : 0);
-  const buffer = new Uint8Array(byteLength);
-  let offset = 0;
-  offset = data.encodeNameInto(buffer, offset);
+
+export function encodeParseMessage(statementByteLength: number, data: ParseData): Uint8Array {
+  const argsLength = data.argsLength;
+  const pidByteLength = argsLength && data.encodeOIDInto ? argsLength * 4 : 0;
+  const byteLength = 4 + statementByteLength + 1 + data.getSqlByteLength() + 1 + 2 + pidByteLength;
+
+  const buffer = new Uint8Array(1 + byteLength);
+  let offset = 5;
+
+  if (statementByteLength) offset = data.encodeStatementInto(buffer, offset);
   buffer[offset++] = 0; // CSTRING_TERMINATOR
-  offset = data.encodeSqlTemplateInto(buffer, offset);
+  offset = data.encodeSqlInto(buffer, offset);
   buffer[offset++] = 0; // CSTRING_TERMINATOR
-  offset = writeUint16(buffer, offset, data.args.length);
-  if (data.args.encodeOIDInto) {
-    for (let i = 0; i < data.args.length; i++) offset = data.args.encodeOIDInto(buffer, offset);
+  offset = writeUint16(buffer, offset, argsLength);
+  if (data.encodeOIDInto) {
+    for (let i = 0; i < argsLength; i++) offset = data.encodeOIDInto(buffer, offset);
   }
   assertWrittenLength(buffer, offset);
+  // header
+  buffer[0] = FRONTEND_MSG_CODE.parse;
+  writeUint32(buffer, 1, byteLength);
   return buffer;
 }
 
-/**
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-BIND
- */
 function encodeBindMsg(message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_CODE.bind }>): Uint8Array[] {
   assertUint16(message.parameterFormats.length, "Parameter format count");
   assertUint16(message.parameters.length, "Parameter count");
@@ -173,11 +126,13 @@ function encodeBindMsg(message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_
   return output;
 }
 type BindData = {
+  /**
+   * 0 为文本格式，1 为二进制格式。默认为 0。
+   */
+  readonly argsFormat?: 0 | 1;
+
   getPortalByteLength(): number;
   encodePortalInto(buffer: Uint8Array, offset: number): number;
-
-  getStatementByteLength(): number;
-  encodeStatementInto(buffer: Uint8Array, offset: number): number;
 
   encodeParametersInto(buffer: Uint8Array, offset: number): number;
   encodeParameterFormatsInto(buffer: Uint8Array, offset: number): number;
@@ -188,11 +143,7 @@ type BindData = {
   getResultFormatsByteLength(): number;
   encodeResultFormatsInto(buffer: Uint8Array, offset: number): number;
 };
-export function encodeBindMessage(data: BindData): Uint8Array {
-}
-/**
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-DESCRIBE
- */
+export declare function encodeBindMessage(argsLength: number, statement: Uint8Array, data: BindData): Uint8Array;
 function encodeDescribeMsg(
   message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_CODE.describe }>,
 ): Uint8Array[] {
@@ -205,9 +156,6 @@ function encodeDescribeMsg(
   ];
 }
 
-/**
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-EXECUTE
- */
 function encodeExecuteMsg(
   message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_CODE.execute }>,
 ): Uint8Array[] {
@@ -218,9 +166,6 @@ function encodeExecuteMsg(
   return [createFrameHeader(message.type, portal.byteLength + 5), portal, CSTRING_TERMINATOR, maxRows];
 }
 
-/**
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-CLOSE
- */
 function encodeCloseMsg(message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_CODE.close }>): Uint8Array[] {
   const name = encodeCString(message.name);
   return [
@@ -231,18 +176,12 @@ function encodeCloseMsg(message: Extract<PgFrontendMessage, { type: FRONTEND_MSG
   ];
 }
 
-/**
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-COPYDATA
- */
 function encodeCopyDataMsg(
   message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_CODE.copyData }>,
 ): Uint8Array[] {
   return [createFrameHeader(message.type, message.data.byteLength), message.data];
 }
 
-/**
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-COPYFAIL
- */
 function encodeCopyFailMsg(
   message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_CODE.copyFail }>,
 ): Uint8Array[] {
@@ -250,9 +189,6 @@ function encodeCopyFailMsg(
   return [createFrameHeader(message.type, reason.byteLength + 1), reason, CSTRING_TERMINATOR];
 }
 
-/**
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html
- */
 export function encodeFrontendMessage(message: PgFrontendMessage): Uint8Array[] {
   switch (message.type) {
     case FRONTEND_MSG_CODE.password:

@@ -20,9 +20,6 @@ function readFormat(reader: ByteReader): PgFormat {
   return format;
 }
 
-/**
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-AUTHENTICATION
- */
 export function decodeAuthentication(reader: ByteReader): PgAuthenticationMessage {
   const type = BACKEND_MSG_CODE.authentication;
   const byteLength = reader.byteLength;
@@ -52,9 +49,6 @@ export function decodeAuthentication(reader: ByteReader): PgAuthenticationMessag
   return { type, byteLength, code: authenticationCode, data: reader.readBytes() };
 }
 
-/**
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-BACKENDKEYDATA
- */
 export function decodeBackendKeyData(reader: ByteReader): PgBackendMessage {
   const type = BACKEND_MSG_CODE.backendKeyData;
   const byteLength = reader.byteLength;
@@ -69,9 +63,6 @@ export function decodeBackendKeyData(reader: ByteReader): PgBackendMessage {
   return { type, byteLength, processId, secretKey };
 }
 
-/**
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-COMMANDCOMPLETE
- */
 export function decodeCommandComplete(reader: ByteReader): PgBackendMessage {
   const type = BACKEND_MSG_CODE.commandComplete;
   const tag = reader.readCString();
@@ -79,11 +70,6 @@ export function decodeCommandComplete(reader: ByteReader): PgBackendMessage {
   return { type, byteLength: reader.byteLength, tag };
 }
 
-/**
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-COPY-IN-RESPONSE
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-COPY-OUT-RESPONSE
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-COPY-BOTH-RESPONSE
- */
 export function decodeCopyResponse(
   reader: ByteReader,
   code:
@@ -102,9 +88,6 @@ export function decodeCopyResponse(
   return { type: code, byteLength: reader.byteLength, overallFormat, columnFormats };
 }
 
-/**
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-DATAROW
- */
 export function decodeDataRow(reader: ByteReader): PgBackendMessage {
   const code = BACKEND_MSG_CODE.dataRow;
   const count = reader.readUint16();
@@ -134,10 +117,6 @@ const ERROR_KEY_MAP: Record<string, string> = {
   R: "routine",
 };
 
-/**
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-ERRORRESPONSE
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-NOTICERESPONSE
- */
 export function decodeNoticeResponse(
   reader: ByteReader,
   code: BACKEND_MSG_CODE.error | BACKEND_MSG_CODE.notice,
@@ -181,9 +160,6 @@ export function decodeNoticeResponse(
   }
 }
 
-/**
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-NEGOTIATEPROTOCOLVERSION
- */
 export function decodeNegotiateProtocolVersion(
   reader: ByteReader,
 ): PgBackendMessage {
@@ -201,9 +177,6 @@ export function decodeNegotiateProtocolVersion(
   return { type: code, byteLength: reader.byteLength, newestMinorVersion, unsupportedOptions };
 }
 
-/**
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-NOTIFICATIONRESPONSE
- */
 export function decodeNotification(reader: ByteReader): PgBackendMessage {
   const code = BACKEND_MSG_CODE.notification;
   const processId = reader.readInt32();
@@ -213,9 +186,6 @@ export function decodeNotification(reader: ByteReader): PgBackendMessage {
   return { type: code, byteLength: reader.byteLength, processId, channel, payload };
 }
 
-/**
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-PARAMETERDESCRIPTION
- */
 export function decodeParameterDescription(
   reader: ByteReader,
 ): PgBackendMessage {
@@ -227,9 +197,6 @@ export function decodeParameterDescription(
   return { type: code, byteLength: reader.byteLength, dataTypeOids };
 }
 
-/**
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-PARAMETERSTATUS
- */
 export function decodeParameterStatus(reader: ByteReader): PgBackendMessage {
   const code = BACKEND_MSG_CODE.parameterStatus;
   const name = reader.readCString();
@@ -238,9 +205,6 @@ export function decodeParameterStatus(reader: ByteReader): PgBackendMessage {
   return { type: code, byteLength: reader.byteLength, name, value };
 }
 
-/**
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-READYFORQUERY
- */
 export function decodeReadyForQuery(reader: ByteReader): PgBackendMessage {
   const code = BACKEND_MSG_CODE.readyForQuery;
   const statusCode = reader.readInt8();
@@ -256,9 +220,6 @@ export function decodeReadyForQuery(reader: ByteReader): PgBackendMessage {
   return { type: code, byteLength: reader.byteLength, status: statusCode };
 }
 
-/**
- * @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-ROWDESCRIPTION
- */
 export function decodeRowDescription(reader: ByteReader): PgBackendMessage {
   const code = BACKEND_MSG_CODE.rowDescription;
   const count = reader.readUint16();

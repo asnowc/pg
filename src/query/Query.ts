@@ -1,12 +1,12 @@
 import type { PgCursor, QueryReader, SampleQueryReader } from "./QueryReader.ts";
-import type { SqlStatementData, TypedSqlStatement, TypedSqlStatementTemplate } from "./QueryStatement.ts";
+import type { QueryDecoder, SqlStatement, SqlStatements } from "./QueryStatement.ts";
 
 type QueryCommonOptions = {
   onNotice?: (info: { notice: string }) => void;
 };
 
 /** @public */
-export type QueryOptions = QueryCommonOptions & Pick<TypedSqlStatementTemplate, "typeDecoders" | "columnDecoders">;
+export type QueryOptions = QueryCommonOptions & Pick<QueryDecoder<unknown>, "typeDecoders" | "columnDecoders">;
 
 /** @public */
 export type OpenCursorOptions = QueryCommonOptions & {
@@ -19,15 +19,6 @@ export type CopyFromOptions = QueryCommonOptions;
 
 /** @public */
 export type CopyToOptions = QueryCommonOptions;
-
-/**
- * 表示可以包含单条 SQL 语句的查询对象
- */
-type SqlStatement<T> = TypedSqlStatementTemplate<T> | TypedSqlStatement<T> | SqlStatementData;
-/**
- * 表示可以包含多条 SQL 语句的查询对象
- */
-type SqlStatements = TypedSqlStatement<unknown> | SqlStatementData;
 
 /** @public */
 export interface ExtendedQueryOperation {

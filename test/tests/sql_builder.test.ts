@@ -1,12 +1,12 @@
 import { expect, test } from "vitest";
-import { createSqlBuilder, JS_DATA_ENCODER_V1, type TypedSqlStatementTemplate } from "@asla/pg";
+import { createSqlBuilder, JS_DATA_ENCODER_V1, TemplateSqlStatementEncoder } from "@asla/pg";
 
 const sql = createSqlBuilder(JS_DATA_ENCODER_V1);
 
 test("NULL 无需编码器，保留 Bind null 和 OID 0", () => {
   const sql = createSqlBuilder(new Map());
   const statement = sql`SELECT ${null}::text, ${null}::int`;
-  const typed: TypedSqlStatementTemplate = statement;
+  const typed: TemplateSqlStatementEncoder = statement;
   expect(statement.toTemplate()).toBe("SELECT $1::text, $2::int");
   expect(typed.args.at(0)).toBe(null);
   expect(typed.args.at(1)).toBe(null);
