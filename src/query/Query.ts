@@ -29,7 +29,8 @@ type SqlStatement<T> = TypedSqlStatementTemplate<T> | TypedSqlStatement<T> | Sql
  */
 type SqlStatements = TypedSqlStatement<unknown> | SqlStatementData;
 
-interface SingleQuery {
+/** @public */
+export interface ExtendedQueryOperation {
   /**
    * @param queryable 只能是单条 SQL 语句，Uint8Array[] 表示单条 SQL 语句的分片
    * @example
@@ -49,11 +50,10 @@ interface SingleQuery {
   /**
    * 提供接近 PostgreSQL 原生的高级查询接口
    */
-  openCursor<T>(queryable: SqlStatement<T>, options?: OpenCursorOptions): PgCursor<T>;
+  open<T>(queryable: SqlStatement<T>, options?: OpenCursorOptions): PgCursor<T>;
 }
-
 /** @public */
-export interface Query extends SingleQuery {
+export interface SampleQueryOperation {
   /**
    * 从流中读取 SQL 并执行简单查询
    */
@@ -64,11 +64,15 @@ export interface Query extends SingleQuery {
    */
   simpleQuery(queryable: SqlStatements, options?: QueryOptions): AsyncIterable<SampleQueryReader>;
   simpleQuery(queryable: ReadableStream<Uint8Array>, options?: QueryOptions): AsyncIterable<SampleQueryReader>;
-
-  begin(mode?: TransactionMode): Transaction;
-
+}
+/** @public */
+export interface CopyQueryOperation {
   copyFrom(queryable: SqlStatement<unknown>, options?: CopyFromOptions): CopyFromHandle;
   copyTo(queryable: SqlStatement<unknown>, options?: CopyToOptions): ReadableStream<Uint8Array>;
+}
+/** @public */
+export interface TransactionQuery {
+  begin(mode?: TransactionMode): Transaction;
 }
 
 /** @public */
@@ -109,7 +113,7 @@ export interface CopyFromHandle {
  * ```
  * @public
  */
-export interface Transaction extends SingleQuery, AsyncDisposable {
+export interface Transaction extends ExtendedQueryOperation, AsyncDisposable {
   readonly mode: TransactionMode;
   /** 回滚，并释放连接 */
   rollback(): Promise<void>;

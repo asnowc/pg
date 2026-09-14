@@ -54,8 +54,8 @@ export class PgTransactionImpl implements Transaction {
     })));
   }
 
-  openCursor<T>(statement: Statement<T>, options?: OpenCursorOptions): PgCursor<T> {
-    const cursor = new TransactionCursor(this.#getConnection().then((conn) => conn.openCursor<T>(statement, options)));
+  open<T>(statement: Statement<T>, options?: OpenCursorOptions): PgCursor<T> {
+    const cursor = new TransactionCursor(this.#getConnection().then((conn) => conn.open<T>(statement, options)));
     this.#cursors.add(cursor);
     cursor.completion.then(() => this.#cursors.delete(cursor), () => this.#cursors.delete(cursor));
     return cursor;

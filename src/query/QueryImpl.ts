@@ -1,17 +1,20 @@
 import type {
   CopyFromHandle,
   CopyFromOptions,
+  CopyQueryOperation,
   CopyToOptions,
+  ExtendedQueryOperation,
   OpenCursorOptions,
-  Query,
   QueryOptions,
+  SampleQueryOperation,
   Transaction,
   TransactionMode,
+  TransactionQuery,
 } from "./Query.ts";
 import type { PgCursor, QueryReader, SampleQueryReader } from "./QueryReader.ts";
 import type { SqlStatementData, TypedSqlStatement, TypedSqlStatementTemplate } from "./QueryStatement.ts";
 
-export class QueryImpl implements Query {
+export class QueryImpl implements ExtendedQueryOperation, SampleQueryOperation, CopyQueryOperation, TransactionQuery {
   #pool;
   query<T>(
     queryable: SqlStatementData | TypedSqlStatementTemplate<T> | TypedSqlStatement<T>,
@@ -34,7 +37,7 @@ export class QueryImpl implements Query {
   ): ReadableStream<Uint8Array> {
   }
 
-  openCursor<T>(
+  open<T>(
     queryable: SqlStatementData | TypedSqlStatementTemplate<T> | TypedSqlStatement<T>,
     options?: OpenCursorOptions,
   ): PgCursor<T> {

@@ -1,6 +1,6 @@
 import type { PgMessageReader } from "@/protocol.ts";
 import type { FieldInfo, QueryCompletion } from "./MessageData.ts";
-import { encodeParseMsg } from "@/protocol/pg_message.ts";
+import { encodeParseMessage } from "@/protocol/pg_message.ts";
 import { TypedSqlStatementTemplate } from "@/query/QueryStatement.ts";
 
 /**
@@ -26,7 +26,7 @@ export class QueryReader<T = unknown> implements AsyncIterable<T> {
   }
   #parser() {
     const { reader, statement } = this.#query();
-    encodeParseMsg({ statement: "", parameterTypeOids: 1, sql: statement.sqlTemplate });
+    encodeParseMessage(reader, { statement: "", parameterTypeOids: 1, sql: statement.sqlTemplate });
   }
   /** 受影响的行数 */
   async getRowCount(): Promise<number> {

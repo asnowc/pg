@@ -108,7 +108,7 @@ export class PgDbQueryPool extends DbQueryPool implements AsyncDisposable {
     option?: DbCursorOption,
   ): Promise<DbCursor<T>> {
     const conn = await this.#pool.get();
-    const cursor = conn.openCursor<T>(sqlLikeToString(sql), { iteratorMaxRows: option?.defaultSize });
+    const cursor = conn.open<T>(sqlLikeToString(sql), { iteratorMaxRows: option?.defaultSize });
     const poolConn = createDbPoolConnection(
       new PgConnection(conn),
       () => conn.closed ? this.#pool.remove(conn) : this.#pool.release(conn),

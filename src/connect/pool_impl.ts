@@ -1,18 +1,21 @@
 import type {
   CopyFromHandle,
   CopyFromOptions,
+  CopyQueryOperation,
   CopyToOptions,
+  ExtendedQueryOperation,
   FieldInfo,
   OpenCursorOptions,
   PgCursor,
-  Query,
   QueryCompletion,
   QueryOptions,
   QueryReader,
+  SampleQueryOperation,
   SampleQueryReader,
   SqlStatementData,
   Transaction,
   TransactionMode,
+  TransactionQuery,
   TypedSqlStatement,
   TypedSqlStatementTemplate,
 } from "@/query.ts";
@@ -38,7 +41,7 @@ class PoolReader<T> extends QueryReaderImpl<T> {
   }
 }
 
-abstract class PoolQuery implements Query {
+abstract class PoolQuery implements ExtendedQueryOperation, SampleQueryOperation, CopyQueryOperation, TransactionQuery {
   protected abstract acquire(): Promise<Lease>;
   protected assertOpen(): void {}
 
@@ -153,7 +156,7 @@ abstract class PoolQuery implements Query {
     return { readable, writable };
   }
 
-  openCursor<T>(statement: Statement<T>, options?: OpenCursorOptions): PgCursor<T> {
+  open<T>(statement: Statement<T>, options?: OpenCursorOptions): PgCursor<T> {
     this.assertOpen();
     return new PoolCursor(this.acquire(), statement, options);
   }
@@ -338,7 +341,7 @@ class PoolCursor<T> implements PgCursor<T> {
   constructor(lease: Promise<Lease>, statement: Statement<T>, options?: OpenCursorOptions) {
     this.#ready = observed(lease.then((resource) => {
       try {
-        const cursor = this.#cursor = resource.connection.openCursor<T>(statement, options);
+        const cursor = this.#cursor = resource.connection.open<T>(statement, options);
         observed(cursor.fields);
         observed(cursor.completion.then(() => resource.release(), () => resource.release(true)));
         return cursor;
@@ -510,8 +513,8 @@ class PoolTransaction extends PoolQuery implements Transaction {
       throw error;
     });
   }
-  override openCursor<T>(statement: Statement<T>, options?: OpenCursorOptions): PgCursor<T> {
-    const cursor = super.openCursor(statement, options);
+  override open<T>(statement: Statement<T>, options?: OpenCursorOptions): PgCursor<T> {
+    const cursor = super.open(statement, options);
     this.#cursors.add(cursor);
     observed(cursor.completion.finally(() => this.#cursors.delete(cursor)));
     return cursor;

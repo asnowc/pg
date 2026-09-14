@@ -128,7 +128,7 @@ export class PgConnectionImpl implements PgConnection {
     return new QueryReaderImpl(result);
   }
 
-  openCursor<T>(queryable: SqlStatement<T>, options?: OpenCursorOptions): PgCursor<T> {
+  open<T>(queryable: SqlStatement<T>, options?: OpenCursorOptions): PgCursor<T> {
     this.#assertOpen();
     const controller = new CursorController<T>();
     this.#enqueue(() => this.#runCursor(queryable, controller, options)).catch((error) => controller.fail(error));

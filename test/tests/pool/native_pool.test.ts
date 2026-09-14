@@ -55,7 +55,7 @@ test("maxCount 排队、release 幂等、释放后所有新操作被拒绝", asy
   expect(() => first.query("select 1")).toThrow("released");
   expect(() => first.simpleQuery("select 1")).toThrow("released");
   expect(() => first.queryStream()).toThrow("released");
-  expect(() => first.openCursor("select 1")).toThrow("released");
+  expect(() => first.open("select 1")).toThrow("released");
   expect(() => first.begin()).toThrow("released");
   expect(() => first.copyFrom("COPY t FROM STDIN")).toThrow("released");
   expect(() => first.copyTo("COPY t TO STDOUT")).toThrow("released");
@@ -243,7 +243,7 @@ test("各种延迟资源的建连失败均被传递且无借出泄漏", async ()
       throw new Error("connect failed");
     },
   });
-  const cursor = pool.openCursor("select 1");
+  const cursor = pool.open("select 1");
   await expect(cursor.fields).rejects.toThrow("connect failed");
   await expect(cursor.completion).rejects.toThrow("connect failed");
   await expect(cursor.close()).rejects.toThrow("connect failed");
