@@ -1,10 +1,12 @@
-import type { ByteStream, PgAuthenticationExchangeOptions, PgStartupOptions, PgTlsOptions } from "@/protocol.ts";
 import { auth, negotiateTls, PgMessageReader, startup } from "@/protocol.ts";
-import type { PgConnection } from "./PgConnection.ts";
 import { PgConnectionImpl } from "./PgConnectionImpl.ts";
-
-export type { PgTlsOptions } from "@/protocol.ts";
-export { PgAuthenticationError, PgProtocolError } from "@/protocol.ts";
+import type {
+  ByteStream,
+  PgAuthenticationExchangeOptions,
+  PgConnection,
+  PgStartupOptions,
+  PgTlsOptions,
+} from "@/interface/Connection.ts";
 
 /** @public */
 export interface PgConnectOptions extends PgStartupOptions, PgAuthenticationExchangeOptions {

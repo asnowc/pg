@@ -1,7 +1,8 @@
 import { DbQuery, MultipleQueryInput, QueryDataInput, QueryInput } from "./DbQuery.ts";
 import type { DbQueryBase, MultipleQueryResult, QueryRowsResult } from "./DbQueryBase.ts";
 import { ConnectionNotAvailableError } from "./errors.ts";
-import type { DbPoolConnection, SqlLike, TransactionMode } from "./interfaces.ts";
+import type { DbPoolConnection, SqlLike } from "./interfaces.ts";
+import type { TransactionMode } from "@/interface/Query.ts";
 
 class DbPoolConnectionImpl extends DbQuery implements DbPoolConnection {
   constructor(

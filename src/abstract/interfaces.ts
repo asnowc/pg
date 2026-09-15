@@ -1,8 +1,7 @@
 import type { DbQuery } from "./DbQuery.ts";
 import type { DbCursor, DbCursorOption } from "./DbCursor.ts";
 import type { SqlStatementDataset, SqlTemplate } from "./external.ts";
-import type { TransactionMode } from "@/query.ts";
-export type { TransactionMode } from "@/query.ts";
+import type { TransactionMode } from "@/interface/Query.ts";
 
 /**
  * 数据库连接

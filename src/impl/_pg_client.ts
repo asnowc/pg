@@ -1,9 +1,9 @@
 import { connect as nodeConnect } from "node:net";
 import type { Duplex } from "node:stream";
-import { connectFromStream, type PgConnection } from "../connect.ts";
+import { connectFromStream } from "../connect.ts";
 import { DenoConnByteStream, NodeDuplexByteStream } from "../platforms.ts";
-import type { ByteStream } from "../protocol.ts";
 import type { DbConnectOption } from "./connect.ts";
+import type { ByteStream, PgConnection } from "@/interface/Connection.ts";
 
 export async function createPgClient(options: DbConnectOption): Promise<PgConnection> {
   if (!options.user) throw new TypeError("PostgreSQL user is required");
@@ -16,7 +16,7 @@ export async function createPgClient(options: DbConnectOption): Promise<PgConnec
 }
 
 async function createByteStream(hostname: string, port: number): Promise<ByteStream> {
-  if (typeof Deno !== "undefined") {
+  if (typeof globalThis.Deno !== "undefined") {
     return new DenoConnByteStream(await Deno.connect({ hostname, port }));
   }
   const socket = await new Promise<Duplex>((resolve, reject) => {

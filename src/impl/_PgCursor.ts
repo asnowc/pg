@@ -1,15 +1,15 @@
 import { DbCursor, ParallelQueryError } from "#abstract";
 import type { DbPoolConnection } from "#abstract";
-import type { PgCursor as NativePgCursor } from "../query.ts";
+import type { Cursor } from "@/interface/Query.ts";
 
 export class PgCursor<T> extends DbCursor<T> {
-  constructor(cursor: NativePgCursor<T>, conn: DbPoolConnection, readonly defaultChunkSize = 20) {
+  constructor(cursor: Cursor<T>, conn: DbPoolConnection, readonly defaultChunkSize = 20) {
     super();
     this.#cursor = cursor;
     this.#conn = conn;
   }
   #conn?: DbPoolConnection;
-  #cursor: NativePgCursor<T>;
+  #cursor: Cursor<T>;
   #pending?: Promise<unknown>;
   // implement
   read(maxSize: number = this.defaultChunkSize): Promise<T[]> {

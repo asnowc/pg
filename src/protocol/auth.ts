@@ -1,3 +1,4 @@
+import type { PgBackendKeyData, PgSessionInfo } from "@/interface/protocol.ts";
 import {
   AUTH_CODE,
   BACKEND_MSG_CODE,
@@ -7,69 +8,19 @@ import {
   PROTOCOL_VERSION,
   SSL_REQUEST_CODE,
 } from "./pg_message.ts";
-import type { PgAsyncMessage, PgBackendMessage, PgTransactionStatus } from "./pg_message.ts";
-import type { ByteStream } from "./ByteStream.ts";
+import type { PgBackendMessage } from "./pg_message.ts";
 import type { PgMessageReader } from "./PgMessageReader.ts";
-/**
- * SCRAM 认证所需的平台密码学能力；本库不实现已废弃的 MD5 认证。
- * @public
- */
-export interface PgCryptoProvider {
-  randomBytes(length: number): Uint8Array;
-  digest(algorithm: "SHA-256", data: Uint8Array): Promise<Uint8Array>;
-  hmac(algorithm: "SHA-256", key: Uint8Array, data: Uint8Array): Promise<Uint8Array>;
-  pbkdf2(
-    algorithm: "SHA-256",
-    password: Uint8Array,
-    salt: Uint8Array,
-    iterations: number,
-    length: number,
-  ): Promise<Uint8Array>;
-}
+import { PgAuthenticationError } from "@/error.ts";
+import type {
+  ByteStream,
+  PgAuthenticationExchangeOptions,
+  PgSaslExchange,
+  PgStartupOptions,
+  PgTlsOptions,
+} from "@/interface/Connection.ts";
 
-/** @public */
-export interface PgSaslExchange {
-  readonly mechanism: string;
-  initialResponse(): Uint8Array | null | Promise<Uint8Array | null>;
-  continue(challenge: Uint8Array): Uint8Array | Promise<Uint8Array>;
-  final?(data: Uint8Array): void | Promise<void>;
-}
-/** @public */
-export interface PgAuthenticationExchangeOptions {
-  user: string;
-  password?: string | (() => string | Promise<string>);
-
-  /** 覆盖或扩展内置 SCRAM-SHA-256 认证，例如 OAUTHBEARER。 */
-  createSaslExchange?: (
-    mechanisms: readonly string[],
-    context: { user: string; password?: string },
-  ) => PgSaslExchange | Promise<PgSaslExchange>;
-  onAsyncMessage?: (message: PgAsyncMessage) => void | Promise<void>;
-}
-/**
- * StartupMessage 的参数。user 是协议要求的唯一必填参数。
- * @public
- */
-export interface PgStartupOptions {
-  user: string;
-  database?: string;
-  applicationName?: string;
-  // client_encoding?: string;
-  options?: string;
-  replication?: false | true | "database";
-  /** 额外运行时参数；不能覆盖 user、database、options、replication。 */
-  parameters?: Readonly<Record<string, string>>;
-}
-type PgTlsMode = "disable" | "prefer" | "require";
-/** @public */
-export interface PgTlsOptions {
-  mode: PgTlsMode;
-  /** 平台负责 TLS 握手，并返回升级后的同一逻辑连接。 */
-  upgrade(stream: ByteStream): ByteStream | Promise<ByteStream>;
-}
 /**
  * 发送 SSLRequest，并在服务端接受时调用注入的 TLS 升级函数。
- * @public
  */
 export async function negotiateTls(stream: ByteStream, options: PgTlsOptions): Promise<ByteStream> {
   if (options.mode === "disable") return stream;
@@ -92,7 +43,6 @@ export async function negotiateTls(stream: ByteStream, options: PgTlsOptions): P
 
 /**
  * 仅发送 StartupMessage。
- * @public
  */
 export async function startup(stream: ByteStream, options: PgStartupOptions): Promise<void> {
   const parameters: Record<string, string> = {
@@ -131,7 +81,6 @@ export async function startup(stream: ByteStream, options: PgStartupOptions): Pr
 
 /**
  * 执行密码/SASL 认证并读取到首个 ReadyForQuery。调用前必须已发送 StartupMessage。
- * @public
  */
 export async function auth(stream: PgMessageReader, options: PgAuthenticationExchangeOptions): Promise<PgSessionInfo> {
   const parameters: Record<string, string> = {};
@@ -160,7 +109,6 @@ export async function auth(stream: PgMessageReader, options: PgAuthenticationExc
 
 /**
  * 从认证阶段消息构造认证响应，供自定义连接状态机使用。
- * @public
  */
 export async function respondAuthentication(
   stream: PgMessageReader,
@@ -201,32 +149,6 @@ export async function respondAuthentication(
     return state;
   }
   throw new PgAuthenticationError(`Unsupported PostgreSQL authentication code: ${message.code}`, String(message.code));
-}
-
-/** @public */
-export interface PgSessionInfo {
-  protocolVersion: number;
-  parameters: Readonly<Record<string, string>>;
-  backendKey?: PgBackendKeyData;
-  transactionStatus: PgTransactionStatus;
-}
-/** @public */
-export interface PgBackendKeyData {
-  processId: number;
-  /** 协议 3.0 使用的 32 位取消请求密钥。 */
-  secretKey: number;
-}
-/**
- * 客户端不支持服务端要求的认证机制。
- * @public
- */
-export class PgAuthenticationError extends Error {
-  readonly mechanism?: string;
-  constructor(message: string, mechanism?: string, options?: ErrorOptions) {
-    super(message, options);
-    this.name = "PgAuthenticationError";
-    this.mechanism = mechanism;
-  }
 }
 
 async function writeMessages(

@@ -1,7 +1,8 @@
 import { DbQuery, MultipleQueryInput, QueryDataInput, QueryInput } from "./DbQuery.ts";
 import type { MultipleQueryResult, QueryRowsResult } from "./DbQueryBase.ts";
 import { ConnectionNotAvailableError, ParallelQueryError } from "./errors.ts";
-import type { DbPoolConnection, DbPoolTransaction, SqlLike, TransactionMode } from "./interfaces.ts";
+import type { DbPoolConnection, DbPoolTransaction, SqlLike } from "./interfaces.ts";
+import type { TransactionMode } from "@/interface/Query.ts";
 
 /**
  * @public

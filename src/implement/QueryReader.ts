@@ -1,6 +1,5 @@
 import type { PgMessageReader } from "@/protocol.ts";
-import type { FieldInfo, QueryCompletion, QueryResult } from "./MessageData.ts";
-import type { StatementEncoder } from "./QueryStatement.ts";
+import type { QueryCompletion, QueryReader as IQueryReader, QueryResult, StatementEncoder } from "@/interface/Query.ts";
 import {
   DescribeTarget,
   encodeBindMessage,
@@ -11,17 +10,7 @@ import {
 } from "@/protocol/pg_message.ts";
 import { FRAME } from "@/protocol/pg_message/_static_frame.ts";
 
-/**
- * `QueryReader.getRows()`、`QueryReader.getFirstRow()`、`QueryReader.getMap()`、方法在一次查询后只能调用一次，重复调用将抛出异常
- *
- * @example
- *  //异步迭代器用法, 用于遍历查询结果。该方法通过 batch() 方法实现。
- *  for await (const item of query) {
- *    console.log(item);
- *  }
- * @public
- */
-export class QueryReader<T = unknown> implements AsyncIterable<T> {
+export default class QueryReader<T = unknown> implements IQueryReader<T> {
   constructor(reader: () => Promise<PgMessageReader>, statement: StatementEncoder) {
     this.#source = { getReader: reader, statement };
   }
@@ -56,6 +45,7 @@ export class QueryReader<T = unknown> implements AsyncIterable<T> {
 
   /** 受影响的行数 */
   async getRowCount(): Promise<number> {
+    await this.#queryAllResult();
     const { rowCount } = await this.getCompletion();
     return rowCount ?? 0;
   }
@@ -106,38 +96,4 @@ export class QueryReader<T = unknown> implements AsyncIterable<T> {
   async *[Symbol.asyncIterator](): AsyncGenerator<T, QueryCompletion, void> {
     const reader = await this.#queryAllResult();
   }
-}
-
-/** @public */
-export enum CursorStatus {
-  Open = "opening",
-  Closed = "closed",
-  Completed = "completed",
-}
-
-/** @public */
-export interface PgCursor<T> extends AsyncDisposable, AsyncIterable<T> {
-  /** 已从服务端读取的行数，包含迭代器预取批次中尚未产出的行。 */
-  get rowsRead(): number;
-
-  /** 查询是否已关闭 */
-  get isClosed(): boolean;
-  /**
-   * 提前关闭游标。重复关闭将被忽略。
-   */
-  close(): Promise<void>;
-  /** 不允许并发读取；迭代器取得读取权后返回空数组。 */
-  read(maxRows?: number): Promise<T[]>;
-
-  get fields(): Promise<readonly Readonly<FieldInfo>[]>;
-  get completion(): Promise<QueryCompletion>;
-}
-
-/** @public */
-export interface SampleQueryReader<T = unknown> {
-  rowCount: number | null;
-  get fields(): readonly Readonly<FieldInfo>[];
-  get notices(): string[];
-  get rows(): T[];
-  [Symbol.iterator](): Iterator<T>;
 }

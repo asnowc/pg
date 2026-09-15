@@ -1,6 +1,7 @@
-import type { SimpleQueryEncoder, StatementEncoder } from "@/query.ts";
-import { getJsDataEncoder, type JsDataEncoder, type JsDataEncoderMap } from "./js_data_encoder.ts";
-import { calcCStringByteLength } from "../../dist/src/_utils/data_type_bin.js";
+import type { SimpleQueryEncoder, StatementEncoder } from "@/interface/Query.ts";
+import { getJsDataEncoder } from "./js_data_encoder.ts";
+import type { JsDataEncoder, JsDataEncoderMap } from "./js_data_encoder.ts";
+import { calcCStringByteLength } from "@/_utils/data_type_bin.ts";
 
 /** @public */
 export class TemplateSqlStatementEncoder implements StatementEncoder, SimpleQueryEncoder {

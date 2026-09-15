@@ -1,5 +1,5 @@
-import type { PgDataDecodeContext, PgDataDecoderMap } from "./data_decoder.ts";
-import type { FieldInfo } from "./MessageData.ts";
+import type { PgDataDecodeContext, PgDataDecoderMap } from "./pg_decoder.ts";
+import type { FieldInfo } from "./QueryResult.ts";
 
 /** @public */
 export interface StatementEncoder {

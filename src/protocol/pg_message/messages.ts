@@ -6,10 +6,30 @@ import type { AUTH_CODE, BACKEND_MSG_CODE, FRONTEND_MSG_CODE, PgFormat, PgTransa
  */
 
 /** 原始字段值；null 表示 SQL NULL。 */
-export type PgValue = Uint8Array | null;
+type PgValue = Uint8Array | null;
 /** PostgreSQL 对象标识符。 */
-export type PgOid = number;
+type PgOid = number;
 
+export interface PgErrorFields {
+  severity: string;
+  severityNonLocalized?: string;
+  code: string;
+  message: string;
+  detail?: string;
+  hint?: string;
+  position?: string;
+  internalPosition?: string;
+  internalQuery?: string;
+  where?: string;
+  schema?: string;
+  table?: string;
+  column?: string;
+  dataType?: string;
+  constraint?: string;
+  file?: string;
+  line?: string;
+  routine?: string;
+}
 /**
  * 客户端发送给服务端的普通消息。启动阶段特殊包不包含在内。
  * @deprecated 即将删除
@@ -110,28 +130,6 @@ export interface PgFieldDescription {
   dataTypeSize: number;
   typeModifier: number;
   format: PgFormat;
-}
-
-/** @public */
-export interface PgErrorFields {
-  severity: string;
-  severityNonLocalized?: string;
-  code: string;
-  message: string;
-  detail?: string;
-  hint?: string;
-  position?: string;
-  internalPosition?: string;
-  internalQuery?: string;
-  where?: string;
-  schema?: string;
-  table?: string;
-  column?: string;
-  dataType?: string;
-  constraint?: string;
-  file?: string;
-  line?: string;
-  routine?: string;
 }
 
 export interface PgCopyResponse {

@@ -3,7 +3,7 @@ import { createPgClient } from "./_pg_client.ts";
 import { PgConnection } from "./_PgConnection.ts";
 /**
  * @public
- * @deprecated 请改用 `PgConnectOptions`。
+ * @deprecated 已废弃。
  */
 export interface DbConnectOption {
   database: string;

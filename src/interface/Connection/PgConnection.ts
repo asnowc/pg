@@ -1,11 +1,17 @@
-import type { PgSessionInfo } from "@/protocol.ts";
-import type { CopyQueryOperation, ExtendedQueryOperation, SampleQueryOperation, TransactionQuery } from "@/query.ts";
+import type {
+  CopyQueryOperation,
+  ExtendedQueryOperation,
+  SampleQueryOperation,
+  TransactionQuery,
+} from "@/interface/Query.ts";
+import type { PgSessionInfo } from "@/interface/protocol.ts";
 
 /**
  * 已经完成认证的 PostgreSQL 连接接口，提供执行 SQL 查询、打开游标以及复制数据的功能。
  * @public
  */
-export interface PgConnection extends ExtendedQueryOperation, SampleQueryOperation, CopyQueryOperation, TransactionQuery, AsyncDisposable {
+export interface PgConnection
+  extends ExtendedQueryOperation, SampleQueryOperation, CopyQueryOperation, TransactionQuery, AsyncDisposable {
   /** 认证后收集的服务端参数、取消请求密钥和事务状态。 */
   readonly session: PgSessionInfo;
   /** 连接是否已关闭或因不可恢复的协议/网络错误而失效。 */
@@ -15,7 +21,8 @@ export interface PgConnection extends ExtendedQueryOperation, SampleQueryOperati
   [Symbol.asyncDispose](): Promise<void>;
 }
 /** @public */
-export interface PgPool extends ExtendedQueryOperation, SampleQueryOperation, CopyQueryOperation, TransactionQuery, AsyncDisposable {
+export interface PgPool
+  extends ExtendedQueryOperation, SampleQueryOperation, CopyQueryOperation, TransactionQuery, AsyncDisposable {
   /** 借用连接；必须 release() 或使用 using / await using 释放。 */
   connect(): Promise<PgPoolConnection>;
 
@@ -31,7 +38,8 @@ export interface PgPool extends ExtendedQueryOperation, SampleQueryOperation, Co
 }
 
 /** @public */
-export interface PgPoolConnection extends ExtendedQueryOperation, SampleQueryOperation, CopyQueryOperation, TransactionQuery, Disposable {
+export interface PgPoolConnection
+  extends ExtendedQueryOperation, SampleQueryOperation, CopyQueryOperation, TransactionQuery, Disposable {
   get released(): boolean;
   /** 幂等释放。现有操作结束后才实际归还连接；此后不再接受新操作。 */
   release(): void;

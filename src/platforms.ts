@@ -1,5 +1,5 @@
-import type { ByteStream } from "@/protocol.ts";
 import { Duplex } from "node:stream";
+import type { ByteStream } from "@/interface/Connection.ts";
 
 const UnexpectedEofError = Deno.errors.UnexpectedEof;
 /** @public */
@@ -21,8 +21,11 @@ export class DenoConnByteStream implements ByteStream {
     }
   }
 
-  write(buffer: Uint8Array): Promise<number> {
-    return this.conn.write(buffer);
+  async write(): Promise<void> {
+    const args = arguments;
+    for (let i = 0; i < args.length; i++) {
+      await this.conn.write(args[i]);
+    }
   }
 
   closeWrite(): Promise<void> {
@@ -84,9 +87,11 @@ export class NodeDuplexByteStream implements ByteStream {
     }
   }
 
-  async write(buffer: Uint8Array): Promise<number> {
-    await this.#writer.write(buffer);
-    return buffer.byteLength;
+  async write(): Promise<void> {
+    const args = arguments;
+    for (let i = 0; i < args.length; i++) {
+      await this.#writer.write(args[i]);
+    }
   }
   closeWrite(): Promise<void> {
     return this.#writer.close();

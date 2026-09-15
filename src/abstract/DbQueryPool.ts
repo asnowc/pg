@@ -3,7 +3,7 @@ import { DbQuery } from "./DbQuery.ts";
 import type { DbPool, DbPoolConnection, DbTransaction, SqlLike } from "./interfaces.ts";
 import type { QueryRowsResult } from "./DbQueryBase.ts";
 import type { SqlStatementDataset } from "./external.ts";
-import type { InferQueryResult, TransactionMode } from "@/query.ts";
+import type { InferQueryResult, TransactionMode } from "@/interface/Query.ts";
 
 /**
  * @public

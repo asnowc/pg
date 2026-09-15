@@ -13,6 +13,7 @@ export type FieldInfo = {
   typeSize: number;
   typeModifier: number;
 };
+
 /** @public */
 export interface QueryResult<T> {
   /** 受影响的行数 */

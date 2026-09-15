@@ -1,23 +1,5 @@
+import type { PgDataDecoder, PgDataDecoderMap } from "@/interface/Query.ts";
 import { PgOid } from "../util/pg_oid.ts";
-
-/** @public */
-export type PgDataDecodeContext = Readonly<{
-  typeId: number;
-  typeSize: number;
-  typeModifier: number;
-}>;
-
-/** @public */
-export type PgDataDecoder<T = unknown> = {
-  text(value: string, context: PgDataDecodeContext): T;
-  binary(value: Uint8Array, context: PgDataDecodeContext): T;
-};
-
-/**
- * PG Type ID -> DataTypeDecoder
- * @public
- */
-export type PgDataDecoderMap = ReadonlyMap<number, PgDataDecoder>;
 
 const textDecoder = new TextDecoder();
 const text = { text: (value: string) => value, binary: (value: Uint8Array) => textDecoder.decode(value) };
