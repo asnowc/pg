@@ -13,7 +13,7 @@ function createFrame(code: FRONTEND_MSG_CODE): Uint8Array {
   return frame;
 }
 
-export const FLUSH = createFrame(FRONTEND_MSG_CODE.flush);
-export const SYNC = createFrame(FRONTEND_MSG_CODE.sync);
-export const COPY_DONE = createFrame(FRONTEND_MSG_CODE.copyDone);
-export const TERMINATE = createFrame(FRONTEND_MSG_CODE.terminate);
+export const FLUSH = createFrame(FRONTEND_MSG_CODE.Flush);
+export const SYNC = createFrame(FRONTEND_MSG_CODE.Sync);
+export const COPY_DONE = createFrame(FRONTEND_MSG_CODE.CopyDone);
+export const TERMINATE = createFrame(FRONTEND_MSG_CODE.Terminate);

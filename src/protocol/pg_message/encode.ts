@@ -12,7 +12,8 @@ import { COPY_DONE, FLUSH, SYNC, TERMINATE } from "./_static_frame.ts";
 
 const FRAME_HEADER_LENGTH = 5;
 const MAX_BODY_LENGTH = 0x7fff_fffb;
-const CSTRING_TERMINATOR = new Uint8Array(1);
+const CSTRING_TERMINATOR_DATA = new Uint8Array(1);
+const CSTRING_TERMINATOR = 0;
 
 function assertWrittenLength(output: Uint8Array, offset: number): Uint8Array {
   if (offset !== output.byteLength) throw new Error("PostgreSQL message length mismatch");
@@ -30,63 +31,50 @@ function createFrameHeader(code: FRONTEND_MSG_CODE, bodyLength: number): Uint8Ar
 }
 
 function encodePasswordMsg(
-  message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_CODE.password }>,
+  message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_CODE.Password }>,
 ): Uint8Array[] {
   if ("password" in message) {
     const password = encodeCString(message.password);
-    return [createFrameHeader(message.type, password.byteLength + 1), password, CSTRING_TERMINATOR];
+    return [createFrameHeader(message.type, password.byteLength + 1), password, CSTRING_TERMINATOR_DATA];
   }
   if ("mechanism" in message) {
     const mechanism = encodeCString(message.mechanism);
     const bodyLength = mechanism.byteLength + 5 + (message.data?.byteLength ?? 0);
     const dataLength = new Uint8Array(4);
     writeUint32(dataLength, 0, message.data?.byteLength ?? -1);
-    const output = [createFrameHeader(message.type, bodyLength), mechanism, CSTRING_TERMINATOR, dataLength];
+    const output = [createFrameHeader(message.type, bodyLength), mechanism, CSTRING_TERMINATOR_DATA, dataLength];
     if (message.data) output.push(message.data);
     return output;
   }
   return [createFrameHeader(message.type, message.data.byteLength), message.data];
 }
 
-function encodeQueryMsg(message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_CODE.query }>): Uint8Array[] {
+function encodeQueryMsg(message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_CODE.Query }>): Uint8Array[] {
   const sql = encodeCString(message.sql);
-  return [createFrameHeader(message.type, sql.byteLength + 1), sql, CSTRING_TERMINATOR];
+  return [createFrameHeader(message.type, sql.byteLength + 1), sql, CSTRING_TERMINATOR_DATA];
 }
 
-type ParseData = {
-  getStatementByteLength(): number;
-  encodeStatementInto(data: Uint8Array, offset: number): number;
+export interface ParseStatementEncoder {
+  calculateParseByteLength(): number;
+  encodeParseInto(data: Uint8Array, offset: number): number;
+}
+export interface SimpleQueryEncoder {
+  calculateByteLength(): number;
+  encodeQueryInto(data: Uint8Array, offset: number): number;
+}
 
-  getSqlByteLength(): number;
-  encodeSqlInto(data: Uint8Array, offset: number): number;
-  readonly argsLength: number;
-  encodeOIDInto?(data: Uint8Array, offset: number): number;
-};
-
-export function encodeParseMessage(statementByteLength: number, data: ParseData): Uint8Array {
-  const argsLength = data.argsLength;
-  const pidByteLength = argsLength && data.encodeOIDInto ? argsLength * 4 : 0;
-  const byteLength = 4 + statementByteLength + 1 + data.getSqlByteLength() + 1 + 2 + pidByteLength;
-
-  const buffer = new Uint8Array(1 + byteLength);
-  let offset = 5;
-
-  if (statementByteLength) offset = data.encodeStatementInto(buffer, offset);
-  buffer[offset++] = 0; // CSTRING_TERMINATOR
-  offset = data.encodeSqlInto(buffer, offset);
-  buffer[offset++] = 0; // CSTRING_TERMINATOR
-  offset = writeUint16(buffer, offset, argsLength);
-  if (data.encodeOIDInto) {
-    for (let i = 0; i < argsLength; i++) offset = data.encodeOIDInto(buffer, offset);
-  }
+export function encodeParseMessage(statement: ParseStatementEncoder): Uint8Array {
+  const byteLength = 5 + statement.calculateParseByteLength();
+  const buffer = new Uint8Array(byteLength);
+  const offset = statement.encodeParseInto(buffer, 5);
+  buffer[0] = FRONTEND_MSG_CODE.Parse;
+  writeUint32(buffer, 1, byteLength + 4);
   assertWrittenLength(buffer, offset);
   // header
-  buffer[0] = FRONTEND_MSG_CODE.parse;
-  writeUint32(buffer, 1, byteLength);
   return buffer;
 }
 
-function encodeBindMsg(message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_CODE.bind }>): Uint8Array[] {
+function encodeBindMsg(message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_CODE.Bind }>): Uint8Array[] {
   assertUint16(message.parameterFormats.length, "Parameter format count");
   assertUint16(message.parameters.length, "Parameter count");
   assertUint16(message.resultFormats.length, "Result format count");
@@ -104,9 +92,9 @@ function encodeBindMsg(message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_
   const output = [
     createFrameHeader(message.type, bodyLength),
     portal,
-    CSTRING_TERMINATOR,
+    CSTRING_TERMINATOR_DATA,
     statement,
-    CSTRING_TERMINATOR,
+    CSTRING_TERMINATOR_DATA,
   ];
   let offset = writeUint16(metadata, 0, message.parameterFormats.length);
   for (const format of message.parameterFormats) offset = writeUint16(metadata, offset, format);
@@ -125,97 +113,82 @@ function encodeBindMsg(message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_
   output.push(metadata.subarray(metadataStart));
   return output;
 }
-type BindData = {
-  /**
-   * 0 为文本格式，1 为二进制格式。默认为 0。
-   */
-  readonly argsFormat?: 0 | 1;
-
-  getPortalByteLength(): number;
-  encodePortalInto(buffer: Uint8Array, offset: number): number;
-
-  encodeParametersInto(buffer: Uint8Array, offset: number): number;
-  encodeParameterFormatsInto(buffer: Uint8Array, offset: number): number;
-
-  getParametersByteLength(): number;
-  getParameterFormatsByteLength(): number;
-
-  getResultFormatsByteLength(): number;
-  encodeResultFormatsInto(buffer: Uint8Array, offset: number): number;
-};
-export declare function encodeBindMessage(argsLength: number, statement: Uint8Array, data: BindData): Uint8Array;
-function encodeDescribeMsg(
-  message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_CODE.describe }>,
-): Uint8Array[] {
-  const name = encodeCString(message.name);
-  return [
-    createFrameHeader(message.type, name.byteLength + 2),
-    Uint8Array.of(message.target === "statement" ? 0x53 : 0x50),
-    name,
-    CSTRING_TERMINATOR,
-  ];
+export interface BindStatementEncoder {
+  calculateBindByteLength(): number;
+  encodeBindInto(data: Uint8Array, offset: number): number;
+}
+export function encodeBindMessage(data: BindStatementEncoder): Uint8Array {
+  const byteLength = data.calculateBindByteLength();
+  const buffer = new Uint8Array(byteLength + 5);
+  buffer[0] = FRONTEND_MSG_CODE.Bind;
+  writeUint32(buffer, 1, byteLength + 4);
+  const offset = data.encodeBindInto(buffer, 5);
+  assertWrittenLength(buffer, offset);
+  return buffer;
 }
 
-function encodeExecuteMsg(
-  message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_CODE.execute }>,
-): Uint8Array[] {
-  const portal = encodeCString(message.portal);
-  assertInt32(message.maxRows, "maxRows");
-  const maxRows = new Uint8Array(4);
-  writeUint32(maxRows, 0, message.maxRows);
-  return [createFrameHeader(message.type, portal.byteLength + 5), portal, CSTRING_TERMINATOR, maxRows];
+/**
+ * @param target 0x53: statement, 0x50: portal
+ */
+export function encodeDescribeMessage(target: 0x53 | 0x50, name?: Uint8Array) {
+  const byteLength = name ? name.byteLength + 2 : 2;
+  const buffer = new Uint8Array(byteLength + 5);
+  buffer[0] = FRONTEND_MSG_CODE.Describe;
+  writeUint32(buffer, 1, byteLength);
+  buffer[5] = target;
+
+  let offset = 6;
+  if (name) {
+    buffer.set(name, offset);
+    offset += name.byteLength;
+  }
+  buffer[offset++] = CSTRING_TERMINATOR;
+  return buffer;
+}
+export function encodeExecuteMessage(maxRows: number, portal?: Uint8Array): Uint8Array {
+  const buffer = new Uint8Array(portal ? portal.byteLength + 9 : 9);
+  buffer[0] = FRONTEND_MSG_CODE.Execute;
+  writeUint32(buffer, 1, buffer.byteLength - 1);
+  let offset = 5;
+  if (portal) {
+    buffer.set(portal, offset);
+    offset += portal.byteLength;
+  }
+  buffer[offset++] = CSTRING_TERMINATOR;
+  offset = writeUint32(buffer, offset, maxRows);
+  assertWrittenLength(buffer, offset);
+  return buffer;
 }
 
-function encodeCloseMsg(message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_CODE.close }>): Uint8Array[] {
-  const name = encodeCString(message.name);
-  return [
-    createFrameHeader(message.type, name.byteLength + 2),
-    Uint8Array.of(message.target === "statement" ? 0x53 : 0x50),
-    name,
-    CSTRING_TERMINATOR,
-  ];
+function encodeCloseMessage(target: 0x53 | 0x50, name?: Uint8Array): Uint8Array {
+  const byteLength = name ? name.byteLength + 2 : 2;
+  const buffer = new Uint8Array(byteLength + 5);
+  buffer[0] = FRONTEND_MSG_CODE.Close;
+  writeUint32(buffer, 1, byteLength);
+  buffer[5] = target;
+
+  let offset = 6;
+  if (name) {
+    buffer.set(name, offset);
+    offset += name.byteLength;
+  }
+  buffer[offset++] = CSTRING_TERMINATOR;
+  return buffer;
 }
 
 function encodeCopyDataMsg(
-  message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_CODE.copyData }>,
+  message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_CODE.CopyData }>,
 ): Uint8Array[] {
   return [createFrameHeader(message.type, message.data.byteLength), message.data];
 }
 
 function encodeCopyFailMsg(
-  message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_CODE.copyFail }>,
+  message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_CODE.CopyFail }>,
 ): Uint8Array[] {
   const reason = encodeCString(message.reason);
-  return [createFrameHeader(message.type, reason.byteLength + 1), reason, CSTRING_TERMINATOR];
+  return [createFrameHeader(message.type, reason.byteLength + 1), reason, CSTRING_TERMINATOR_DATA];
 }
 
 export function encodeFrontendMessage(message: PgFrontendMessage): Uint8Array[] {
-  switch (message.type) {
-    case FRONTEND_MSG_CODE.password:
-      return encodePasswordMsg(message);
-    case FRONTEND_MSG_CODE.query:
-      return encodeQueryMsg(message);
-    case FRONTEND_MSG_CODE.parse:
-      return encodeParseMsg(message);
-    case FRONTEND_MSG_CODE.bind:
-      return encodeBindMsg(message);
-    case FRONTEND_MSG_CODE.describe:
-      return encodeDescribeMsg(message);
-    case FRONTEND_MSG_CODE.execute:
-      return encodeExecuteMsg(message);
-    case FRONTEND_MSG_CODE.close:
-      return encodeCloseMsg(message);
-    case FRONTEND_MSG_CODE.flush:
-      return [FLUSH];
-    case FRONTEND_MSG_CODE.sync:
-      return [SYNC];
-    case FRONTEND_MSG_CODE.copyData:
-      return encodeCopyDataMsg(message);
-    case FRONTEND_MSG_CODE.copyDone:
-      return [COPY_DONE];
-    case FRONTEND_MSG_CODE.copyFail:
-      return encodeCopyFailMsg(message);
-    case FRONTEND_MSG_CODE.terminate:
-      return [TERMINATE];
-  }
+  throw new Error("Unsupported frontend message type: " + message.type);
 }

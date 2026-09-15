@@ -141,18 +141,18 @@ export async function auth(stream: PgMessageReader, options: PgAuthenticationExc
     const pending = await stream.read();
     if (!pending) throw new PgAuthenticationError("PostgreSQL closed the connection during authentication");
     const message = decodeBackendMessage(pending.type, await pending.readBody());
-    if (message.type === BACKEND_MSG_CODE.authentication) {
+    if (message.type === BACKEND_MSG_CODE.Authentication) {
       sasl = await respondAuthentication(stream, message, options, sasl);
-    } else if (message.type === BACKEND_MSG_CODE.parameterStatus) {
+    } else if (message.type === BACKEND_MSG_CODE.ParameterStatus) {
       parameters[message.name] = message.value;
       await options.onAsyncMessage?.(message);
-    } else if (message.type === BACKEND_MSG_CODE.backendKeyData) {
+    } else if (message.type === BACKEND_MSG_CODE.BackendKeyData) {
       backendKey = { processId: message.processId, secretKey: message.secretKey };
-    } else if (message.type === BACKEND_MSG_CODE.readyForQuery) {
+    } else if (message.type === BACKEND_MSG_CODE.ReadyForQuery) {
       return { protocolVersion: PROTOCOL_VERSION, parameters, backendKey, transactionStatus: message.status };
-    } else if (message.type === BACKEND_MSG_CODE.error) {
+    } else if (message.type === BACKEND_MSG_CODE.Error) {
       throw new PgAuthenticationError(message.fields.message, undefined, { cause: message });
-    } else if (message.type === BACKEND_MSG_CODE.notice || message.type === BACKEND_MSG_CODE.notification) {
+    } else if (message.type === BACKEND_MSG_CODE.Notice || message.type === BACKEND_MSG_CODE.Notification) {
       await options.onAsyncMessage?.(message);
     }
   }
@@ -168,14 +168,14 @@ export async function respondAuthentication(
   options: PgAuthenticationExchangeOptions,
   state?: PgSaslExchange,
 ): Promise<PgSaslExchange | undefined> {
-  if (message.type !== BACKEND_MSG_CODE.authentication) return state;
+  if (message.type !== BACKEND_MSG_CODE.Authentication) return state;
   if (message.code === AUTH_CODE.OK) return state;
   if (message.code === AUTH_CODE.CLEARTEXT_PWD) {
     const password = typeof options.password === "function" ? await options.password() : options.password;
     if (password === undefined) {
       throw new PgAuthenticationError("PostgreSQL requested a password, but none was provided");
     }
-    await writeMessages(stream, { type: FRONTEND_MSG_CODE.password, password });
+    await writeMessages(stream, { type: FRONTEND_MSG_CODE.Password, password });
     return state;
   }
   if (message.code === AUTH_CODE.SASL && "mechanisms" in message) {
@@ -184,7 +184,7 @@ export async function respondAuthentication(
       ? await options.createSaslExchange(message.mechanisms, { user: options.user, password })
       : await createScramExchange(message.mechanisms, options.user, password);
     await writeMessages(stream, {
-      type: FRONTEND_MSG_CODE.password,
+      type: FRONTEND_MSG_CODE.Password,
       mechanism: exchange.mechanism,
       data: await exchange.initialResponse(),
     });
@@ -192,7 +192,7 @@ export async function respondAuthentication(
   }
   if (message.code === AUTH_CODE.SASL_CONTINUE) {
     if (!state || !("data" in message)) throw new PgAuthenticationError("Unexpected SASL continuation");
-    await writeMessages(stream, { type: FRONTEND_MSG_CODE.password, data: await state.continue(message.data) });
+    await writeMessages(stream, { type: FRONTEND_MSG_CODE.Password, data: await state.continue(message.data) });
     return state;
   }
   if (message.code === AUTH_CODE.SASL_FINAL) {

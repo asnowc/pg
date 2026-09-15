@@ -1,5 +1,6 @@
 import type { SimpleQueryEncoder, StatementEncoder } from "@/query.ts";
 import { getJsDataEncoder, type JsDataEncoder, type JsDataEncoderMap } from "./js_data_encoder.ts";
+import { calcCStringByteLength } from "../../dist/src/_utils/data_type_bin.js";
 
 /** @public */
 export class TemplateSqlStatementEncoder implements StatementEncoder, SimpleQueryEncoder {
@@ -12,8 +13,9 @@ export class TemplateSqlStatementEncoder implements StatementEncoder, SimpleQuer
   #args: unknown[];
   #chunks: TemplateStringsArray;
   calculateParseByteLength(): number {
-    throw new Error("Method not implemented.");
+    return calcParseByteLength(this.#chunks, this.#args.length);
   }
+
   encodeParseInto(data: Uint8Array, offset: number): number {
     throw new Error("Method not implemented.");
   }
@@ -77,6 +79,26 @@ export class TemplateSqlStatementEncoder implements StatementEncoder, SimpleQuer
   }
 }
 
+function calcParseByteLength(chunks: readonly string[], argsLength: number) {
+  let sqlByteLength = calcCStringByteLength(chunks[0]);
+  for (let i = 1; i < chunks.length; i++) {
+    if (i < argsLength) sqlByteLength += 1 + calcUTF8UInt16ByteLength(i); // $n
+    sqlByteLength += calcCStringByteLength(chunks[i]);
+  }
+  // UTF8 SQL + 1(CSTRING_TERMINATOR) + UTF8 statement + 1(CSTRING_TERMINATOR) + UInt16(argsLength) + OID * argsLength
+  // statement='', argsLength=0 =>  length = sqlByteLength + 4
+  return sqlByteLength + 4;
+}
+function calcUTF8UInt16ByteLength(n: number) {
+  if (n < 0) throw new RangeError("Value must be non-negative");
+  if (n < 10) return 1;
+  if (n < 100) return 2;
+  if (n < 1000) return 3;
+  if (n < 10000) return 4;
+  if (n <= 0xffff) return 4;
+  throw new RangeError("PostgresSQL parameter must be less than or equal to 0xffff");
+}
+
 /** @public */
 export class TextSqlStatementEncoder implements StatementEncoder, SimpleQueryEncoder {
   constructor(sqlStatement: string, args?: undefined);
@@ -90,6 +112,8 @@ export class TextSqlStatementEncoder implements StatementEncoder, SimpleQueryEnc
   #sqlStatement: string;
   #args?: (string | null)[];
   calculateParseByteLength(): number {
+    const sqlByteLength = calcCStringByteLength(this.#sqlStatement);
+    //TODO
     throw new Error("Method not implemented.");
   }
   encodeParseInto(data: Uint8Array, offset: number): number {

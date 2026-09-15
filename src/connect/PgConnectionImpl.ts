@@ -4,11 +4,9 @@ import type {
   QueryCompletion,
   QueryReader,
   SampleQueryReader,
-  SqlStatementData,
   Transaction,
   TransactionMode,
   TypedSqlStatement,
-  TypedSqlStatementTemplate,
 } from "@/query.ts";
 import { PG_DATA_DECODER_V1 } from "@/query.ts";
 import { QueryReaderImpl, SampleQueryReaderImpl } from "@/query/QueryReaderImpl.ts";
@@ -142,8 +140,8 @@ export class PgConnectionImpl implements PgConnection {
     const complete = deferred<{ rows: number }>();
     this.#enqueue(async () => {
       try {
-        await this.#send({ type: FRONTEND_MSG_CODE.query, sql: statementText(queryable) });
-        await this.#waitFor(BACKEND_MSG_CODE.copyInResponse, options);
+        await this.#send({ type: FRONTEND_MSG_CODE.Query, sql: statementText(queryable) });
+        await this.#waitFor(BACKEND_MSG_CODE.CopyInResponse, options);
         ready.resolve();
         const ending = await finish.promise;
         await this.#send(ending.failure !== undefined ? copyFailMessage(ending.failure) : copyDoneMessage());
@@ -165,7 +163,7 @@ export class PgConnectionImpl implements PgConnection {
     return new ReadableStream<Uint8Array>({
       start: (controller) => {
         this.#enqueue(async () => {
-          await this.#send({ type: FRONTEND_MSG_CODE.query, sql: statementText(queryable) });
+          await this.#send({ type: FRONTEND_MSG_CODE.Query, sql: statementText(queryable) });
           let databaseError: PgDatabaseError | undefined;
           while (true) {
             const message = await this.#read();
@@ -175,9 +173,9 @@ export class PgConnectionImpl implements PgConnection {
                 resume = deferred<void>();
               }
               if (!cancelled) controller.enqueue(message.data);
-            } else if (message.type === BACKEND_MSG_CODE.error) databaseError = new PgDatabaseError(message.fields);
+            } else if (message.type === BACKEND_MSG_CODE.Error) databaseError = new PgDatabaseError(message.fields);
             else if (isAsync(message)) await this.#async(message, options);
-            else if (message.type === BACKEND_MSG_CODE.readyForQuery) {
+            else if (message.type === BACKEND_MSG_CODE.ReadyForQuery) {
               this.session.transactionStatus = message.status;
               if (databaseError) throw databaseError;
               if (!cancelled) controller.close();
@@ -201,7 +199,7 @@ export class PgConnectionImpl implements PgConnection {
     this.#closed = true;
     await this.#queue.catch(() => undefined);
     try {
-      await this.#send({ type: FRONTEND_MSG_CODE.terminate }, true);
+      await this.#send({ type: FRONTEND_MSG_CODE.Terminate }, true);
       await this.stream.closeWrite();
     } finally {
       this.stream.close();
@@ -213,20 +211,20 @@ export class PgConnectionImpl implements PgConnection {
   }
 
   async #simple(sql: string, options?: QueryOptions): Promise<MaterializedResult[]> {
-    await this.#send({ type: FRONTEND_MSG_CODE.query, sql });
+    await this.#send({ type: FRONTEND_MSG_CODE.Query, sql });
     return await this.#readResults(options);
   }
 
   async #extended<T>(queryable: Extract<SqlStatement<T>, { sqlTemplate: unknown }>, options?: QueryOptions) {
     const formats = normalizeFormats(queryable.argsFormat, queryable.args.length);
     await this.#send({
-      type: FRONTEND_MSG_CODE.parse,
+      type: FRONTEND_MSG_CODE.Parse,
       statement: "",
       sql: statementText(queryable),
       parameterTypeOids: Array.from(queryable.argsOid ?? []),
     });
     await this.#send({
-      type: FRONTEND_MSG_CODE.bind,
+      type: FRONTEND_MSG_CODE.Bind,
       portal: "",
       statement: "",
       parameters: Array.from(
@@ -236,9 +234,9 @@ export class PgConnectionImpl implements PgConnection {
       parameterFormats: formats,
       resultFormats: [PgFormat.text],
     });
-    await this.#send({ type: FRONTEND_MSG_CODE.describe, target: "portal", name: "" });
-    await this.#send({ type: FRONTEND_MSG_CODE.execute, portal: "", maxRows: 0 });
-    await this.#send({ type: FRONTEND_MSG_CODE.sync });
+    await this.#send({ type: FRONTEND_MSG_CODE.Describe, target: "portal", name: "" });
+    await this.#send({ type: FRONTEND_MSG_CODE.Execute, portal: "", maxRows: 0 });
+    await this.#send({ type: FRONTEND_MSG_CODE.Sync });
     return await this.#readResults({ ...queryable, ...options }) as MaterializedResult<T>[];
   }
 
@@ -254,35 +252,35 @@ export class PgConnectionImpl implements PgConnection {
     const args = parameterized ? queryable.args : [];
     const formats = parameterized ? normalizeFormats(queryable.argsFormat, args.length) : [];
     await this.#send({
-      type: FRONTEND_MSG_CODE.parse,
+      type: FRONTEND_MSG_CODE.Parse,
       statement,
       sql: statementText(queryable),
       parameterTypeOids: parameterized ? Array.from(queryable.argsOid ?? []) : [],
     });
     await this.#send({
-      type: FRONTEND_MSG_CODE.bind,
+      type: FRONTEND_MSG_CODE.Bind,
       portal,
       statement,
       parameters: Array.from(args, (value) => typeof value === "string" ? new TextEncoder().encode(value) : value),
       parameterFormats: formats,
       resultFormats: [PgFormat.text],
     });
-    await this.#send({ type: FRONTEND_MSG_CODE.describe, target: "portal", name: portal });
-    await this.#send({ type: FRONTEND_MSG_CODE.flush });
+    await this.#send({ type: FRONTEND_MSG_CODE.Describe, target: "portal", name: portal });
+    await this.#send({ type: FRONTEND_MSG_CODE.Flush });
 
     let descriptions: readonly PgFieldDescription[] = [];
     while (true) {
       const message = await this.#read();
-      if (message.type === BACKEND_MSG_CODE.rowDescription) {
+      if (message.type === BACKEND_MSG_CODE.RowDescription) {
         descriptions = message.fields;
         controller.fields.resolve(toFields(descriptions));
         break;
       }
-      if (message.type === BACKEND_MSG_CODE.noData) {
+      if (message.type === BACKEND_MSG_CODE.NoData) {
         controller.fields.resolve([]);
         break;
       }
-      if (message.type === BACKEND_MSG_CODE.error) {
+      if (message.type === BACKEND_MSG_CODE.Error) {
         await this.#recoverExtendedError();
         throw new PgDatabaseError(message.fields);
       }
@@ -293,31 +291,31 @@ export class PgConnectionImpl implements PgConnection {
     while (true) {
       const request = await controller.next();
       if (request.type === "close") {
-        await this.#send({ type: FRONTEND_MSG_CODE.close, target: "portal", name: portal });
-        await this.#send({ type: FRONTEND_MSG_CODE.close, target: "statement", name: statement });
-        await this.#send({ type: FRONTEND_MSG_CODE.sync });
+        await this.#send({ type: FRONTEND_MSG_CODE.Close, target: "portal", name: portal });
+        await this.#send({ type: FRONTEND_MSG_CODE.Close, target: "statement", name: statement });
+        await this.#send({ type: FRONTEND_MSG_CODE.Sync });
         await this.#drainReady(options);
         controller.finish({ status: "closed", notices });
         request.response.resolve();
         return;
       }
 
-      await this.#send({ type: FRONTEND_MSG_CODE.execute, portal, maxRows: request.maxRows });
-      await this.#send({ type: FRONTEND_MSG_CODE.flush });
+      await this.#send({ type: FRONTEND_MSG_CODE.Execute, portal, maxRows: request.maxRows });
+      await this.#send({ type: FRONTEND_MSG_CODE.Flush });
       const rows: T[] = [];
       let commandTag: string | undefined;
       let databaseError: PgDatabaseError | undefined;
       while (true) {
         const message = await this.#read();
-        if (message.type === BACKEND_MSG_CODE.dataRow) {
+        if (message.type === BACKEND_MSG_CODE.DataRow) {
           rows.push(decodeRow(message.values, descriptions, options) as T);
-        } else if (message.type === BACKEND_MSG_CODE.portalSuspended) {
+        } else if (message.type === BACKEND_MSG_CODE.PortalSuspended) {
           request.response.resolve(rows);
           break;
-        } else if (message.type === BACKEND_MSG_CODE.commandComplete) {
+        } else if (message.type === BACKEND_MSG_CODE.CommandComplete) {
           commandTag = message.tag;
-          await this.#send({ type: FRONTEND_MSG_CODE.close, target: "statement", name: statement });
-          await this.#send({ type: FRONTEND_MSG_CODE.sync });
+          await this.#send({ type: FRONTEND_MSG_CODE.Close, target: "statement", name: statement });
+          await this.#send({ type: FRONTEND_MSG_CODE.Sync });
           await this.#drainReady(options);
           controller.finish({
             status: "complete",
@@ -326,12 +324,12 @@ export class PgConnectionImpl implements PgConnection {
           });
           request.response.resolve(rows);
           return;
-        } else if (message.type === BACKEND_MSG_CODE.error) {
+        } else if (message.type === BACKEND_MSG_CODE.Error) {
           databaseError = new PgDatabaseError(message.fields);
           await this.#recoverExtendedError();
           request.response.reject(databaseError);
           throw databaseError;
-        } else if (message.type === BACKEND_MSG_CODE.notice) {
+        } else if (message.type === BACKEND_MSG_CODE.Notice) {
           notices.push(message.fields.message);
           await this.#async(message, options);
         } else if (isAsync(message)) {
@@ -342,14 +340,14 @@ export class PgConnectionImpl implements PgConnection {
   }
 
   async #recoverExtendedError(): Promise<void> {
-    await this.#send({ type: FRONTEND_MSG_CODE.sync });
+    await this.#send({ type: FRONTEND_MSG_CODE.Sync });
     await this.#drainReady();
   }
 
   async #drainReady(options?: QueryOptions): Promise<void> {
     while (true) {
       const message = await this.#read();
-      if (message.type === BACKEND_MSG_CODE.readyForQuery) {
+      if (message.type === BACKEND_MSG_CODE.ReadyForQuery) {
         this.session.transactionStatus = message.status;
         return;
       }
@@ -365,35 +363,35 @@ export class PgConnectionImpl implements PgConnection {
     while (true) {
       const message = await this.#read();
       switch (message.type) {
-        case BACKEND_MSG_CODE.rowDescription:
+        case BACKEND_MSG_CODE.RowDescription:
           descriptions = message.fields;
           current.fields = toFields(descriptions);
           break;
-        case BACKEND_MSG_CODE.dataRow:
+        case BACKEND_MSG_CODE.DataRow:
           current.rows.push(decodeRow(message.values, descriptions, options));
           break;
-        case BACKEND_MSG_CODE.commandComplete:
+        case BACKEND_MSG_CODE.CommandComplete:
           current.rowCount = parseRowCount(message.tag, current.rows.length);
           results.push(current);
           current = { rows: [], fields: [], notices: [], rowCount: 0 };
           descriptions = [];
           break;
-        case BACKEND_MSG_CODE.emptyQuery:
+        case BACKEND_MSG_CODE.EmptyQueryResponse:
           results.push(current);
           current = { rows: [], fields: [], notices: [], rowCount: 0 };
           break;
-        case BACKEND_MSG_CODE.notice:
+        case BACKEND_MSG_CODE.Notice:
           current.notices.push(message.fields.message);
           await options?.onNotice?.({ notice: message.fields.message });
           break;
-        case BACKEND_MSG_CODE.error:
+        case BACKEND_MSG_CODE.Error:
           databaseError = new PgDatabaseError(message.fields);
           break;
-        case BACKEND_MSG_CODE.parameterStatus:
-        case BACKEND_MSG_CODE.notification:
+        case BACKEND_MSG_CODE.ParameterStatus:
+        case BACKEND_MSG_CODE.Notification:
           await this.#async(message, options);
           break;
-        case BACKEND_MSG_CODE.readyForQuery:
+        case BACKEND_MSG_CODE.ReadyForQuery:
           this.session.transactionStatus = message.status;
           if (databaseError) throw databaseError;
           return results;
@@ -405,7 +403,7 @@ export class PgConnectionImpl implements PgConnection {
     while (true) {
       const message = await this.#read();
       if (message.type === type) return;
-      if (message.type === BACKEND_MSG_CODE.error) {
+      if (message.type === BACKEND_MSG_CODE.Error) {
         await this.#drainReady(options);
         throw new PgDatabaseError(message.fields);
       }
@@ -418,10 +416,10 @@ export class PgConnectionImpl implements PgConnection {
     let databaseError: PgDatabaseError | undefined;
     while (true) {
       const message = await this.#read();
-      if (message.type === BACKEND_MSG_CODE.commandComplete) rows = parseRowCount(message.tag, 0);
-      else if (message.type === BACKEND_MSG_CODE.error) databaseError = new PgDatabaseError(message.fields);
+      if (message.type === BACKEND_MSG_CODE.CommandComplete) rows = parseRowCount(message.tag, 0);
+      else if (message.type === BACKEND_MSG_CODE.Error) databaseError = new PgDatabaseError(message.fields);
       else if (isAsync(message)) await this.#async(message, options);
-      else if (message.type === BACKEND_MSG_CODE.readyForQuery) {
+      else if (message.type === BACKEND_MSG_CODE.ReadyForQuery) {
         this.session.transactionStatus = message.status;
         if (databaseError) throw databaseError;
         return rows;
@@ -436,9 +434,9 @@ export class PgConnectionImpl implements PgConnection {
   }
 
   async #async(message: PgBackendMessage, options?: QueryOptions): Promise<void> {
-    if (message.type === BACKEND_MSG_CODE.parameterStatus) {
+    if (message.type === BACKEND_MSG_CODE.ParameterStatus) {
       (this.session.parameters as Record<string, string>)[message.name] = message.value;
-    } else if (message.type === BACKEND_MSG_CODE.notice) {
+    } else if (message.type === BACKEND_MSG_CODE.Notice) {
       await options?.onNotice?.({ notice: message.fields.message });
     }
   }
@@ -714,8 +712,8 @@ function completion(result: MaterializedResult): QueryCompletion {
 }
 
 function isAsync(message: PgBackendMessage): boolean {
-  return message.type === BACKEND_MSG_CODE.notice || message.type === BACKEND_MSG_CODE.notification ||
-    message.type === BACKEND_MSG_CODE.parameterStatus;
+  return message.type === BACKEND_MSG_CODE.Notice || message.type === BACKEND_MSG_CODE.Notification ||
+    message.type === BACKEND_MSG_CODE.ParameterStatus;
 }
 
 async function collectStream(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {

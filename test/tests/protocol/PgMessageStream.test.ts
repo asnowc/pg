@@ -23,7 +23,7 @@ describe("PgMessageReader", () => {
   });
 
   it("rejects concurrent reads", async () => {
-    const input = frame(BACKEND_MSG_CODE.readyForQuery, Uint8Array.of(0x49));
+    const input = frame(BACKEND_MSG_CODE.ReadyForQuery, Uint8Array.of(0x49));
     const firstReadStarted = Promise.withResolvers<void>();
     const continueFirstRead = Promise.withResolvers<void>();
     let reading = false;
@@ -54,11 +54,11 @@ describe("PgMessageReader", () => {
     await firstReadStarted.promise;
     await expect(reader.read()).rejects.toThrow("Previous read not finished");
     continueFirstRead.resolve();
-    await expect(first).resolves.toMatchObject({ type: BACKEND_MSG_CODE.readyForQuery });
+    await expect(first).resolves.toMatchObject({ type: BACKEND_MSG_CODE.ReadyForQuery });
   });
 
   it("keeps the read lock until the body is consumed", async () => {
-    const reader = new PgMessageReader(readable(frame(BACKEND_MSG_CODE.readyForQuery, Uint8Array.of(0x49))));
+    const reader = new PgMessageReader(readable(frame(BACKEND_MSG_CODE.ReadyForQuery, Uint8Array.of(0x49))));
     const message = await reader.read();
     await expect(reader.read()).rejects.toThrow("Previous read not finished");
     await expect(message!.readBody()).resolves.toEqual(Uint8Array.of(0x49));
@@ -76,12 +76,12 @@ describe("PgMessageReader", () => {
   });
 
   it("enforces maxMessageSize", async () => {
-    const reader = new PgMessageReader(readable(frame(BACKEND_MSG_CODE.dataRow, Uint8Array.of(1, 2, 3, 4, 5))), 8);
+    const reader = new PgMessageReader(readable(frame(BACKEND_MSG_CODE.DataRow, Uint8Array.of(1, 2, 3, 4, 5))), 8);
     await expect((await reader.read())!.readBody()).rejects.toThrow("message length");
   });
 
   it("unlocks after a body read failure", async () => {
-    const header = frame(BACKEND_MSG_CODE.readyForQuery, Uint8Array.of(0x49)).subarray(0, 5);
+    const header = frame(BACKEND_MSG_CODE.ReadyForQuery, Uint8Array.of(0x49)).subarray(0, 5);
     let bodyReads = 0;
     const stream: ByteStream = {
       read: async () => {
@@ -99,7 +99,7 @@ describe("PgMessageReader", () => {
     const reader = new PgMessageReader(stream);
     await expect((await reader.read())!.readBody()).rejects.toThrow("read failed");
     const next = await reader.read();
-    expect(next?.type).toBe(BACKEND_MSG_CODE.readyForQuery);
+    expect(next?.type).toBe(BACKEND_MSG_CODE.ReadyForQuery);
     await expect(next!.readBody()).resolves.toEqual(Uint8Array.of(0x49));
   });
 

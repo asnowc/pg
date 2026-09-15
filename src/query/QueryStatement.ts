@@ -3,15 +3,21 @@ import type { FieldInfo } from "./MessageData.ts";
 
 /** @public */
 export interface StatementEncoder {
+  /** 计算 Parse 消息的字节长度。不包含头部信息的字节长度 */
   calculateParseByteLength(): number;
+  /** 将 Parse 消息编码到指定的 Uint8Array 中 */
   encodeParseInto(data: Uint8Array, offset: number): number;
 
+  /** 计算 Bind 消息的字节长度。不包含头部信息的字节长度 */
   calculateBindByteLength(): number;
+  /** 将 Bind 消息编码到指定的 Uint8Array 中 */
   encodeBindInto(data: Uint8Array, offset: number): number;
 }
 /** @public */
 export interface SimpleQueryEncoder {
+  /** 计算 Simple Query 消息的字节长度。不包含头部信息的字节长度 */
   calculateByteLength(): number;
+  /** 将 Simple Query 消息编码到指定的 Uint8Array 中 */
   encodeQueryInto(data: Uint8Array, offset: number): number;
 }
 

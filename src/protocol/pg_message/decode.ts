@@ -21,7 +21,7 @@ function readFormat(reader: ByteReader): PgFormat {
 }
 
 export function decodeAuthentication(reader: ByteReader): PgAuthenticationMessage {
-  const type = BACKEND_MSG_CODE.authentication;
+  const type = BACKEND_MSG_CODE.Authentication;
   const byteLength = reader.byteLength;
   const authenticationCode = reader.readInt32();
   if ([AUTH_CODE.OK, AUTH_CODE.GSS, AUTH_CODE.SSPI, AUTH_CODE.CLEARTEXT_PWD].includes(authenticationCode)) {
@@ -39,7 +39,7 @@ export function decodeAuthentication(reader: ByteReader): PgAuthenticationMessag
       mechanisms.push(mechanism);
     }
     throw new PgProtocolError("Invalid AuthenticationSASL message: missing terminator", {
-      messageCode: BACKEND_MSG_CODE.authentication,
+      messageCode: BACKEND_MSG_CODE.Authentication,
     });
   } else if (authenticationCode === AUTH_CODE.MD5_PWD) {
     // PostgreSQL 已废弃 MD5 认证，本库不提供兼容实现。
@@ -50,11 +50,11 @@ export function decodeAuthentication(reader: ByteReader): PgAuthenticationMessag
 }
 
 export function decodeBackendKeyData(reader: ByteReader): PgBackendMessage {
-  const type = BACKEND_MSG_CODE.backendKeyData;
+  const type = BACKEND_MSG_CODE.BackendKeyData;
   const byteLength = reader.byteLength;
   if (byteLength !== 8) {
     throw new PgProtocolError("Only protocol 3.0 BackendKeyData messages are supported", {
-      messageCode: BACKEND_MSG_CODE.backendKeyData,
+      messageCode: BACKEND_MSG_CODE.BackendKeyData,
     });
   }
   const processId = reader.readInt32();
@@ -64,7 +64,7 @@ export function decodeBackendKeyData(reader: ByteReader): PgBackendMessage {
 }
 
 export function decodeCommandComplete(reader: ByteReader): PgBackendMessage {
-  const type = BACKEND_MSG_CODE.commandComplete;
+  const type = BACKEND_MSG_CODE.CommandComplete;
   const tag = reader.readCString();
   assertHasBeenFullyRead(reader, type);
   return { type, byteLength: reader.byteLength, tag };
@@ -73,9 +73,9 @@ export function decodeCommandComplete(reader: ByteReader): PgBackendMessage {
 export function decodeCopyResponse(
   reader: ByteReader,
   code:
-    | BACKEND_MSG_CODE.copyInResponse
-    | BACKEND_MSG_CODE.copyOutResponse
-    | BACKEND_MSG_CODE.copyBothResponse,
+    | BACKEND_MSG_CODE.CopyInResponse
+    | BACKEND_MSG_CODE.CopyOutResponse
+    | BACKEND_MSG_CODE.CopyBothResponse,
 ): PgBackendMessage {
   const overallFormat = reader.readInt8();
   if (overallFormat !== PgFormat.text && overallFormat !== PgFormat.binary) {
@@ -89,7 +89,7 @@ export function decodeCopyResponse(
 }
 
 export function decodeDataRow(reader: ByteReader): PgBackendMessage {
-  const code = BACKEND_MSG_CODE.dataRow;
+  const code = BACKEND_MSG_CODE.DataRow;
   const count = reader.readUint16();
   const values: (Uint8Array | null)[] = new Array(count);
   for (let index = 0; index < count; index++) values[index] = reader.readValue();
@@ -119,10 +119,10 @@ const ERROR_KEY_MAP: Record<string, string> = {
 
 export function decodeNoticeResponse(
   reader: ByteReader,
-  code: BACKEND_MSG_CODE.error | BACKEND_MSG_CODE.notice,
+  code: BACKEND_MSG_CODE.Error | BACKEND_MSG_CODE.Notice,
 ): Extract<
   PgBackendMessage,
-  { type: BACKEND_MSG_CODE.error | BACKEND_MSG_CODE.notice }
+  { type: BACKEND_MSG_CODE.Error | BACKEND_MSG_CODE.Notice }
 > {
   const fields: Record<string, string> = {};
   const unknown: Record<string, string> = {};
@@ -143,7 +143,7 @@ export function decodeNoticeResponse(
   if (fields.severity === undefined || fields.code === undefined || fields.message === undefined) {
     throw new PgProtocolError("Invalid PostgreSQL error response: missing required field", { messageCode: code });
   }
-  if (code === BACKEND_MSG_CODE.error) {
+  if (code === BACKEND_MSG_CODE.Error) {
     return {
       type: code,
       byteLength: reader.byteLength,
@@ -163,12 +163,12 @@ export function decodeNoticeResponse(
 export function decodeNegotiateProtocolVersion(
   reader: ByteReader,
 ): PgBackendMessage {
-  const code = BACKEND_MSG_CODE.negotiateProtocolVersion;
+  const code = BACKEND_MSG_CODE.NegotiateProtocolVersion;
   const newestMinorVersion = reader.readInt32();
   const count = reader.readInt32();
   if (count < 0) {
     throw new PgProtocolError("Invalid NegotiateProtocolVersion option count", {
-      messageCode: BACKEND_MSG_CODE.negotiateProtocolVersion,
+      messageCode: BACKEND_MSG_CODE.NegotiateProtocolVersion,
     });
   }
   const unsupportedOptions: string[] = new Array(count);
@@ -178,7 +178,7 @@ export function decodeNegotiateProtocolVersion(
 }
 
 export function decodeNotification(reader: ByteReader): PgBackendMessage {
-  const code = BACKEND_MSG_CODE.notification;
+  const code = BACKEND_MSG_CODE.Notification;
   const processId = reader.readInt32();
   const channel = reader.readCString();
   const payload = reader.readCString();
@@ -189,7 +189,7 @@ export function decodeNotification(reader: ByteReader): PgBackendMessage {
 export function decodeParameterDescription(
   reader: ByteReader,
 ): PgBackendMessage {
-  const code = BACKEND_MSG_CODE.parameterDescription;
+  const code = BACKEND_MSG_CODE.ParameterDescription;
   const count = reader.readUint16();
   const dataTypeOids: number[] = new Array(count);
   for (let index = 0; index < count; index++) dataTypeOids[index] = reader.readUint32();
@@ -198,7 +198,7 @@ export function decodeParameterDescription(
 }
 
 export function decodeParameterStatus(reader: ByteReader): PgBackendMessage {
-  const code = BACKEND_MSG_CODE.parameterStatus;
+  const code = BACKEND_MSG_CODE.ParameterStatus;
   const name = reader.readCString();
   const value = reader.readCString();
   assertHasBeenFullyRead(reader, code);
@@ -206,14 +206,14 @@ export function decodeParameterStatus(reader: ByteReader): PgBackendMessage {
 }
 
 export function decodeReadyForQuery(reader: ByteReader): PgBackendMessage {
-  const code = BACKEND_MSG_CODE.readyForQuery;
+  const code = BACKEND_MSG_CODE.ReadyForQuery;
   const statusCode = reader.readInt8();
   if (
     statusCode !== PgTransactionStatus.Idle && statusCode !== PgTransactionStatus.Transaction &&
     statusCode !== PgTransactionStatus.Failed
   ) {
     throw new PgProtocolError(`Invalid ReadyForQuery transaction status: ${statusCode}`, {
-      messageCode: BACKEND_MSG_CODE.readyForQuery,
+      messageCode: BACKEND_MSG_CODE.ReadyForQuery,
     });
   }
   assertHasBeenFullyRead(reader, code);
@@ -221,7 +221,7 @@ export function decodeReadyForQuery(reader: ByteReader): PgBackendMessage {
 }
 
 export function decodeRowDescription(reader: ByteReader): PgBackendMessage {
-  const code = BACKEND_MSG_CODE.rowDescription;
+  const code = BACKEND_MSG_CODE.RowDescription;
   const count = reader.readUint16();
   const fields: PgFieldDescription[] = new Array(count);
   for (let index = 0; index < count; index++) {
@@ -241,45 +241,45 @@ export function decodeRowDescription(reader: ByteReader): PgBackendMessage {
 export function decodeBackendMessage(code: number, body: Uint8Array): PgBackendMessage {
   const reader = new ByteReader(body);
   switch (code) {
-    case BACKEND_MSG_CODE.authentication:
+    case BACKEND_MSG_CODE.Authentication:
       return decodeAuthentication(reader);
-    case BACKEND_MSG_CODE.backendKeyData:
+    case BACKEND_MSG_CODE.BackendKeyData:
       return decodeBackendKeyData(reader);
-    case BACKEND_MSG_CODE.bindComplete:
-    case BACKEND_MSG_CODE.closeComplete:
-    case BACKEND_MSG_CODE.copyDone:
-    case BACKEND_MSG_CODE.emptyQuery:
-    case BACKEND_MSG_CODE.noData:
-    case BACKEND_MSG_CODE.parseComplete:
-    case BACKEND_MSG_CODE.portalSuspended:
+    case BACKEND_MSG_CODE.BindComplete:
+    case BACKEND_MSG_CODE.CloseComplete:
+    case BACKEND_MSG_CODE.CopyDone:
+    case BACKEND_MSG_CODE.EmptyQueryResponse:
+    case BACKEND_MSG_CODE.NoData:
+    case BACKEND_MSG_CODE.ParseComplete:
+    case BACKEND_MSG_CODE.PortalSuspended:
       assertHasBeenFullyRead(reader, code);
       return { type: code, byteLength: reader.byteLength };
-    case BACKEND_MSG_CODE.commandComplete:
+    case BACKEND_MSG_CODE.CommandComplete:
       return decodeCommandComplete(reader);
-    case BACKEND_MSG_CODE.copyData:
-      return { type: BACKEND_MSG_CODE.copyData, byteLength: reader.byteLength, data: reader.readBytes() };
-    case BACKEND_MSG_CODE.copyInResponse:
-    case BACKEND_MSG_CODE.copyOutResponse:
-    case BACKEND_MSG_CODE.copyBothResponse:
+    case BACKEND_MSG_CODE.CopyData:
+      return { type: BACKEND_MSG_CODE.CopyData, byteLength: reader.byteLength, data: reader.readBytes() };
+    case BACKEND_MSG_CODE.CopyInResponse:
+    case BACKEND_MSG_CODE.CopyOutResponse:
+    case BACKEND_MSG_CODE.CopyBothResponse:
       return decodeCopyResponse(reader, code);
-    case BACKEND_MSG_CODE.dataRow:
+    case BACKEND_MSG_CODE.DataRow:
       return decodeDataRow(reader);
-    case BACKEND_MSG_CODE.error:
-    case BACKEND_MSG_CODE.notice:
+    case BACKEND_MSG_CODE.Error:
+    case BACKEND_MSG_CODE.Notice:
       return decodeNoticeResponse(reader, code);
-    case BACKEND_MSG_CODE.negotiateProtocolVersion:
+    case BACKEND_MSG_CODE.NegotiateProtocolVersion:
       return decodeNegotiateProtocolVersion(reader);
-    case BACKEND_MSG_CODE.notification:
+    case BACKEND_MSG_CODE.Notification:
       return decodeNotification(reader);
-    case BACKEND_MSG_CODE.parameterDescription:
+    case BACKEND_MSG_CODE.ParameterDescription:
       return decodeParameterDescription(reader);
-    case BACKEND_MSG_CODE.parameterStatus:
+    case BACKEND_MSG_CODE.ParameterStatus:
       return decodeParameterStatus(reader);
-    case BACKEND_MSG_CODE.readyForQuery:
+    case BACKEND_MSG_CODE.ReadyForQuery:
       return decodeReadyForQuery(reader);
-    case BACKEND_MSG_CODE.rowDescription:
+    case BACKEND_MSG_CODE.RowDescription:
       return decodeRowDescription(reader);
     default:
-      return { type: BACKEND_MSG_CODE.unknown, byteLength: reader.byteLength, code, data: reader.readBytes() };
+      return { type: BACKEND_MSG_CODE.Unknown, byteLength: reader.byteLength, code, data: reader.readBytes() };
   }
 }
