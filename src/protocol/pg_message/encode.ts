@@ -8,7 +8,8 @@ import {
   writeUint16,
   writeUint32,
 } from "@/_utils/data_type_bin.ts";
-import { COPY_DONE, FLUSH, SYNC, TERMINATE } from "./_static_frame.ts";
+import { FRAME } from "./_static_frame.ts";
+export { FRAME };
 
 const FRAME_HEADER_LENGTH = 5;
 const MAX_BODY_LENGTH = 0x7fff_fffb;
@@ -48,71 +49,44 @@ function encodePasswordMsg(
   }
   return [createFrameHeader(message.type, message.data.byteLength), message.data];
 }
-
-function encodeQueryMsg(message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_CODE.Query }>): Uint8Array[] {
-  const sql = encodeCString(message.sql);
-  return [createFrameHeader(message.type, sql.byteLength + 1), sql, CSTRING_TERMINATOR_DATA];
+export interface SimpleQueryEncoder {
+  calculateByteLength(): number;
+  encodeQueryInto(data: Uint8Array, offset: number): number;
+}
+export function encodeQueryMessage(data: SimpleQueryEncoder): Uint8Array[] {
+  const byteLength = data.calculateByteLength();
+  const buffer = new Uint8Array(byteLength + 5);
+  const offset = data.encodeQueryInto(buffer, 5);
+  assertWrittenLength(buffer, offset);
+  buffer[0] = FRONTEND_MSG_CODE.Query;
+  writeUint32(buffer, 1, byteLength + 4);
+  return [buffer];
 }
 
 export interface ParseStatementEncoder {
   calculateParseByteLength(): number;
   encodeParseInto(data: Uint8Array, offset: number): number;
 }
-export interface SimpleQueryEncoder {
-  calculateByteLength(): number;
-  encodeQueryInto(data: Uint8Array, offset: number): number;
+export function calcParseMessageByteLength(statement: Pick<ParseStatementEncoder, "calculateParseByteLength">): number {
+  return 5 + statement.calculateParseByteLength();
 }
-
+export function encodeParseMessageInto(
+  buffer: Uint8Array,
+  offset: number,
+  statement: Pick<ParseStatementEncoder, "encodeParseInto">,
+  messageByteLength: number,
+): number {
+  buffer[offset++] = FRONTEND_MSG_CODE.Parse;
+  offset = writeUint32(buffer, offset, messageByteLength);
+  return statement.encodeParseInto(buffer, offset);
+}
 export function encodeParseMessage(statement: ParseStatementEncoder): Uint8Array {
-  const byteLength = 5 + statement.calculateParseByteLength();
+  const byteLength = calcParseMessageByteLength(statement);
   const buffer = new Uint8Array(byteLength);
-  const offset = statement.encodeParseInto(buffer, 5);
-  buffer[0] = FRONTEND_MSG_CODE.Parse;
-  writeUint32(buffer, 1, byteLength + 4);
-  assertWrittenLength(buffer, offset);
-  // header
+  encodeParseMessageInto(buffer, 0, statement, byteLength - 1);
   return buffer;
 }
 
-function encodeBindMsg(message: Extract<PgFrontendMessage, { type: FRONTEND_MSG_CODE.Bind }>): Uint8Array[] {
-  assertUint16(message.parameterFormats.length, "Parameter format count");
-  assertUint16(message.parameters.length, "Parameter count");
-  assertUint16(message.resultFormats.length, "Result format count");
-  for (const parameter of message.parameters) {
-    if (parameter) assertInt32(parameter.byteLength, "Parameter byte length");
-  }
-  const portal = encodeCString(message.portal);
-  const statement = encodeCString(message.statement);
-  const valuesLength = message.parameters.reduce((sum, value) => sum + 4 + (value?.byteLength ?? 0), 0);
-  const bodyLength = portal.byteLength + statement.byteLength + 8 + message.parameterFormats.length * 2 + valuesLength +
-    message.resultFormats.length * 2;
-  const metadataLength = 6 + message.parameterFormats.length * 2 + message.parameters.length * 4 +
-    message.resultFormats.length * 2;
-  const metadata = new Uint8Array(metadataLength);
-  const output = [
-    createFrameHeader(message.type, bodyLength),
-    portal,
-    CSTRING_TERMINATOR_DATA,
-    statement,
-    CSTRING_TERMINATOR_DATA,
-  ];
-  let offset = writeUint16(metadata, 0, message.parameterFormats.length);
-  for (const format of message.parameterFormats) offset = writeUint16(metadata, offset, format);
-  offset = writeUint16(metadata, offset, message.parameters.length);
-  let metadataStart = 0;
-  for (const parameter of message.parameters) {
-    offset = writeUint32(metadata, offset, parameter?.byteLength ?? -1);
-    if (parameter) {
-      output.push(metadata.subarray(metadataStart, offset), parameter);
-      metadataStart = offset;
-    }
-  }
-  offset = writeUint16(metadata, offset, message.resultFormats.length);
-  for (const format of message.resultFormats) offset = writeUint16(metadata, offset, format);
-  assertWrittenLength(metadata, offset);
-  output.push(metadata.subarray(metadataStart));
-  return output;
-}
 export interface BindStatementEncoder {
   calculateBindByteLength(): number;
   encodeBindInto(data: Uint8Array, offset: number): number;
@@ -126,11 +100,14 @@ export function encodeBindMessage(data: BindStatementEncoder): Uint8Array {
   assertWrittenLength(buffer, offset);
   return buffer;
 }
-
+export enum DescribeTarget {
+  Statement = 0x53,
+  Portal = 0x50,
+}
 /**
  * @param target 0x53: statement, 0x50: portal
  */
-export function encodeDescribeMessage(target: 0x53 | 0x50, name?: Uint8Array) {
+export function encodeDescribeMessage(target: DescribeTarget, name?: Uint8Array) {
   const byteLength = name ? name.byteLength + 2 : 2;
   const buffer = new Uint8Array(byteLength + 5);
   buffer[0] = FRONTEND_MSG_CODE.Describe;
@@ -160,7 +137,7 @@ export function encodeExecuteMessage(maxRows: number, portal?: Uint8Array): Uint
   return buffer;
 }
 
-function encodeCloseMessage(target: 0x53 | 0x50, name?: Uint8Array): Uint8Array {
+export function encodeCloseMessage(target: DescribeTarget, name?: Uint8Array): Uint8Array {
   const byteLength = name ? name.byteLength + 2 : 2;
   const buffer = new Uint8Array(byteLength + 5);
   buffer[0] = FRONTEND_MSG_CODE.Close;

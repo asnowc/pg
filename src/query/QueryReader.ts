@@ -2,11 +2,14 @@ import type { PgMessageReader } from "@/protocol.ts";
 import type { FieldInfo, QueryCompletion } from "./MessageData.ts";
 import type { StatementEncoder } from "./QueryStatement.ts";
 import {
+  DescribeTarget,
   encodeBindMessage,
+  encodeCloseMessage,
   encodeDescribeMessage,
   encodeExecuteMessage,
   encodeParseMessage,
 } from "@/protocol/pg_message.ts";
+import { FRAME } from "@/protocol/pg_message/_static_frame.ts";
 
 /**
  * `QueryReader.getRows()`、`QueryReader.getFirstRow()`、`QueryReader.getMap()`、方法在一次查询后只能调用一次，重复调用将抛出异常
@@ -19,27 +22,46 @@ import {
  * @public
  */
 export class QueryReader<T = unknown> implements AsyncIterable<T> {
-  constructor(reader: PgMessageReader, statement: StatementEncoder) {
-    this.#reader = { reader, statement };
+  constructor(reader: () => Promise<PgMessageReader>, statement: StatementEncoder) {
+    this.#source = { getReader: reader, statement };
   }
-  #reader?: { reader: PgMessageReader; statement: StatementEncoder };
-  #getReader() {
-    const reader = this.#reader;
-    if (!reader) throw new Error("QueryReader is not initialized");
-    this.#reader = undefined;
-    return reader;
+  #source?: { getReader: () => Promise<PgMessageReader>; statement: StatementEncoder };
+  async #getReader() {
+    const source = this.#source;
+    if (!source) throw new Error("QueryReader is not initialized");
+    this.#source = undefined;
+    const reader = await source.getReader();
+    return { reader, statement: source.statement };
   }
   async #send() {
-    const { reader, statement } = this.#getReader();
+    const { reader, statement } = await this.#getReader();
     await reader.write(encodeParseMessage(statement));
     await reader.write(encodeBindMessage(statement));
+    return reader;
+  }
+  async #queryIgnoreResult() {
+    const reader = await this.#send();
+    await reader.write(encodeExecuteMessage(1));
+    await reader.write(encodeCloseMessage(DescribeTarget.Portal));
+    await reader.write(FRAME.SYNC);
+    return reader;
+  }
+  async #queryAllResult() {
+    const reader = await this.#send();
+    await reader.write(encodeDescribeMessage(DescribeTarget.Portal));
     await reader.write(encodeExecuteMessage(0));
+    await reader.write(FRAME.SYNC);
+    return reader;
   }
 
   /** 受影响的行数 */
   async getRowCount(): Promise<number> {
+    const { rowCount } = await this.getCompletion();
+    return rowCount ?? 0;
   }
-  getCompletion(): Promise<Readonly<QueryCompletion>>;
+  async getCompletion(): Promise<Readonly<QueryCompletion>> {
+    const reader = await this.#queryAllResult();
+  }
   getFields(): Promise<readonly Readonly<FieldInfo>[]>;
   /**
    * 获取所有列
@@ -48,26 +70,14 @@ export class QueryReader<T = unknown> implements AsyncIterable<T> {
    * const rows = await query.getRows(10); // 获取最多 10 行数据
    */
   async getRows(limit?: number): Promise<T[]> {
-    const { reader, statement } = this.#getReader();
-    await reader.write(encodeParseMessage(statement));
-    await reader.write(encodeBindMessage(statement));
-    await reader.write(encodeDescribeMessage(0x50));
-    await reader.write(encodeExecuteMessage(0));
+    const reader = await this.#queryAllResult();
   }
   /**
    * 只获取第一行数据
    * @returns 第一行数据，如果没有数据则返回 null。
    */
   async getFirstRow(): Promise<T | null> {
-    const { reader, statement } = this.#getReader();
-    await reader.write(encodeParseMessage(statement));
-    await reader.write(encodeBindMessage(statement));
-    await reader.write(encodeDescribeMessage(0x50));
-    await reader.write(encodeExecuteMessage(1));
-    await reader.write(encodeClose);
-    let message = await reader.read();
-    while (!message || message.type) {
-    }
+    const reader = await this.#queryIgnoreResult();
   }
 
   /**
@@ -84,15 +94,10 @@ export class QueryReader<T = unknown> implements AsyncIterable<T> {
   }
   // reduce<R>(reducer: (accumulator: R, currentValue: T) => R, initialValue: R): Promise<R>;
   /** 等待查询完成，忽略行数据；不会消耗后续 getRows() 的读取机会。 */
-  then(onfulfilled?: (value: void) => void, onrejected?: (reason: unknown) => void): Promise<void> {
-    return this.#queryIgnoreResult().then(onfulfilled, onrejected);
+  then(onfulfilled?: () => void, onrejected?: (reason: unknown) => void): Promise<void> {
+    return this.#queryIgnoreResult().then(() => onfulfilled?.(), onrejected);
   }
-  async #queryIgnoreResult() {
-    const { reader, statement } = this.#getReader();
-    await reader.write(encodeParseMessage(statement));
-    await reader.write(encodeBindMessage(statement));
-    await reader.write(encodeExecuteMessage(0));
-  }
+
   /**
    * 获取异步迭代器，用于遍历查询结果。
    * @example
@@ -100,7 +105,9 @@ export class QueryReader<T = unknown> implements AsyncIterable<T> {
    *   console.log(item);
    * }
    */
-  [Symbol.asyncIterator](): AsyncGenerator<T, QueryCompletion, void>;
+  async *[Symbol.asyncIterator](): AsyncGenerator<T, QueryCompletion, void> {
+    const reader = await this.#queryAllResult();
+  }
 }
 
 /** @public */
