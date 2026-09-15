@@ -1,53 +1,10 @@
 import type { FieldInfo, QueryCompletion } from "./MessageData.ts";
-import type { QueryReader, SampleQueryReader } from "./QueryReader.ts";
+import type { SampleQueryReader } from "./QueryReader.ts";
 
 export interface QueryResult<T> {
   rows: T[];
   fields: readonly Readonly<FieldInfo>[];
   completion: QueryCompletion;
-}
-
-export class QueryReaderImpl<T> implements QueryReader<T> {
-  constructor(private result: Promise<QueryResult<T>>) {
-    // Queries start eagerly; callers may attach a consumer later.
-    result.catch(() => undefined);
-  }
-  #consumed = false;
-
-  then(onfulfilled?: (value: void) => void, onrejected?: (reason: unknown) => void): void {
-    this.result.then(() => onfulfilled?.(), onrejected);
-  }
-
-  async getRowCount(): Promise<number> {
-    return (await this.result).completion.rowCount ?? 0;
-  }
-  async getCompletion(): Promise<Readonly<QueryCompletion>> {
-    return (await this.result).completion;
-  }
-  async getFields(): Promise<readonly Readonly<FieldInfo>[]> {
-    return (await this.result).fields;
-  }
-  async getRows(limit?: number): Promise<T[]> {
-    this.#consume();
-    const rows = (await this.result).rows;
-    return limit === undefined ? rows : rows.slice(0, limit);
-  }
-  async getFirstRow(): Promise<T | null> {
-    return (await this.getRows(1))[0] ?? null;
-  }
-  async getMap<K extends keyof T>(key: K): Promise<Map<T[K], T>> {
-    return new Map((await this.getRows()).map((row) => [row[key], row]));
-  }
-  async *[Symbol.asyncIterator](): AsyncGenerator<T, QueryCompletion, void> {
-    this.#consume();
-    const result = await this.result;
-    yield* result.rows;
-    return result.completion;
-  }
-  #consume(): void {
-    if (this.#consumed) throw new Error("Query rows have already been consumed");
-    this.#consumed = true;
-  }
 }
 
 export class SampleQueryReaderImpl<T> implements SampleQueryReader<T> {

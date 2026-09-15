@@ -1,5 +1,5 @@
 import type { PgMessageReader } from "@/protocol.ts";
-import type { FieldInfo, QueryCompletion } from "./MessageData.ts";
+import type { FieldInfo, QueryCompletion, QueryResult } from "./MessageData.ts";
 import type { StatementEncoder } from "./QueryStatement.ts";
 import {
   DescribeTarget,
@@ -59,10 +59,8 @@ export class QueryReader<T = unknown> implements AsyncIterable<T> {
     const { rowCount } = await this.getCompletion();
     return rowCount ?? 0;
   }
-  async getCompletion(): Promise<Readonly<QueryCompletion>> {
-    const reader = await this.#queryAllResult();
+  async results(): Promise<QueryResult<T>> {
   }
-  getFields(): Promise<readonly Readonly<FieldInfo>[]>;
   /**
    * 获取所有列
    * @param limit 限制从 PostgreSQL 服务端输出返回的最大行数。

@@ -12,7 +12,7 @@ import type {
   TypedSqlStatement,
   TypedSqlStatementTemplate,
 } from "../query.ts";
-import { QueryReaderImpl } from "../query/QueryReaderImpl.ts";
+import { QueryReader } from "../query/QueryReaderImpl.ts";
 import { PgTransactionStatus } from "../protocol/pg_message.ts";
 
 type Statement<T> = TypedSqlStatementTemplate<T> | TypedSqlStatement<T> | SqlStatementData;
@@ -46,7 +46,7 @@ export class PgTransactionImpl implements Transaction {
 
   query<T>(statement: Statement<T>, options?: QueryOptions): QueryReader<T> {
     const connection = this.#getConnection();
-    return new QueryReaderImpl(this.#track(connection.then(async (conn) => {
+    return new QueryReader(this.#track(connection.then(async (conn) => {
       // Never return a thenable reader through a Promise: it would discard the rows.
       const reader = conn.query<T>(statement, options);
       const rows = await reader.getRows();

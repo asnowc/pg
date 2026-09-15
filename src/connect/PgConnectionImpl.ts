@@ -9,7 +9,7 @@ import type {
   TypedSqlStatement,
 } from "@/query.ts";
 import { PG_DATA_DECODER_V1 } from "@/query.ts";
-import { QueryReaderImpl, SampleQueryReaderImpl } from "@/query/QueryReaderImpl.ts";
+import { QueryReader, SampleQueryReaderImpl } from "@/query/QueryReaderImpl.ts";
 import {
   BACKEND_MSG_CODE,
   decodeBackendMessage,
@@ -123,7 +123,7 @@ export class PgConnectionImpl implements PgConnection {
         completion: completion(value),
       };
     });
-    return new QueryReaderImpl(result);
+    return new QueryReader(result);
   }
 
   open<T>(queryable: SqlStatement<T>, options?: OpenCursorOptions): PgCursor<T> {

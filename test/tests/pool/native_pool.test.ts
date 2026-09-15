@@ -1,8 +1,8 @@
 import { expect, test, vi } from "vitest";
 import { createPgPool, type PgConnection, type QueryReader } from "@asla/pg";
-import { QueryReaderImpl } from "@/query/QueryReaderImpl.ts";
+import { QueryReader } from "@/query/QueryReaderImpl.ts";
 
-class Reader<T> extends QueryReaderImpl<T> {
+class Reader<T> extends QueryReader<T> {
   override then(resolve?: (value: void) => void, reject?: (error: unknown) => void): void {
     this.getCompletion().then(() => resolve?.(), reject);
   }

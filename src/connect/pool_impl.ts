@@ -19,7 +19,7 @@ import type {
   TypedSqlStatement,
   TypedSqlStatementTemplate,
 } from "@/query.ts";
-import { QueryReaderImpl } from "@/query/QueryReaderImpl.ts";
+import { QueryReader } from "@/query/QueryReaderImpl.ts";
 import { ResourcePool } from "@/lib/pool.ts";
 import type { PgConnection, PgPool, PgPoolConnection } from "./PgConnection.ts";
 import type { CreatePoolOptions } from "./pool.ts";
@@ -35,7 +35,7 @@ function observed<T>(promise: Promise<T>): Promise<T> {
   return promise;
 }
 
-class PoolReader<T> extends QueryReaderImpl<T> {
+class PoolReader<T> extends QueryReader<T> {
   override then(onfulfilled?: (value: void) => void, onrejected?: (reason: unknown) => void): void {
     this.getCompletion().then(() => onfulfilled?.(), onrejected);
   }
