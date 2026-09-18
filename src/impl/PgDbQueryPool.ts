@@ -1,24 +1,26 @@
 import { PgCursor } from "./_PgCursor.ts";
-import {
-  createDbPoolConnection,
-  createDbPoolTransaction,
+import { createDbPoolConnection, createDbPoolTransaction, DbQueryPool, sqlLikeToString } from "#abstract";
+import type {
   DbCursor,
   DbCursorOption,
   DbPoolConnection,
-  DbQueryPool,
   DbTransaction,
   MultipleQueryInput,
   MultipleQueryResult,
   QueryInput,
   SqlLike,
-  TransactionMode,
 } from "#abstract";
 import { createPgClient } from "./_pg_client.ts";
 import { ResourcePool } from "../lib/pool.ts";
 import { PgConnection } from "./_PgConnection.ts";
-import { DbConnectOption, parserDbConnectUrl } from "./connect.ts";
-import { Client, Cursor } from "../driver/mod.js";
-/** @public */
+import { parserDbConnectUrl } from "./connect.ts";
+import type { DbConnectOption } from "./connect.ts";
+import type { TransactionMode } from "@/interface/Query.ts";
+import { PgConnection as Client } from "@/implement.ts";
+/**
+ * @public
+ * @deprecated 请直接使用 `PgConnection`，或在应用层管理原生连接池。
+ */
 export class PgDbQueryPool extends DbQueryPool implements AsyncDisposable {
   #pool: ResourcePool<Client>;
   constructor(url: URL | string | DbConnectOption | (() => URL | string | DbConnectOption)) {
@@ -36,16 +38,13 @@ export class PgDbQueryPool extends DbQueryPool implements AsyncDisposable {
     return new ResourcePool<Client>({
       create: async () => {
         const pool = this.#pool;
-        const pgClient = createPgClient(this.connectOption);
-        pgClient.on("end", () => pool.remove(pgClient));
-        pgClient.on("error", () => pool.remove(pgClient));
-        await pgClient.connect();
-        return pgClient;
+        const conn = await createPgClient(this.connectOption);
+        conn.finished.finally(() => pool.remove(conn));
+
+        return conn;
       },
       dispose: (conn) => {
-        conn.end().catch((e) => {
-          console.error("dispose pg driver connection error", e);
-        });
+        conn.destroy();
       },
     }, { maxCount: 50, idleTimeout: 5000, usageLimit: 9999 });
   }
@@ -71,14 +70,16 @@ export class PgDbQueryPool extends DbQueryPool implements AsyncDisposable {
       new PgConnection(conn),
       () => this.#pool.release(conn),
       () => {
-        conn.end().catch(() => {});
+        conn.destroy();
       },
     );
   }
   // implement
   override async query<T>(sql: QueryInput | MultipleQueryInput): Promise<T> {
     using conn = await this.connect();
-    return await conn.query<T>(sql as any) as any;
+    const input = typeof sql === "function" ? sql() : sql;
+    if (Array.isArray(input)) return await conn.query(input) as T;
+    return await conn.query(input) as T;
   }
   // implement
   override async execute(sql: QueryInput | MultipleQueryInput): Promise<void> {
@@ -103,21 +104,25 @@ export class PgDbQueryPool extends DbQueryPool implements AsyncDisposable {
     });
   }
   //implement
-  async cursor<T extends object = any>(
+  async cursor<T extends object = Record<string, unknown>>(
     sql: SqlLike,
     option?: DbCursorOption,
   ): Promise<DbCursor<T>> {
     const conn = await this.#pool.get();
-    const cursor = conn.query(new Cursor(sql.toString()));
+    const cursor = conn.open<T>(sqlLikeToString(sql), { iteratorMaxRows: option?.defaultSize });
     const poolConn = createDbPoolConnection(
       new PgConnection(conn),
       () => this.#pool.release(conn),
-      () => conn.end().catch(() => {}),
+      () => conn.destroy(),
     );
     return new PgCursor(cursor, poolConn, option?.defaultSize);
   }
-  close(force?: boolean): Promise<void> {
-    return this.#pool.close(force);
+  async close(force?: boolean): Promise<void> {
+    if (force) {
+      return this.#pool.close();
+    } else {
+      this.#pool.destroy();
+    }
   }
   /** 打开连接 */
   open(): void {

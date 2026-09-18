@@ -1,9 +1,15 @@
-/** @public */
+/**
+ * @public
+ * @deprecated 请改用 `PgCursor`。
+ */
 export interface DbCursorOption {
   defaultSize?: number;
 }
 
-/** @public */
+/**
+ * @public
+ * @deprecated 请改用 `PgCursor`。
+ */
 export abstract class DbCursor<T> implements AsyncDisposable, AsyncIterable<T> {
   /** 读取游标，如果读取结束，返回空数组 */
   abstract read(maxSize?: number): Promise<T[]>;

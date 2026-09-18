@@ -1,45 +1,58 @@
 import { test as viTest } from "vitest";
-import { DbManage, DbQueryPool, parserDbConnectUrl, PgDbQueryPool } from "@asla/pg";
+import { DbManage, type DbQueryPool, type PgConnection, PgDbQueryPool, PgPool } from "@asla/pg";
 import process from "node:process";
+import { DB_CONNECT_INFO, PUBLIC_DB_CONNECT_INFO } from "@test/utils/db.ts";
+import { denoConnect } from "@test/utils/connect.ts";
+
 export interface BaseContext {
   emptyDbPool: DbQueryPool;
+  connect: PgConnection;
+  pgPool: PgPool;
 }
 const VITEST_WORKER_ID = +process.env.VITEST_WORKER_ID!;
-const DB_CONNECT_INFO = getConfigEnv(process.env);
+let databaseSequence = 0;
 
 export const test = viTest.extend<BaseContext>({
   async emptyDbPool({}, use) {
-    const dbName = "test_empty_" + VITEST_WORKER_ID;
-
+    const databaseName = `test_empty_${VITEST_WORKER_ID}_${databaseSequence++}`;
     const manage = await getManage();
     try {
-      await manage.recreateDb(dbName);
+      await manage.recreateDb(databaseName);
     } finally {
       await manage.close();
     }
-    const dbPool = new PgDbQueryPool({ ...DB_CONNECT_INFO, database: dbName });
+    const dbPool = new PgDbQueryPool({ ...DB_CONNECT_INFO, database: databaseName });
 
     dbPool.open();
+    try {
+      await use(dbPool);
+    } finally {
+      const useCount = dbPool.totalCount - dbPool.idleCount;
+      await dbPool.close(true);
+      await clearDropDb(databaseName);
+      if (useCount !== 0) throw new Error("存在未释放的连接");
+    }
+  },
+  async connect({}, use) {
+    await using connection = await denoConnect(PUBLIC_DB_CONNECT_INFO);
+    await use(connection);
+  },
+  async pgPool({}, use) {
+    await using dbPool = new PgPool({
+      create: () => denoConnect(PUBLIC_DB_CONNECT_INFO),
+      idleTimeout: 10,
+      maxCount: 4,
+    });
     await use(dbPool);
-    const useCount = dbPool.totalCount - dbPool.idleCount;
-    await dbPool.close(true);
-
-    await clearDropDb(dbName);
-    if (useCount !== 0) throw new Error("存在未释放的连接");
   },
 });
-function getConfigEnv(env: Record<string, string | undefined>) {
-  const url = env["TEST_LOGIN_DB"];
-  if (!url) throw new Error("缺少 TEST_LOGIN_DB 环境变量");
-  return parserDbConnectUrl(url);
-}
+
 async function clearDropDb(dbName: string) {
+  const manage = await getManage();
   try {
-    const manage = await getManage();
     await manage.dropDb(dbName);
+  } finally {
     await manage.close();
-  } catch (error) {
-    console.error(`清理用于测试的数据库 ${dbName} 失败`, error);
   }
 }
 

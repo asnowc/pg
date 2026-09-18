@@ -6,29 +6,36 @@
   "tasks": {
     "type:check": "deno check",
     "ci:test": "deno x vitest run",
-    "publishDry": "deno publish --dry-run --allow-dirty"
+    "test:coverage": "deno x vitest run --coverage",
+    "publishDry": "deno publish --dry-run --allow-dirty",
+    "bundle": "deno bundle src/mod.ts -o dist/mod.js",
+    "transpile": "deno transpile src/**/*.ts --outdir dist --declaration"
   },
   "imports": {
     "#abstract": "./src/abstract/mod.ts",
-    "@types/pg": "npm:@types/pg@^8.23.1",
-    "@types/pg-cursor": "npm:@types/pg-cursor@^2.7.2",
-    "pg": "npm:pg@^8.23.0",
-    "pg-cursor": "npm:pg-cursor@^2.22.0",
-
+    "@types/node": "npm:@types/node@^26.5.0",
     "@asla/pg": "./src/mod.ts",
     "@/": "./src/",
     "@test/": "./test/",
+    "@vitest/coverage-v8": "npm:@vitest/coverage-v8@^5.0.1",
 
-    "vitest": "npm:vitest@^4.1.11",
+    "vitest": "npm:vitest@^5.0.0",
     "@deno/vite-plugin": "npm:@deno/vite-plugin@^2.0.3"
   },
-  "exports": {
-    ".": "./src/mod.ts"
-  },
+  "exports": "./src/mod.ts",
   "fmt": {
     "lineWidth": 120
   },
+  "lint": {
+    "rules": {
+      "exclude": ["require-await", "no-unused-vars"]
+    }
+  },
+  "test": {
+    "include": []
+  },
   "publish": {
-    "include": ["README.md", "LICENSE", "src"]
-  }
+    "include": ["README.md", "CHANGELOG.md", "LICENSE", "docs/migration-native-protocol.md", "src"]
+  },
+  "exclude": ["./benchmark", "./dist", "./bench2"]
 }
