@@ -1,16 +1,23 @@
 import type { DbCursor, DbCursorOption } from "./DbCursor.ts";
 import { DbQuery } from "./DbQuery.ts";
-import type { DbPool, DbPoolConnection, DbTransaction, SqlLike, TransactionMode } from "./interfaces.ts";
+import type { DbPool, DbPoolConnection, DbTransaction, SqlLike } from "./interfaces.ts";
 import type { QueryRowsResult } from "./DbQueryBase.ts";
-import type { InferQueryResult, SqlStatementDataset } from "./external.ts";
+import type { SqlStatementDataset } from "./external.ts";
+import type { InferQueryResult, TransactionMode } from "@/interface/Query.ts";
 
-/** @public */
+/**
+ * @public
+ * @deprecated 旧查询池辅助 API 将在后续版本移除。
+ */
 export interface ExecutableSQL<T = unknown> {
   genSql(): string;
   then(resolve: (data: T) => void, reject: () => void): void;
 }
 
-/** @public */
+/**
+ * @public
+ * @deprecated 请直接使用 `PgConnection` 的查询 API。
+ */
 export interface QueryableDataSQL<Raw, Res = QueryRowsResult<Raw>> extends ExecutableSQL<Res> {
   query(): Promise<QueryRowsResult<Raw>>;
   queryCount(): Promise<number>;
@@ -24,6 +31,7 @@ export interface QueryableDataSQL<Raw, Res = QueryRowsResult<Raw>> extends Execu
 /**
  * @public
  * 池链接查询
+ * @deprecated 请直接使用 `PgConnection`，或在应用层管理原生连接池。
  */
 export abstract class DbQueryPool extends DbQuery implements DbPool {
   abstract connect(): Promise<DbPoolConnection>;

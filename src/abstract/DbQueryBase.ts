@@ -1,21 +1,31 @@
 import { SqlTemplate } from "./external.ts";
 import { SqlLike } from "./interfaces.ts";
-/** @public */
+/**
+ * @public
+ * @deprecated 请改用 `QueryCompletion` 和 `QueryReader`。
+ */
 export interface SingleQueryResult {
   rowCount: number;
   rows?: any[];
 }
-/** @public */
+/**
+ * @public
+ * @deprecated 请改用 `QueryReader`。
+ */
 export interface QueryRowsResult<T = any> extends SingleQueryResult {
   rowCount: number;
   rows: T[];
 }
-/** @public */
+/**
+ * @public
+ * @deprecated 请改用 `PgConnection.simpleQuery()` 返回的结果序列。
+ */
 export type MultipleQueryResult = SingleQueryResult[];
 
 /**
  * 数据库客户端的最小实现接口
  * @public
+ * @deprecated 请实现或使用 `PgConnection`。
  */
 export interface DbQueryBase {
   /** 单语句查询， 忽略返回值 */
@@ -31,6 +41,7 @@ export interface DbQueryBase {
 /**
  * 将 SqlLike 转换为字符串
  * @public
+ * @deprecated 请使用 `SqlStatement` 或 `sql` 模板。
  */
 export function sqlLikeToString(sqlLike: SqlLike): string {
   if (typeof sqlLike === "string") {
@@ -49,7 +60,10 @@ export function sqlLikeToString(sqlLike: SqlLike): string {
     }
   }
 }
-/** @public */
+/**
+ * @public
+ * @deprecated 请使用 `SqlStatement` 或 `sql` 模板。
+ */
 export function isSqlTemplate(obj: any): obj is SqlTemplate {
   if (typeof obj !== "object" || obj === null) return false;
   return Array.isArray(obj.templates) && Array.isArray(obj.args) &&

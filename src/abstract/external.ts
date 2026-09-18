@@ -1,6 +1,9 @@
 // 外部 SQL 生成器相关接口
 
-/** @public */
+/**
+ * @public
+ * @deprecated 请改用 `TypedSqlStatementTemplate`。
+ */
 export interface SqlTemplate<T extends readonly any[] = readonly unknown[]> {
   readonly templates: readonly string[];
   readonly args: T;
@@ -8,11 +11,9 @@ export interface SqlTemplate<T extends readonly any[] = readonly unknown[]> {
 }
 
 /**
- * 推断查询结果的类型
  * @public
+ * @deprecated 请改用 `TypedSqlStatement`。
  */
-export type InferQueryResult<T> = T extends SqlStatementDataset<infer P> ? P : never;
-
 export interface SqlStatementDataset<T> {
   genSql(): string;
   /**

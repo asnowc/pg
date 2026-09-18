@@ -1,48 +1,106 @@
 import { test as viTest } from "vitest";
-import { DbManage, DbQueryPool, parserDbConnectUrl, PgDbQueryPool } from "@asla/pg";
+import { connect, DbManage, type DbQueryPool, type PgConnection, PgDbQueryPool, PgPool } from "@asla/pg";
 import process from "node:process";
+import { DB_CONNECT_INFO, PUBLIC_DB_CONNECT_INFO } from "@test/utils/db.ts";
+
 export interface BaseContext {
   emptyDbPool: DbQueryPool;
+  /** @deprecated 改用 conn */
+  connect: PgConnection;
+  conn: PgConnection;
+  /** @deprecated 改用 pool */
+  pgPool: PgPool;
+  pool: PgPool;
 }
 const VITEST_WORKER_ID = +process.env.VITEST_WORKER_ID!;
-const DB_CONNECT_INFO = getConfigEnv(process.env);
+let databaseSequence = 0;
 
 export const test = viTest.extend<BaseContext>({
   async emptyDbPool({}, use) {
-    const dbName = "test_empty_" + VITEST_WORKER_ID;
-
+    const databaseName = `test_empty_${VITEST_WORKER_ID}_${databaseSequence++}`;
     const manage = await getManage();
     try {
-      await manage.recreateDb(dbName);
+      await manage.recreateDb(databaseName);
     } finally {
       await manage.close();
     }
-    const dbPool = new PgDbQueryPool({ ...DB_CONNECT_INFO, database: dbName });
+    const dbPool = new PgDbQueryPool({ ...DB_CONNECT_INFO, database: databaseName });
 
     dbPool.open();
+    try {
+      await use(dbPool);
+    } finally {
+      const useCount = dbPool.totalCount - dbPool.idleCount;
+      await dbPool.close(true);
+      await clearDropDb(databaseName);
+      if (useCount !== 0) throw new Error("存在未释放的连接");
+    }
+  },
+  async connect({ conn }, use) {
+    await use(conn);
+  },
+  async conn({}, use) {
+    await using connection = await connect(PUBLIC_DB_CONNECT_INFO);
+    connection.finished.catch((err) => {
+      console.error(err);
+    });
+    await use(connection);
+  },
+  async pool({}, use) {
+    await using dbPool = new PgPool({
+      create: async () => {
+        const stream = await Deno.connect({
+          hostname: PUBLIC_DB_CONNECT_INFO.hostname,
+          port: PUBLIC_DB_CONNECT_INFO.port,
+        });
+        return {
+          stream: stream,
+          connectOptions: {
+            user: PUBLIC_DB_CONNECT_INFO.user,
+            database: PUBLIC_DB_CONNECT_INFO.database,
+            password: PUBLIC_DB_CONNECT_INFO.password,
+          },
+        };
+      },
+    });
     await use(dbPool);
-    const useCount = dbPool.totalCount - dbPool.idleCount;
-    await dbPool.close(true);
-
-    await clearDropDb(dbName);
-    if (useCount !== 0) throw new Error("存在未释放的连接");
+  },
+  async pgPool({ pool }, use) {
+    await use(pool);
   },
 });
-function getConfigEnv(env: Record<string, string | undefined>) {
-  const url = env["TEST_LOGIN_DB"];
-  if (!url) throw new Error("缺少 TEST_LOGIN_DB 环境变量");
-  return parserDbConnectUrl(url);
-}
+
 async function clearDropDb(dbName: string) {
+  const manage = await getManage();
   try {
-    const manage = await getManage();
     await manage.dropDb(dbName);
+  } finally {
     await manage.close();
-  } catch (error) {
-    console.error(`清理用于测试的数据库 ${dbName} 失败`, error);
   }
 }
 
 function getManage() {
   return DbManage.connect(DB_CONNECT_INFO);
+}
+export function createPool() {
+  const dbPool = new PgPool({
+    create: async () => {
+      const stream = await Deno.connect({
+        hostname: PUBLIC_DB_CONNECT_INFO.hostname,
+        port: PUBLIC_DB_CONNECT_INFO.port,
+      });
+      return {
+        stream: stream,
+        connectOptions: {
+          user: PUBLIC_DB_CONNECT_INFO.user,
+          database: PUBLIC_DB_CONNECT_INFO.database,
+          password: PUBLIC_DB_CONNECT_INFO.password,
+        },
+      };
+    },
+  });
+  return dbPool;
+}
+export function createConn() {
+  return connect(PUBLIC_DB_CONNECT_INFO);
 }

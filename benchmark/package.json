@@ -1,0 +1,16 @@
+{
+  "private": true,
+  "dependencies": {
+    "@types/pg": "^8.23.1",
+    "commander": "^15.0.0",
+    "echarts": "^6.1.0",
+    "pg": "^8.23.0",
+    "pg-promise": "^12.7.1",
+    "postgres": "^3.4.9",
+    "slonik": "^49.10.9"
+  },
+  "devDependencies": {
+    "@deno/vite-plugin": "^2.0.3",
+    "vitest": "^5.0.0"
+  }
+}

@@ -1,0 +1,103 @@
+import type { PgConnectOptions, TLSEncryptionOptions } from "@/interface/Connection.ts";
+import { PROTOCOL_VERSION, TLSResponseCode } from "./const.ts";
+import { PgAuthenticationError } from "@/error.ts";
+import { encodeNegotiateTlsMessage, encodeStartupMessage } from "./encode.ts";
+import { AuthenticationResult, startAuthentication } from "./auth.ts";
+import { UnexpectedEOFError } from "@/_utils/error.ts";
+import { PgSession } from "@/protocol.ts";
+import { ConnectionStream, writeData } from "@/_utils/ConnectionStream.ts";
+import { ConnectionSource } from "@asla/pg";
+import { createConnectionStream } from "@/platforms/createConnectionStream.ts";
+
+export async function startAuth<T extends ConnectionSource>(
+  source: T,
+  options: PgConnectOptions<T>,
+): Promise<{ source: ConnectionSource; stream: ConnectionStream; authResult: AuthenticationResult }> {
+  const { encryption, user, database } = options;
+  let stream = createConnectionStream(source);
+  let finaleSource: ConnectionSource | null = null;
+  if (encryption?.length) {
+    for (const option of encryption) {
+      if (option.mode === "TLS") {
+        finaleSource = await negotiateTls(stream, source, option);
+        if (finaleSource) {
+          stream = createConnectionStream(finaleSource);
+          break;
+        }
+      } else {
+        throw new PgAuthenticationError(`Unsupported encryption mode: ${option.mode}`);
+      }
+    }
+    if (!finaleSource) {
+      throw new PgAuthenticationError("No encryption mode could be negotiated");
+    }
+  } else {
+    finaleSource = source;
+  }
+  try {
+    const startupMessage = encodeStartupMessage(
+      PROTOCOL_VERSION,
+      getStartupParameters({ user, database }),
+    );
+    await writeData(stream, startupMessage);
+    const info = await startAuthentication(stream, options);
+    return { source: finaleSource, stream, authResult: info };
+  } catch (error) {
+    stream.destroy();
+    throw error;
+  }
+}
+
+export async function connectPgSession<T extends ConnectionSource>(
+  source: T,
+  options: PgConnectOptions<T>,
+): Promise<PgSession> {
+  const { maxMessageSize } = options;
+  const { source: activeSource, authResult } = await startAuth(source, options);
+  return new PgSession(createConnectionStream(activeSource), { maxMessageSize, authResult, meta: undefined });
+}
+
+/**
+ * 发送 SSLRequest，并在服务端接受时调用注入的 TLS 升级函数。
+ */
+async function negotiateTls<T>(
+  stream: ConnectionStream,
+  source: T,
+  encryptionOptions: TLSEncryptionOptions<T>,
+): Promise<ConnectionSource | null> {
+  await writeData(stream, encodeNegotiateTlsMessage());
+  return new Promise((resolve, reject) => {
+    stream.startReadLoop(() => {
+      const responseCode = stream.readUInt8();
+      if (responseCode === TLSResponseCode.Accepted) resolve(encryptionOptions.upgradeTLS(source));
+      else if (responseCode === TLSResponseCode.Rejected) {
+        resolve(null);
+      } else {
+        reject(new PgAuthenticationError(`Invalid PostgreSQL SSL response: 0x${responseCode.toString(16)}`));
+      }
+      return true;
+    }, () => {
+      reject(new UnexpectedEOFError());
+    });
+  });
+}
+/**
+ * StartupMessage 的参数。user 是协议要求的唯一必填参数。
+ */
+interface PgStartupOptions {
+  user: string;
+  database?: string;
+  applicationName?: string;
+  options?: string;
+  replication?: false | true | "database";
+}
+function getStartupParameters(options: PgStartupOptions): Map<string, string> {
+  const parameters = new Map<string, string>();
+  parameters.set("user", options.user);
+  parameters.set("client_encoding", "UTF8");
+  if (options.database) parameters.set("database", options.database);
+  if (options.applicationName) parameters.set("application_name", options.applicationName);
+  if (options.options) parameters.set("options", options.options);
+  if (options.replication) parameters.set("replication", options.replication === true ? "true" : options.replication);
+  return parameters;
+}

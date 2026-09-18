@@ -10,19 +10,18 @@ import {
   SqlLike,
   sqlLikeToString,
 } from "#abstract";
-import { addPgErrorInfo } from "../driver/util.ts";
-import type { Client } from "../driver/mod.js";
+import type { PgConnection as Connection } from "@/interface/Connection.ts";
 
 export class PgConnection extends DbQuery implements DbConnection, DbQueryBase {
-  constructor(pool: Client) {
+  constructor(connection: Connection) {
     super();
-    this.#pool = pool;
+    this.#connection = connection;
   }
   close(): Promise<void> {
-    return this.#pool.end();
+    return this.#connection.close();
   }
 
-  #pool: Client;
+  #connection: Connection;
 
   override query<T extends MultipleQueryResult = MultipleQueryResult>(
     sql: MultipleQueryInput,
@@ -30,32 +29,35 @@ export class PgConnection extends DbQuery implements DbConnection, DbQueryBase {
   override query<T = any>(sql: QueryDataInput<T>): Promise<QueryRowsResult<T>>;
   override query<T = any>(sql: QueryInput): Promise<QueryRowsResult<T>>;
   override query<T = any>(sql: SqlLike[] | SqlLike): Promise<unknown[] | unknown>;
-  override query<T = any>(input: QueryInput | MultipleQueryInput): Promise<T> {
+  override async query<T = any>(input: QueryInput | MultipleQueryInput): Promise<T> {
     const text = genSql(input);
     if (input instanceof Array) {
-      return this.#pool.query(text).then((res) => {
-        if (res instanceof Array) return res;
-        return [res];
-      }, (e) => addPgErrorInfo(e, text)) as any;
+      return await this.#multiple(text) as T;
     }
-    return this.#pool.query(text).catch((e) => addPgErrorInfo(e, text)) as any;
+    const results = await this.#multiple(text);
+    return (results[0] ?? { rows: [], rowCount: 0 }) as T;
   }
-  override execute(input: QueryInput | MultipleQueryInput): Promise<void> {
-    const text = genSql(input);
-    return this.#pool.query(text).then(() => {}, (e) => addPgErrorInfo(e, text)) as any;
+  override async execute(input: QueryInput | MultipleQueryInput): Promise<void> {
+    return this.#connection.queryMultiple(genSql(input)).then(() => {});
   }
-  override multipleQuery<T extends MultipleQueryResult>(sql: SqlLike | SqlLike[]): Promise<T> {
-    if (sql instanceof Array) sql = sql.map(sqlLikeToString).join(";\n");
-    else sql = sqlLikeToString(sql);
-    return this.#pool.query(sql) as unknown as Promise<T>;
+  override async multipleQuery<T extends MultipleQueryResult>(sql: SqlLike | SqlLike[]): Promise<T> {
+    const text = sql instanceof Array ? sql.map(sqlLikeToString).join(";\n") : sqlLikeToString(sql);
+    return await this.#multiple(text) as T;
   }
-  //implement
-  [Symbol.asyncDispose]() {
+  [Symbol.asyncDispose](): Promise<void> {
     return this.close();
+  }
+
+  async #multiple(sql: string): Promise<MultipleQueryResult> {
+    const allResults = await this.#connection.queryMultiple(sql).allResults();
+    return allResults.map((res) => ({
+      rowCount: res.rowCount ?? 0,
+      rows: res.rows,
+    }));
   }
 }
 
-function genSql(input: QueryInput | MultipleQueryInput) {
+function genSql(input: QueryInput | MultipleQueryInput): string {
   if (typeof input === "function") {
     input = input();
   }

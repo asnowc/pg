@@ -1,5 +1,6 @@
-import { DbCursor, DbPoolConnection, ParallelQueryError } from "#abstract";
-import { Cursor } from "../driver/mod.js";
+import { DbCursor, ParallelQueryError } from "#abstract";
+import type { DbPoolConnection } from "#abstract";
+import type { Cursor } from "@/interface/Query.ts";
 
 export class PgCursor<T> extends DbCursor<T> {
   constructor(cursor: Cursor<T>, conn: DbPoolConnection, readonly defaultChunkSize = 20) {
@@ -18,9 +19,16 @@ export class PgCursor<T> extends DbCursor<T> {
     return promise;
   }
   // implement
-  close(): Promise<void> {
-    this.#conn?.release();
+  async close(): Promise<void> {
+    const conn = this.#conn;
+    if (!conn) return;
     this.#conn = undefined;
-    return this.#cursor.close();
+    try {
+      await this.#cursor.close();
+      conn.release();
+    } catch (error) {
+      conn.dispose();
+      throw error;
+    }
   }
 }
