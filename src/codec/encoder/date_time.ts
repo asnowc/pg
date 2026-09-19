@@ -1,3 +1,4 @@
+import { encodeInt32BE, encodeInt64BE } from "@/_utils/number.ts";
 import type { JsDataEncoder } from "@/interface/js_data_encoder.ts";
 import { PgOid } from "@/util/pg_oid.ts";
 
@@ -5,35 +6,36 @@ const POSTGRES_EPOCH_DATE = Temporal.PlainDate.from("2000-01-01");
 const POSTGRES_EPOCH_INSTANT = Temporal.Instant.from("2000-01-01T00:00:00Z");
 
 export const plainDateEncoder: JsDataEncoder<Temporal.PlainDate> = {
-  getOid: () => PgOid.DATE,
-  text: (value) => value.toString(),
-  encode: (value) => {
-    const output = new Uint8Array(4);
-    new DataView(output.buffer).setInt32(0, POSTGRES_EPOCH_DATE.until(value, { largestUnit: "day" }).days);
-    return output;
-  },
+  oid: PgOid.DATE,
+  encodeToText: (value) => value.toString(),
+  byteLength: 4,
+  encodeInto: (buffer, offset, value) =>
+    encodeInt32BE(buffer, offset, POSTGRES_EPOCH_DATE.until(value, { largestUnit: "day" }).days),
 };
 export const plainTimeEncoder: JsDataEncoder<Temporal.PlainTime> = {
-  getOid: () => PgOid.TIME,
-  text: (value) => value.toString(),
-  encode: (value) => {
-    return encodeInt64(plainTimeToMicroseconds(value));
-  },
+  oid: PgOid.TIME,
+  encodeToText: (value) => value.toString(),
+  byteLength: 8,
+  encodeInto: (buffer, offset, value) => encodeInt64BE(buffer, offset, plainTimeToMicroseconds(value)),
 };
 export const plainDateTimeEncoder: JsDataEncoder<Temporal.PlainDateTime> = {
-  getOid: () => PgOid.TIMESTAMP,
-  text: (value) => value.toString(),
-  encode: (value) => encodeTimestamp(value.toZonedDateTime("UTC").toInstant()),
+  oid: PgOid.TIMESTAMP,
+  encodeToText: (value) => value.toString(),
+  byteLength: 8,
+  encodeInto: (buffer, offset, value) => encodeTimestampInto(buffer, offset, value.toZonedDateTime("UTC").toInstant()),
 };
 export const instantEncoder: JsDataEncoder<Temporal.Instant> = {
-  getOid: () => PgOid.TIMESTAMPTZ,
-  text: (value) => value.toString(),
-  encode: encodeTimestamp,
+  oid: PgOid.TIMESTAMPTZ,
+  encodeToText: (value) => value.toString(),
+  byteLength: 8,
+  encodeInto: encodeTimestampInto,
 };
 export const dateEncoder: JsDataEncoder<Date> = {
-  getOid: () => PgOid.TIMESTAMPTZ,
-  text: (value) => value.toISOString(),
-  encode: (value) => encodeTimestamp(Temporal.Instant.fromEpochMilliseconds(value.getTime())),
+  oid: PgOid.TIMESTAMPTZ,
+  encodeToText: (value) => value.toISOString(),
+  byteLength: 8,
+  encodeInto: (buffer, offset, value) =>
+    encodeTimestampInto(buffer, offset, Temporal.Instant.fromEpochMilliseconds(value.getTime())),
 };
 
 function plainTimeToMicroseconds(value: Temporal.PlainTime): bigint {
@@ -42,12 +44,7 @@ function plainTimeToMicroseconds(value: Temporal.PlainTime): bigint {
     BigInt(value.nanosecond) / 1000n;
 }
 
-function encodeTimestamp(value: Temporal.Instant): Uint8Array {
-  return encodeInt64((value.epochNanoseconds - POSTGRES_EPOCH_INSTANT.epochNanoseconds) / 1000n);
-}
-
-function encodeInt64(value: bigint): Uint8Array {
-  const output = new Uint8Array(8);
-  new DataView(output.buffer).setBigInt64(0, value);
-  return output;
+function encodeTimestampInto(buffer: Uint8Array, offset: number, value: Temporal.Instant): number {
+  const microseconds = (value.epochNanoseconds - POSTGRES_EPOCH_INSTANT.epochNanoseconds) / 1000n;
+  return encodeInt64BE(buffer, offset, microseconds);
 }

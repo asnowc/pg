@@ -19,7 +19,7 @@
 
 - 涉及认证、简单查询、扩展查询或 COPY 时，先查阅
   [认证](../docs/pg-protocol/认证.md)、[简单查询](../docs/pg-protocol/简单查询.md)、[扩展查询](../docs/pg-protocol/扩展查询.md)
-  和 [COPY 协议](../docs/pg-protocol/COPY协议.md) 的约束与示例。
+  、[异步消息与取消](../docs/pg-protocol/异步与取消.md) 和 [COPY 协议](../docs/pg-protocol/COPY协议.md) 的约束与示例。
 - 面向现有用户的 API 迁移和兼容性变更，参考 [原生协议迁移说明](../docs/migration-native-protocol.md)。
 
 ## 设计与编码约定

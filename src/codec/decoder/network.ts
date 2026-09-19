@@ -1,11 +1,13 @@
-export const inet = {
-  text: (value: string) => value,
-  binary: decodeInet,
+import type { PgDataDecoder } from "@/interface/pg_data_decoder.ts";
+
+export const inet: PgDataDecoder = {
+  decodeText: (value: string) => value,
+  decodeBinary: decodeInet,
 };
 
-export const macaddr = {
-  text: (value: string) => value,
-  binary: (value: Uint8Array) => Array.from(value, (byte) => byte.toString(16).padStart(2, "0")).join(":"),
+export const macaddr: PgDataDecoder = {
+  decodeText: (value: string) => value,
+  decodeBinary: (value: Uint8Array) => Array.from(value, (byte) => byte.toString(16).padStart(2, "0")).join(":"),
 };
 
 function decodeInet(value: Uint8Array): string {

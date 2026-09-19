@@ -1,6 +1,5 @@
 import { QueryOperation } from "./private/QueryOperation.ts";
 import type { ByteStream } from "@/interface/ByteStream.ts";
-import type { PgSessionInfo } from "@/interface/protocol.ts";
 import type { PgSession } from "@/protocol.ts";
 import type { PgConnectOptions } from "@/interface/Connection.ts";
 import { connectFromByteStream } from "@/protocol/connect.ts";
@@ -16,9 +15,11 @@ export class PgConnection extends QueryOperation implements AsyncDisposable {
     this.#session = session;
   }
   #session: PgSession;
-
-  get session(): Readonly<PgSessionInfo> {
-    return this.#session.sessionInfo;
+  get processId(): number | null {
+    return this.#session.processId;
+  }
+  get parameters(): Record<string, string> {
+    return { ...this.#session.parameters };
   }
   get closed(): boolean {
     return this.#session === undefined;

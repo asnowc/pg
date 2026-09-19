@@ -39,13 +39,19 @@ export const test = viTest.extend<BaseContext>({
   },
   async pgPool({}, use) {
     await using dbPool = new PgPool({
-      create: () => Deno.connect({ hostname: PUBLIC_DB_CONNECT_INFO.hostname, port: PUBLIC_DB_CONNECT_INFO.port }),
-      idleTimeout: 10,
-      maxCount: 4,
-      connect: {
-        user: PUBLIC_DB_CONNECT_INFO.user,
-        database: PUBLIC_DB_CONNECT_INFO.database,
-        password: PUBLIC_DB_CONNECT_INFO.password,
+      create: async () => {
+        const stream = await Deno.connect({
+          hostname: PUBLIC_DB_CONNECT_INFO.hostname,
+          port: PUBLIC_DB_CONNECT_INFO.port,
+        });
+        return {
+          stream,
+          connectOptions: {
+            user: PUBLIC_DB_CONNECT_INFO.user,
+            database: PUBLIC_DB_CONNECT_INFO.database,
+            password: PUBLIC_DB_CONNECT_INFO.password,
+          },
+        };
       },
     });
     await use(dbPool);

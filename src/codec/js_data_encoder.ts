@@ -8,6 +8,13 @@ import {
   plainTimeEncoder,
 } from "./encoder/date_time.ts";
 
+export type {
+  JsDataEncoder,
+  JsDataEncoderMap,
+  JsDataFixedEncoder,
+  JsDataVariableEncoder,
+} from "@/interface/js_data_encoder.ts";
+
 const DATA_TYPE_KEY = Symbol("Data type key");
 
 /** @public */
@@ -17,24 +24,24 @@ export function setJsDataTypeFlag<T extends object>(obj: T, flag: string | numbe
 }
 
 /** @public */
-export function getJsDataEncoderSafe(map: JsDataEncoderMap, data: unknown): JsDataEncoder | undefined {
+export function getJsDataEncoderSafe<T>(map: JsDataEncoderMap, data: T): JsDataEncoder<T> | undefined {
   if (data === null) throw new TypeError(`null cannot be encoded`);
   if (typeof data === "object") {
     const flag = Reflect.get(data, DATA_TYPE_KEY) as string | number | undefined;
-    if (flag !== undefined) return map.get(flag);
-    let encoder: JsDataEncoder | undefined;
+    if (flag !== undefined) return map.get(flag) as JsDataEncoder<T> | undefined;
+    let encoder: JsDataEncoder<never> | undefined;
     let constructor = data.constructor;
     while (constructor) {
       encoder = map.get(constructor);
-      if (encoder) return encoder;
+      if (encoder) return encoder as unknown as JsDataEncoder<T>;
       constructor = Object.getPrototypeOf(constructor);
     }
     return undefined;
   }
-  return map.get(typeof data);
+  return map.get(typeof data) as JsDataEncoder<T> | undefined;
 }
 /** @public */
-export function getJsDataEncoder(map: JsDataEncoderMap, data: unknown): JsDataEncoder {
+export function getJsDataEncoder<T>(map: JsDataEncoderMap, data: T): JsDataEncoder<T> {
   const encoder = getJsDataEncoderSafe(map, data);
   if (!encoder) {
     const type = typeof data;
@@ -48,7 +55,7 @@ export const JS_DATA_ENCODER_V1: JsDataEncoderMap = createJsDataEncoderV1();
 
 /** @__NO_SIDE_EFFECTS__ */
 function createJsDataEncoderV1(): JsDataEncoderMap {
-  const map = new Map<object | string | number, JsDataEncoder>();
+  const map = new Map<object | string | number, JsDataEncoder<never>>();
   map.set("string", stringEncoder);
   map.set("number", numberEncoder);
   map.set("boolean", booleanEncoder);

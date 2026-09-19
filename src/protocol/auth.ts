@@ -1,118 +1,80 @@
-import { AsyncMessageType, type PgSessionInfo } from "@/interface/protocol.ts";
-
-import { PgAuthenticationError, PgProtocolError, UnexpectedEOFError } from "@/error.ts";
+import { PgAuthenticationError } from "@/error.ts";
 import type { PgAuthenticationExchangeOptions, PgSaslExchange } from "@/interface/Connection.ts";
 import { decodeBase64, decodeUTF16String, encodeBase64 } from "@/_utils/string.ts";
-import { AuthCode, BackendMessageCode, PgTransactionStatus, PROTOCOL_VERSION } from "./const.ts";
-import {
-  decodeBackendKeyData,
-  decodeError,
-  decodeNegotiateProtocolVersion,
-  decodeNotice,
-  decodeNotification,
-  decodeParameterStatus,
-  type PgBackendKeyData,
-} from "./decode.ts";
-import { Message } from "./PgSession.ts";
+import { AuthCode, BackendMessageCode, PgTransactionStatus } from "./const.ts";
+import { decodeBackendKeyData, decodeError, decodeNegotiateProtocolVersion } from "./decode.ts";
+import type { PgSession } from "./PgSession.ts";
 import { encodePasswordMessage } from "./encode.ts";
-import type { ByteStream } from "@/interface/ByteStream.ts";
+import { decodeInt32BE } from "@/_utils/number.ts";
+import { PgProtocolError } from "@/_utils/error.ts";
+import { readLength } from "@/_utils/ByteStream.ts";
 
 /**
  * 执行密码/SASL 认证并读取到首个 ReadyForQuery。调用前必须已发送 StartupMessage。
  */
 export async function startAuthentication(
-  stream: ByteStream,
+  stream: PgSession,
   options: PgAuthenticationExchangeOptions,
-): Promise<PgSessionInfo> {
-  const parameters: Record<string, string> = {};
-  let backendKey: PgBackendKeyData | undefined;
+): Promise<void> {
   let sasl: PgSaslExchange | undefined;
-  const headerBuffer = new Uint8Array(5);
-  while (true) {
-    const pending = await Message.read(stream, headerBuffer);
-    if (!pending) throw new UnexpectedEOFError("PostgreSQL closed the connection during authentication");
+  const { promise, resolve, reject } = Promise.withResolvers<void>();
+  stream.subscribe({
+    resolve,
+    reject,
+    async onMessage(reader, type, bodyLength) {
+      const body = await readLength(reader, bodyLength);
 
-    switch (pending.type) {
-      case BackendMessageCode.ReadyForQuery: {
-        const body = await pending.readBody();
-        const statusCode = body[0];
-        if (statusCode !== PgTransactionStatus.Idle) {
-          throw new PgProtocolError("Unexpected transaction status", { messageCode: statusCode });
+      switch (type) {
+        case BackendMessageCode.ReadyForQuery: {
+          const statusCode = body[0];
+          if (statusCode !== PgTransactionStatus.Idle) {
+            throw new PgProtocolError("Unexpected transaction status: " + statusCode);
+          }
+          stream.removeSubscriber();
+          break;
+        }
+        case BackendMessageCode.NegotiateProtocolVersion: {
+          const { newestMinorVersion, unsupportedOptions } = decodeNegotiateProtocolVersion(body);
+          // Handle NegotiateProtocolVersion message if needed
+          break;
         }
 
-        return {
-          protocolVersion: PROTOCOL_VERSION,
-          parameters,
-          processId: backendKey?.processId ?? null,
-          secretKey: backendKey?.secretKey ?? null,
-        };
-      }
-      case BackendMessageCode.NegotiateProtocolVersion: {
-        const body = await pending.readBody();
-        const { newestMinorVersion, unsupportedOptions } = decodeNegotiateProtocolVersion(body);
-        // Handle NegotiateProtocolVersion message if needed
-        break;
-      }
+        case BackendMessageCode.Authentication: {
+          sasl = await respondAuthentication(stream, body, options, sasl);
+          break;
+        }
 
-      case BackendMessageCode.ParameterStatus: {
-        const body = await pending.readBody();
-        const { name, value } = decodeParameterStatus(body);
-        parameters[name] = value;
-        break;
-      }
-      case BackendMessageCode.Authentication: {
-        const body = await pending.readBody();
-        sasl = await respondAuthentication(stream, body, options, sasl);
-        break;
-      }
+        case BackendMessageCode.BackendKeyData: {
+          const backendKey = decodeBackendKeyData(body);
+          stream.processId = backendKey.processId;
+          stream.secretKey = backendKey.secretKey;
+          break;
+        }
 
-      case BackendMessageCode.BackendKeyData: {
-        const body = await pending.readBody();
-        backendKey = decodeBackendKeyData(body);
-        break;
-      }
+        case BackendMessageCode.Error: {
+          const message = decodeError(body);
+          throw new PgAuthenticationError(message.fields.message, { cause: message });
+        }
 
-      case BackendMessageCode.Error: {
-        const body = await pending.readBody();
-        const message = decodeError(body);
-        throw new PgAuthenticationError(message.fields.message, undefined, { cause: message });
+        default:
+          break;
       }
-
-      case BackendMessageCode.NotificationResponse: {
-        const body = await pending.readBody();
-        const message = decodeNotification(body);
-        await options.onAsyncMessage?.({
-          type: AsyncMessageType.Notification,
-          processId: message.processId,
-          channel: message.channel,
-          payload: message.payload,
-        });
-        break;
-      }
-      case BackendMessageCode.NoticeResponse: {
-        const body = await pending.readBody();
-        const message = decodeNotice(body);
-        await options.onAsyncMessage?.({ type: AsyncMessageType.Notice, fields: message.fields, info: message.info });
-        break;
-      }
-      default:
-        await pending.skip();
-        break;
-    }
-  }
+    },
+  });
+  return promise;
 }
 
 /**
  * 从认证阶段消息构造认证响应，供自定义连接状态机使用。
  */
 async function respondAuthentication(
-  stream: ByteStream,
+  stream: PgSession,
   body: Uint8Array,
   options: PgAuthenticationExchangeOptions,
   state?: PgSaslExchange,
 ): Promise<PgSaslExchange | undefined> {
-  let offset = 0;
-  const code = body[offset++];
+  const code = decodeInt32BE(body, 0);
+  const offset = 4;
   switch (code) {
     case AuthCode.OK:
       return state;
@@ -127,9 +89,7 @@ async function respondAuthentication(
     case AuthCode.SASL: {
       const mechanisms = decodeSASLMechanisms(body, offset);
       if (!mechanisms) {
-        throw new PgProtocolError("Invalid AuthenticationSASL message: missing terminator", {
-          messageCode: BackendMessageCode.Authentication,
-        });
+        throw new PgProtocolError("Invalid AuthenticationSASL message: missing terminator");
       }
       const password = typeof options.password === "function" ? await options.password() : options.password;
       const createExchange = options.createSaslExchange ?? createScramExchange;
@@ -167,7 +127,7 @@ function decodeSASLMechanisms(body: Uint8Array, offset: number): string[] | unde
   const mechanisms: string[] = [];
   while (offset < body.byteLength) {
     const end = body.indexOf(0, offset);
-    if (end === 0) return mechanisms;
+    if (end === offset) return mechanisms;
     if (end === -1) throw new PgAuthenticationError("Invalid SASL mechanisms format");
     const mechanism = decodeUTF16String(body.subarray(offset, end));
     offset = end + 1;
@@ -183,7 +143,9 @@ async function createScramExchange(
   if (!mechanisms.includes("SCRAM-SHA-256")) {
     throw new PgAuthenticationError("SCRAM-SHA-256 is not supported by server");
   }
-  if (password === undefined) throw new PgAuthenticationError("SCRAM-SHA-256 requires a password", "SCRAM-SHA-256");
+  if (password === undefined) {
+    throw new PgAuthenticationError("SCRAM-SHA-256 requires a password", { mechanism: "SCRAM-SHA-256" });
+  }
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
   const nonceBytes = crypto.getRandomValues(new Uint8Array(18));
@@ -198,11 +160,11 @@ async function createScramExchange(
       const serverFirst = decoder.decode(challenge);
       const attributes = Object.fromEntries(serverFirst.split(",").map((item) => [item[0], item.slice(2)]));
       if (!attributes.r?.startsWith(nonce) || !attributes.s || !attributes.i) {
-        throw new PgAuthenticationError("Invalid SCRAM server-first message", "SCRAM-SHA-256");
+        throw new PgAuthenticationError("Invalid SCRAM server-first message", { mechanism: "SCRAM-SHA-256" });
       }
       const iterations = Number(attributes.i);
       if (!Number.isSafeInteger(iterations) || iterations <= 0) {
-        throw new PgAuthenticationError("Invalid SCRAM iteration count", "SCRAM-SHA-256");
+        throw new PgAuthenticationError("Invalid SCRAM iteration count", { mechanism: "SCRAM-SHA-256" });
       }
       const key = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);
       const saltedPassword = new Uint8Array(
@@ -229,9 +191,11 @@ async function createScramExchange(
     },
     final(data) {
       const finalMessage = decoder.decode(data);
-      if (finalMessage.startsWith("e=")) throw new PgAuthenticationError(finalMessage.slice(2), "SCRAM-SHA-256");
+      if (finalMessage.startsWith("e=")) {
+        throw new PgAuthenticationError(finalMessage.slice(2), { mechanism: "SCRAM-SHA-256" });
+      }
       if (!serverSignature || finalMessage !== `v=${serverSignature}`) {
-        throw new PgAuthenticationError("SCRAM server signature verification failed", "SCRAM-SHA-256");
+        throw new PgAuthenticationError("SCRAM server signature verification failed", { mechanism: "SCRAM-SHA-256" });
       }
     },
   };

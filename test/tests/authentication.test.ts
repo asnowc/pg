@@ -1,4 +1,4 @@
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 import { PgAuthenticationError, PgConnection, type PgConnectOptions } from "@asla/pg";
 import { denoConnect } from "@test/utils/connect.ts";
 import { PUBLIC_DB_CONNECT_INFO } from "@test/utils/db.ts";
@@ -82,5 +82,5 @@ test("TLS fixture 使用受信 CA 建立连接", async () => {
       },
     },
   });
-  expect(db.session.protocolVersion).toBeGreaterThan(0);
+  expect(db.processId).not.toBeNull();
 });

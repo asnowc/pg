@@ -1,6 +1,6 @@
 import type { SimpleQueryEncoder, StatementEncoder } from "@/interface/Query.ts";
 import { getJsDataEncoder } from "@/codec/js_data_encoder.ts";
-import type { JsDataEncoder, JsDataEncoderMap } from "@/interface/js_data_encoder.ts";
+import type { JsDataEncoderMap } from "@/interface/js_data_encoder.ts";
 import { calcUTF16ByteLength } from "@/_utils/string.ts";
 
 /** @public */
@@ -75,13 +75,13 @@ export class TemplateSqlStatementEncoder implements StatementEncoder, SimpleQuer
     let template = chunks[0];
 
     let arg: unknown;
-    let encoder: JsDataEncoder;
     for (let i = 1; i < chunks.length; i++) {
       arg = args[i - 1];
       if (arg === null) template += "NULL";
       else {
-        encoder = getJsDataEncoder(encoderMap, arg);
-        template += encoder.text(arg, encoder.getOid(arg));
+        const encoder = getJsDataEncoder(encoderMap, arg);
+        const oid = typeof encoder.oid === "function" ? encoder.oid(arg) : encoder.oid;
+        template += encoder.encodeToText(arg, oid);
       }
       template += chunks[i];
     }

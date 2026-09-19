@@ -7,10 +7,14 @@ export type PgDataDecodeContext = Readonly<{
 
 /** @public */
 export type PgDataDecoder<T = unknown> = {
-  text(value: string, context: PgDataDecodeContext): T;
-  binary(value: Uint8Array, context: PgDataDecodeContext): T;
+  decodeText(value: string, context: PgDataDecodeContext): T;
+  decodeBinary(value: Uint8Array, context: PgDataDecodeContext): T;
 };
-
+interface PgDataStreamDecoder<T = unknown> {
+  write(data: Uint8Array): void;
+  end(): T;
+}
+type PgDataStreamDecoderFactory<T = unknown> = (context: PgDataDecodeContext) => PgDataStreamDecoder<T>;
 /**
  * PG Type ID -> DataTypeDecoder
  * @public

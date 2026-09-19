@@ -74,7 +74,7 @@ export function encodePasswordMessage(message: PasswordMessage): Uint8Array {
     let offset = FRAME_HEADER_LENGTH;
     offset += encodeUTF16StringInto(message.mechanism, buffer.subarray(offset));
     buffer[offset++] = CSTRING_TERMINATOR;
-    offset = encodeInt32BE(buffer, offset, message.data?.byteLength ?? -1);
+    offset += encodeInt32BE(buffer, offset, message.data?.byteLength ?? -1);
     if (message.data) buffer.set(message.data, offset);
     return buffer;
   }
@@ -149,6 +149,7 @@ export function encodeDescribeMessage(target: DescribeTarget, name?: Uint8Array)
   buffer[offset++] = CSTRING_TERMINATOR;
   return buffer;
 }
+
 export function encodeExecuteMessage(maxRows: number, portal?: Uint8Array): Uint8Array {
   const bodyLength = portal ? portal.byteLength + 5 : 5;
   const buffer = createFrame(FrontendMessageCode.Execute, bodyLength);

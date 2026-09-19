@@ -1,42 +1,44 @@
-export const boolean = {
-  text: (value: string) => value === "t",
-  binary: (value: Uint8Array) => value[0] !== 0,
+import type { PgDataDecoder } from "@/interface/pg_data_decoder.ts";
+
+export const boolean: PgDataDecoder = {
+  decodeText: (value: string) => value === "t",
+  decodeBinary: (value: Uint8Array) => value[0] !== 0,
 };
 
-export const signedInteger = {
-  text: (value: string) => Number(value),
-  binary: (value: Uint8Array) => {
+export const signedInteger: PgDataDecoder = {
+  decodeText: (value: string) => Number(value),
+  decodeBinary: (value: Uint8Array) => {
     const view = new DataView(value.buffer, value.byteOffset, value.byteLength);
     return value.byteLength === 2 ? view.getInt16(0) : view.getInt32(0);
   },
 };
 
-export const bigint = {
-  text: (value: string) => BigInt(value),
-  binary: (value: Uint8Array) => new DataView(value.buffer, value.byteOffset, value.byteLength).getBigInt64(0),
+export const bigint: PgDataDecoder = {
+  decodeText: (value: string) => BigInt(value),
+  decodeBinary: (value: Uint8Array) => new DataView(value.buffer, value.byteOffset, value.byteLength).getBigInt64(0),
 };
 
-export const unsignedInteger = {
-  text: (value: string) => Number(value),
-  binary: (value: Uint8Array) => new DataView(value.buffer, value.byteOffset, value.byteLength).getUint32(0),
+export const unsignedInteger: PgDataDecoder = {
+  decodeText: (value: string) => Number(value),
+  decodeBinary: (value: Uint8Array) => new DataView(value.buffer, value.byteOffset, value.byteLength).getUint32(0),
 };
 
-export const unsignedBigint = {
-  text: (value: string) => BigInt(value),
-  binary: (value: Uint8Array) => new DataView(value.buffer, value.byteOffset, value.byteLength).getBigUint64(0),
+export const unsignedBigint: PgDataDecoder = {
+  decodeText: (value: string) => BigInt(value),
+  decodeBinary: (value: Uint8Array) => new DataView(value.buffer, value.byteOffset, value.byteLength).getBigUint64(0),
 };
 
-export const float = {
-  text: (value: string) => Number(value),
-  binary: (value: Uint8Array) => {
+export const float: PgDataDecoder = {
+  decodeText: (value: string) => Number(value),
+  decodeBinary: (value: Uint8Array) => {
     const view = new DataView(value.buffer, value.byteOffset, value.byteLength);
     return value.byteLength === 4 ? view.getFloat32(0) : view.getFloat64(0);
   },
 };
 
-export const numeric = {
-  text: (value: string) => value,
-  binary: decodeNumeric,
+export const numeric: PgDataDecoder = {
+  decodeText: (value: string) => value,
+  decodeBinary: decodeNumeric,
 };
 
 function decodeNumeric(value: Uint8Array): string {

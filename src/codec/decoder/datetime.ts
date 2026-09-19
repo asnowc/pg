@@ -1,9 +1,11 @@
+import { PgDataDecoder } from "@/interface/pg_data_decoder.ts";
+
 const POSTGRES_EPOCH_DATE = Temporal.PlainDate.from("2000-01-01");
 const POSTGRES_EPOCH_INSTANT = Temporal.Instant.from("2000-01-01T00:00:00Z");
 
-export const date = {
-  text: (value: string) => parseDate(value),
-  binary: (value: Uint8Array) => {
+export const date: PgDataDecoder = {
+  decodeText: (value: string) => parseDate(value),
+  decodeBinary: (value: Uint8Array) => {
     const days = new DataView(value.buffer, value.byteOffset, value.byteLength).getInt32(0);
     if (days === 0x7fffffff) return "infinity";
     if (days === -0x80000000) return "-infinity";
@@ -11,9 +13,9 @@ export const date = {
   },
 };
 
-export const timestamp = {
-  text: (value: string) => parsePlainDateTime(value),
-  binary: (value: Uint8Array) => {
+export const timestamp: PgDataDecoder = {
+  decodeText: (value: string) => parsePlainDateTime(value),
+  decodeBinary: (value: Uint8Array) => {
     const microseconds = new DataView(value.buffer, value.byteOffset, value.byteLength).getBigInt64(0);
     if (microseconds === 0x7fffffffffffffffn) return "infinity";
     if (microseconds === -0x8000000000000000n) return "-infinity";
@@ -21,9 +23,9 @@ export const timestamp = {
   },
 };
 
-export const timestamptz = {
-  text: (value: string) => parseInstant(value),
-  binary: (value: Uint8Array) => {
+export const timestamptz: PgDataDecoder = {
+  decodeText: (value: string) => parseInstant(value),
+  decodeBinary: (value: Uint8Array) => {
     const microseconds = new DataView(value.buffer, value.byteOffset, value.byteLength).getBigInt64(0);
     if (microseconds === 0x7fffffffffffffffn) return "infinity";
     if (microseconds === -0x8000000000000000n) return "-infinity";
@@ -31,14 +33,14 @@ export const timestamptz = {
   },
 };
 
-export const time = {
-  text: (value: string) => Temporal.PlainTime.from(value),
-  binary: (value: Uint8Array) => Temporal.PlainTime.from(formatTime(readBigInt64(value))),
+export const time: PgDataDecoder = {
+  decodeText: (value: string) => Temporal.PlainTime.from(value),
+  decodeBinary: (value: Uint8Array) => Temporal.PlainTime.from(formatTime(readBigInt64(value))),
 };
 
-export const timetz = {
-  text: (value: string) => value,
-  binary: (value: Uint8Array) => {
+export const timetz: PgDataDecoder = {
+  decodeText: (value: string) => value,
+  decodeBinary: (value: Uint8Array) => {
     if (value.byteLength !== 12) throw new RangeError(`Invalid timetz length: ${value.byteLength}`);
     const view = new DataView(value.buffer, value.byteOffset, value.byteLength);
     const secondsWestOfUtc = view.getInt32(8);

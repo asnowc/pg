@@ -6,10 +6,10 @@ import type { PgErrorFields } from "@/interface/protocol.ts";
  */
 export class PgAuthenticationError extends Error {
   readonly mechanism?: string;
-  constructor(message: string, mechanism?: string, options?: ErrorOptions) {
+  constructor(message: string, options?: ErrorOptions & { mechanism?: string }) {
     super(message, options);
     this.name = "PgAuthenticationError";
-    this.mechanism = mechanism;
+    this.mechanism = options?.mechanism;
   }
 }
 /**
@@ -23,25 +23,5 @@ export class PgDatabaseError extends Error {
     super(fields.message, options);
     this.name = "PgDatabaseError";
     this.info = fields;
-  }
-}
-/**
- * 报文格式、长度或状态违反 PostgreSQL 协议。
- * @public
- */
-export class PgProtocolError extends Error {
-  readonly messageCode?: number;
-  constructor(message: string, options?: ErrorOptions & { messageCode?: number }) {
-    super(message);
-    if (options?.messageCode !== undefined) {
-      this.messageCode = options.messageCode;
-    }
-    this.name = "PgProtocolError";
-  }
-}
-export class UnexpectedEOFError extends Error {
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options);
-    this.name = "UnexpectedEOFError";
   }
 }

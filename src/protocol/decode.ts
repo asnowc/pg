@@ -1,8 +1,8 @@
-import { PgProtocolError } from "@/error.ts";
 import { BackendMessageCode, NOTICE_STANDARD_FIELD_MAP, PgFormat, PgTransactionStatus } from "./const.ts";
 import type { PgErrorFields, PgFieldDescription } from "./messages.ts";
 import { decodeUTF16String, findCStringTerminator } from "@/_utils/string.ts";
 import { decodeInt16BE, decodeInt32BE, decodeUInt16BE, decodeUInt32BE } from "@/_utils/number.ts";
+import { PgProtocolError } from "@/_utils/error.ts";
 
 // 启动消息
 
@@ -128,9 +128,7 @@ export function decodeReadyForQuery(body: Uint8Array): PgTransactionStatus {
     statusCode !== PgTransactionStatus.Idle && statusCode !== PgTransactionStatus.Transaction &&
     statusCode !== PgTransactionStatus.Failed
   ) {
-    throw new PgProtocolError(`Invalid ReadyForQuery transaction status: ${statusCode}`, {
-      messageCode: BackendMessageCode.ReadyForQuery,
-    });
+    throw new PgProtocolError(`Invalid ReadyForQuery transaction status: ${statusCode}`);
   }
   return statusCode;
 }
@@ -144,7 +142,7 @@ export function decodeCopyResponse(
 ) {
   const overallFormat = data[0];
   if (overallFormat !== PgFormat.text && overallFormat !== PgFormat.binary) {
-    throw new PgProtocolError(`Invalid PostgreSQL COPY format code: ${overallFormat}`, { messageCode: code });
+    throw new PgProtocolError(`Invalid PostgreSQL COPY format code: ${overallFormat}`);
   }
   let offset = 1;
   const count = decodeUInt16BE(data, offset);
@@ -173,12 +171,12 @@ export function decodeNotification(body: Uint8Array) {
 }
 
 export function decodeError(body: Uint8Array) {
-  return decodeNoticeResponse(body, BackendMessageCode.Error);
+  return decodeNoticeResponse(body);
 }
 export function decodeNotice(body: Uint8Array) {
-  return decodeNoticeResponse(body, BackendMessageCode.NoticeResponse);
+  return decodeNoticeResponse(body);
 }
-function decodeNoticeResponse(body: Uint8Array, code: BackendMessageCode.Error | BackendMessageCode.NoticeResponse) {
+function decodeNoticeResponse(body: Uint8Array) {
   const fields: Record<string, string> = {};
   const unknown: Record<string, string> = {};
   const total = body.byteLength;
@@ -198,14 +196,14 @@ function decodeNoticeResponse(body: Uint8Array, code: BackendMessageCode.Error |
   }
 
   if (fields.severity === undefined || fields.code === undefined || fields.message === undefined) {
-    throw new PgProtocolError("Invalid PostgreSQL error response: missing required field", { messageCode: code });
+    throw new PgProtocolError("Invalid PostgreSQL notice response: missing required field");
   }
   return { fields: fields as unknown as PgErrorFields, info: unknown };
 }
 
 function getFormat(format: number): PgFormat {
   if (format !== PgFormat.text && format !== PgFormat.binary) {
-    throw new PgProtocolError(`Invalid PostgreSQL format code: ${format}`, { messageCode: format });
+    throw new PgProtocolError(`Invalid PostgreSQL format code: ${format}`);
   }
   return format;
 }

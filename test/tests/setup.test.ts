@@ -6,9 +6,14 @@ test("按批读取游标并在完成后归还连接", async () => {
   const sql = createSqlBuilder(JS_DATA_ENCODER_V1);
   const connectInfo = PUBLIC_DB_CONNECT_INFO;
   await using dbPool = new PgPool({
-    create: () => Deno.connect({ hostname: connectInfo.hostname, port: connectInfo.port }),
+    create: async () => {
+      const stream = await Deno.connect({ hostname: connectInfo.hostname, port: connectInfo.port });
+      return {
+        stream,
+        connectOptions: { user: connectInfo.user, database: connectInfo.database, password: connectInfo.password },
+      };
+    },
     maxCount: 4,
-    connect: { user: connectInfo.user, database: connectInfo.database, password: connectInfo.password },
   });
 
   const rows = await dbPool.query(sql`SELECT 1`).getRows();

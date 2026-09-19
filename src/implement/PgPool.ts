@@ -11,7 +11,7 @@ import type { PgConnectOptions } from "@/interface/Connection.ts";
  */
 export interface CreatePoolOptions {
   /** 每次调用必须返回一个新的、已经完成认证的连接。 */
-  create: () => Promise<ByteStream>;
+  create: () => Promise<{ stream: ByteStream; connectOptions: PgConnectOptions }>;
   /** 最大连接数，默认 3。必须是正整数。 */
   maxCount?: number;
   /** 空闲回收时间（毫秒），默认 0（不回收）。 */
@@ -20,7 +20,6 @@ export interface CreatePoolOptions {
   usageLimit?: number;
   /** 创建连接失败时的重试次数，默认 0（不重试）。 */
   createRetry?: number;
-  connect: PgConnectOptions;
 }
 
 /** @public */
@@ -36,8 +35,8 @@ export class PgPool extends QueryOperation implements AsyncDisposable {
     super(() => this.#pool.get(), (session) => this.#release(session));
     this.#pool = new ResourcePool({
       create: async () => {
-        const byteStream = await options.create();
-        return connectFromByteStream(byteStream, options.connect);
+        const { connectOptions, stream } = await options.create();
+        return connectFromByteStream(stream, connectOptions);
       },
       dispose: closeByteStream,
     }, {
@@ -74,7 +73,7 @@ export class PgPool extends QueryOperation implements AsyncDisposable {
   destroy(): void {
     this.#pool.destroy();
   }
-  [Symbol.asyncDispose]() {
+  [Symbol.asyncDispose](): Promise<void> {
     return this.close();
   }
 }
@@ -91,7 +90,7 @@ function checkOptions(options: CreatePoolOptions) {
 }
 
 function closeByteStream(session: PgSession) {
-  session.close(); //TODO: 安全关闭。
+  session.close().catch(() => {});
 }
 
 class PgPoolConnection extends QueryOperation implements IPgPoolConnection {

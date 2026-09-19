@@ -27,7 +27,9 @@ export function calcUTF16ByteLength(str: string): number {
   return utf8Len;
 }
 export function encodeUTF16StringInto(value: string, output: Uint8Array): number {
-  return textEncoder.encodeInto(value, output).written;
+  const result = textEncoder.encodeInto(value, output);
+  if (result.read !== value.length) throw new RangeError("Insufficient UTF-8 output buffer");
+  return result.written;
 }
 export function decodeUTF16String(data: Uint8Array) {
   return textDecoder.decode(data);

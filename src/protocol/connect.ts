@@ -19,11 +19,9 @@ export async function connectFromByteStream(
       PROTOCOL_VERSION,
       getStartupParameters({ user, database }),
     );
-    const [sessionInfo] = await Promise.all([
-      startAuthentication(stream, options),
-      stream.write(startupMessage),
-    ]);
-    return new PgSession(stream, sessionInfo, maxMessageSize);
+    const session = new PgSession(stream, maxMessageSize);
+    await Promise.all([session.write(startupMessage), startAuthentication(session, options)]);
+    return session;
   } catch (error) {
     stream.close();
     throw error;
