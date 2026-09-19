@@ -1,4 +1,4 @@
-import type { PgDataDecodeContext, PgDataDecoderMap } from "./pg_decoder.ts";
+import type { PgDataDecodeContext, PgDataDecoderMap } from "@/interface/pg_data_decoder.ts";
 import type { FieldInfo } from "./QueryResult.ts";
 
 /** @public */

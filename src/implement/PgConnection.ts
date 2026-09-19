@@ -1,5 +1,6 @@
-import { QueryOperation } from "./QueryOperation.ts";
+import { QueryOperation } from "./private/QueryOperation.ts";
 import type { ByteStream } from "@/interface/ByteStream.ts";
+import type { PgSessionInfo } from "@/interface/protocol.ts";
 import type { PgSession } from "@/protocol.ts";
 import type { PgConnectOptions } from "@/interface/Connection.ts";
 import { connectFromByteStream } from "@/protocol/connect.ts";
@@ -14,7 +15,11 @@ export class PgConnection extends QueryOperation implements AsyncDisposable {
     super(async () => session, () => {});
     this.#session = session;
   }
-  #session?: PgSession;
+  #session: PgSession;
+
+  get session(): Readonly<PgSessionInfo> {
+    return this.#session.sessionInfo;
+  }
   get closed(): boolean {
     return this.#session === undefined;
   }
@@ -22,19 +27,13 @@ export class PgConnection extends QueryOperation implements AsyncDisposable {
     if (!this.#session) return Promise.resolve();
     return this.#session.finish;
   }
-  async close(): Promise<void> {
-    if (!this.#session) return;
-    const session = await this.#session;
-    await session.close();
-    this.#session = undefined;
+  close(): Promise<void> {
+    return this.#session.close();
   }
   [Symbol.asyncDispose](): Promise<void> {
     return this.close();
   }
   destroy(): void {
-    const session = this.#session;
-    if (!session) return;
-    this.#session = undefined;
-    return session.destroy();
+    return this.#session.destroy();
   }
 }

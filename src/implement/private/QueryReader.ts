@@ -48,7 +48,7 @@ export default class QueryReader<T = unknown> implements IQueryReader<T> {
     await this.#queryAllResult();
     throw new Error("Not implemented");
   }
-  async results(): Promise<QueryResult<T>> {
+  async getResults(): Promise<QueryResult<T>> {
     throw new Error("Not implemented");
   }
   /**

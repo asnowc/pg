@@ -1,8 +1,8 @@
-import { ResourcePool } from "@/lib/pool.ts";
+import { ResourcePool } from "@/_utils/ResourcePool.ts";
 import type { PgSession } from "@/protocol.ts";
 import type { ByteStream } from "@/interface/ByteStream.ts";
 import type { PgPoolConnection as IPgPoolConnection } from "./PgPoolConnection.ts";
-import { QueryOperation } from "./QueryOperation.ts";
+import { QueryOperation } from "./private/QueryOperation.ts";
 import { connectFromByteStream } from "@/protocol/connect.ts";
 import type { PgConnectOptions } from "@/interface/Connection.ts";
 /**

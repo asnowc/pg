@@ -13,7 +13,7 @@ import {
   decodeParameterStatus,
   type PgBackendKeyData,
 } from "./decode.ts";
-import { Message } from "./PgMessageReader.ts";
+import { Message } from "./PgSession.ts";
 import { encodePasswordMessage } from "./encode.ts";
 import type { ByteStream } from "@/interface/ByteStream.ts";
 

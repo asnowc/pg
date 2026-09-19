@@ -1,4 +1,4 @@
-import type { PgSession } from "@/protocol/PgMessageReader.ts";
+import type { PgSession } from "@/protocol/PgSession.ts";
 import type {
   CopyFromHandle,
   CopyFromOptions,
@@ -37,7 +37,7 @@ export class QueryOperation
   begin(mode?: TransactionMode): Transaction {
     throw new Error("Not implemented");
   }
-  open<T>(queryable: SqlStatement<T>, options?: CursorOpenOptions): Cursor<T> {
+  open<T>(queryable: SqlStatement<T>, options?: CursorOpenOptions): Promise<Cursor<T>> {
     throw new Error("Not implemented");
   }
   copyFrom(queryable: SqlStatement<unknown>, options?: CopyFromOptions): CopyFromHandle {

@@ -1,4 +1,4 @@
-import type { JsDataEncoderMap } from "./js_data_encoder.ts";
+import type { JsDataEncoderMap } from "@/interface/js_data_encoder.ts";
 import { TemplateSqlStatementEncoder } from "./SqlStatementEncoder.ts";
 
 /**

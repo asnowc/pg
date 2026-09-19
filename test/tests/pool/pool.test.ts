@@ -1,6 +1,6 @@
 import { describe, expect, vi } from "vitest";
 import { MockConn, test } from "./__mock.ts";
-import { ResourceManager, ResourcePool } from "@/lib/pool.ts";
+import { ResourceManager, ResourcePool } from "@/_utils/ResourcePool.ts";
 vi.setConfig({
   testTimeout: 1000, // 该文件内每个测试最多 60 秒
 });

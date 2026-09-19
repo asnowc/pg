@@ -4,6 +4,8 @@
   "license": "MIT",
   "nodeModulesDir": "manual",
   "tasks": {
+    "doc:html": "deno doc --name=@asla/pg --html --output docs/html src/mod.ts",
+    "doc:json": "deno doc --name=@asla/pg --json src/mod.ts >> docs/doc.json",
     "type:check": "deno check",
     "ci:test": "deno x vitest run",
     "test:coverage": "deno x vitest run --coverage",

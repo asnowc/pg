@@ -1,14 +1,13 @@
-import { connectFromStream, createByteStreamFromDenoConn, type PgConnectOptions } from "@asla/pg";
+import { PgConnection, type PgConnectOptions } from "@asla/pg";
 
 export interface TestConnectOptions extends PgConnectOptions {
   hostname: string;
   port: number;
 }
 
-export async function denoConnect(options: TestConnectOptions) {
+export async function denoConnect(options: TestConnectOptions): Promise<PgConnection> {
   const hostname = options.hostname;
   const port = options.port;
   const conn = await Deno.connect({ hostname, port });
-  const stream = createByteStreamFromDenoConn(conn);
-  return await connectFromStream(stream, options);
+  return PgConnection.connect(conn, options);
 }

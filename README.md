@@ -382,7 +382,6 @@ for await (const result of conn.simpleQuery(migration)) {
 测试数据库的创建、删除和生命周期由应用程序或测试框架负责。连接当前数据库后，可以通过 `conn.query()` 或
 `conn.simpleQuery()` 执行相应的 PostgreSQL 管理语句；执行数据库级操作时请使用具备对应权限的管理连接。
 
-
 ### 参考
 
 [PostgreSQL 前后端协议](https://www.postgresql.org/docs/18/protocol.html)

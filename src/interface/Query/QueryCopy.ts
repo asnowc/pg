@@ -1,8 +1,5 @@
 import type { SqlStatement } from "./QueryStatement.ts";
-
-type QueryCommonOptions = {
-  onNotice?: (info: { notice: string }) => void;
-};
+import type { QueryCommonOptions } from "./_internal.ts";
 
 /** @public */
 export type CopyFromOptions = QueryCommonOptions;

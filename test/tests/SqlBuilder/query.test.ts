@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 import { test } from "@test/fixtures/db_connect.ts";
-import { createSqlBuilder, JS_DATA_ENCODER_V1, SqlStatementTemplate } from "@asla/pg";
+import { createSqlBuilder, JS_DATA_ENCODER_V1 } from "@asla/pg";
 const sql = createSqlBuilder(JS_DATA_ENCODER_V1);
 
 type QueryResult = {
@@ -39,6 +39,6 @@ test("查询函数", async ({ connect }) => {
 
   expect(row).toEqual({ value: 42, nullable: null, empty: "", number: 123 });
 });
-declare function create<T extends {}, R extends SqlStatementTemplate>(
+declare function create<T extends {}, R>(
   fn: (input: T) => R,
 ): (input: T) => R;

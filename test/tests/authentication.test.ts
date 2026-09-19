@@ -1,13 +1,7 @@
-import { expect, test } from "vitest";
-import {
-  connectFromStream,
-  createByteStreamFromDenoConn,
-  PgAuthenticationError,
-  type PgConnectOptions,
-} from "@asla/pg";
+import { expect, test, vi } from "vitest";
+import { PgAuthenticationError, PgConnection, type PgConnectOptions } from "@asla/pg";
 import { denoConnect } from "@test/utils/connect.ts";
 import { PUBLIC_DB_CONNECT_INFO } from "@test/utils/db.ts";
-
 const TLS_CA_FILE = "./test/fixtures/tls/ca.crt";
 
 const USER = {
@@ -17,12 +11,12 @@ const USER = {
   tls: "auth_tls",
 } as const;
 
-function authenticate(options: PgConnectOptions) {
+function authenticate(options: Omit<PgConnectOptions, "database"> & { database?: string }) {
   return denoConnect({
-    ...options,
     database: PUBLIC_DB_CONNECT_INFO.database,
     hostname: PUBLIC_DB_CONNECT_INFO.hostname,
     port: PUBLIC_DB_CONNECT_INFO.port,
+    ...options,
   });
 }
 
@@ -56,23 +50,12 @@ test("密码回调只在服务端请求密码时执行", async () => {
   expect(calls).toBe(1);
 });
 
-test("Startup 参数进入 session", async () => {
-  await using conn = await authenticate({
-    user: USER.trust,
-    applicationName: "asla-pg-auth-test",
-    parameters: { search_path: "public" },
-  });
-  expect(conn.session.parameters).toMatchObject({
-    application_name: "asla-pg-auth-test",
-  });
-});
-
 test("服务端 Startup 错误会拒绝连接", async () => {
   await expect(authenticate({ user: USER.scram, database: "missing_database" })).rejects.toThrow();
 });
 
 test("拒绝包含 NUL 的 Startup 参数", async () => {
-  await expect(authenticate({ user: USER.scram, applicationName: "invalid\0name" })).rejects.toThrow("NUL");
+  await expect(authenticate({ user: USER.scram, database: "invalid\0name" })).rejects.toThrow("NUL");
 });
 
 test("服务端拒绝客户端选择的不支持 SASL 机制", async () => {
@@ -87,16 +70,15 @@ test("服务端拒绝客户端选择的不支持 SASL 机制", async () => {
 });
 test("TLS fixture 使用受信 CA 建立连接", async () => {
   const conn = await Deno.connect({ hostname: PUBLIC_DB_CONNECT_INFO.hostname, port: PUBLIC_DB_CONNECT_INFO.port });
-  const stream = createByteStreamFromDenoConn(conn);
-  await using db = await connectFromStream(stream, {
+
+  await using db = await PgConnection.connect(conn, {
     user: USER.tls,
     database: PUBLIC_DB_CONNECT_INFO.database,
     tls: {
       mode: "require",
       upgrade: async () => {
         const ca = await Deno.readTextFile(TLS_CA_FILE);
-        const tlsConn = await Deno.startTls(conn, { caCerts: [ca] });
-        return createByteStreamFromDenoConn(tlsConn);
+        return Deno.startTls(conn, { caCerts: [ca] });
       },
     },
   });

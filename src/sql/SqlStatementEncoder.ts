@@ -1,6 +1,6 @@
 import type { SimpleQueryEncoder, StatementEncoder } from "@/interface/Query.ts";
-import { getJsDataEncoder } from "./js_data_encoder.ts";
-import type { JsDataEncoder, JsDataEncoderMap } from "./js_data_encoder.ts";
+import { getJsDataEncoder } from "@/codec/js_data_encoder.ts";
+import type { JsDataEncoder, JsDataEncoderMap } from "@/interface/js_data_encoder.ts";
 import { calcUTF16ByteLength } from "@/_utils/string.ts";
 
 /** @public */

@@ -11,7 +11,7 @@ import type {
   SqlLike,
 } from "#abstract";
 import { createPgClient } from "./_pg_client.ts";
-import { ResourcePool } from "../lib/pool.ts";
+import { ResourcePool } from "@/_utils/ResourcePool.ts";
 import { PgConnection } from "./_PgConnection.ts";
 import { parserDbConnectUrl } from "./connect.ts";
 import type { DbConnectOption } from "./connect.ts";
@@ -109,7 +109,7 @@ export class PgDbQueryPool extends DbQueryPool implements AsyncDisposable {
     option?: DbCursorOption,
   ): Promise<DbCursor<T>> {
     const conn = await this.#pool.get();
-    const cursor = conn.open<T>(sqlLikeToString(sql), { iteratorMaxRows: option?.defaultSize });
+    const cursor = await conn.open<T>(sqlLikeToString(sql), { fetchSize: option?.defaultSize });
     const poolConn = createDbPoolConnection(
       new PgConnection(conn),
       () => this.#pool.release(conn),

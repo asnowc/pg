@@ -1,3 +1,4 @@
+/** @public */
 export interface QueryCompletion {
   /** 受影响的行数 */
   readonly rowCount?: number;

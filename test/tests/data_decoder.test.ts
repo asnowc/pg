@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { JS_DATA_ENCODER_V1, PG_DATA_DECODER_V1, PgOid } from "@asla/pg";
+const encoderV1 = JS_DATA_ENCODER_V1;
 
 const context = { typeId: 0, typeSize: -1, typeModifier: -1 };
 
@@ -38,28 +39,28 @@ test("常用二进制类型按 PostgreSQL 格式解码", () => {
 
 test("Temporal.PlainDate 参数编码为 PostgreSQL epoch 天数", () => {
   const value = Temporal.PlainDate.from("2000-01-02");
-  const dataEncoder = JS_DATA_ENCODER_V1.get(Temporal.PlainDate)!;
+  const dataEncoder = encoderV1.get(Temporal.PlainDate)!;
   expect(dataEncoder.getOid(value)).toBe(PgOid.DATE);
-  expect(new DataView(dataEncoder.binary(value, PgOid.DATE).buffer).getInt32(0)).toBe(1);
+  expect(new DataView(dataEncoder.encode(value, PgOid.DATE).buffer).getInt32(0)).toBe(1);
 });
 
 test("Temporal.PlainTime 参数编码为午夜后的微秒数", () => {
   const value = Temporal.PlainTime.from("03:04:05.6789");
-  const dataEncoder = JS_DATA_ENCODER_V1.get(Temporal.PlainTime)!;
+  const dataEncoder = encoderV1.get(Temporal.PlainTime)!;
   expect(dataEncoder.getOid(value)).toBe(PgOid.TIME);
-  expect(new DataView(dataEncoder.binary(value, PgOid.TIME).buffer).getBigInt64(0)).toBe(11_045_678_900n);
+  expect(new DataView(dataEncoder.encode(value, PgOid.TIME).buffer).getBigInt64(0)).toBe(11_045_678_900n);
 });
 
 test("Temporal.PlainDateTime 参数编码为 PostgreSQL epoch 微秒", () => {
   const value = Temporal.PlainDateTime.from("2000-01-02T00:00:00");
-  const dataEncoder = JS_DATA_ENCODER_V1.get(Temporal.PlainDateTime)!;
+  const dataEncoder = encoderV1.get(Temporal.PlainDateTime)!;
   expect(dataEncoder.getOid(value)).toBe(PgOid.TIMESTAMP);
-  expect(new DataView(dataEncoder.binary(value, PgOid.TIMESTAMP).buffer).getBigInt64(0)).toBe(86_400_000_000n);
+  expect(new DataView(dataEncoder.encode(value, PgOid.TIMESTAMP).buffer).getBigInt64(0)).toBe(86_400_000_000n);
 });
 
 test("Temporal.Instant 参数编码为 PostgreSQL epoch 微秒", () => {
   const value = Temporal.Instant.from("2000-01-02T00:00:00Z");
-  const dataEncoder = JS_DATA_ENCODER_V1.get(Temporal.Instant)!;
+  const dataEncoder = encoderV1.get(Temporal.Instant)!;
   expect(dataEncoder.getOid(value)).toBe(PgOid.TIMESTAMPTZ);
-  expect(new DataView(dataEncoder.binary(value, PgOid.TIMESTAMPTZ).buffer).getBigInt64(0)).toBe(86_400_000_000n);
+  expect(new DataView(dataEncoder.encode(value, PgOid.TIMESTAMPTZ).buffer).getBigInt64(0)).toBe(86_400_000_000n);
 });

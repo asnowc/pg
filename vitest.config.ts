@@ -10,7 +10,5 @@ export default defineConfig({
       { find: "@asla/pg", replacement: path.join(dirname, "./src/mod.ts") },
       { find: /^@\//, replacement: path.join(dirname, "./src") + "/" },
     ],
-    hookTimeout: 30_000,
-    testTimeout: 15_000,
   },
 });
