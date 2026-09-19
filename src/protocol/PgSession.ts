@@ -99,9 +99,14 @@ export class PgSession {
     onMessage: () => {},
   };
 
-  subscribe(listeners: MessageListeners): void {
-    this.#subscriber.resolve();
-    this.#subscriber = listeners;
+  subscribe(listeners: Pick<MessageListeners, "onMessage">): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.#subscriber = {
+        onMessage: listeners.onMessage,
+        reject,
+        resolve,
+      };
+    });
   }
 
   async write(data: Uint8Array): Promise<void> {
@@ -130,9 +135,9 @@ export class PgSession {
 type MessageListeners = {
   resolve: () => void;
   reject: (reason?: unknown) => void;
-  onMessage: (reader: AsyncReader, type: number, bodyLength: number) => void | Promise<unknown>;
+  onMessage: Listener;
 };
-
+type Listener = (reader: AsyncReader, type: number, bodyLength: number) => void | Promise<unknown>;
 function checkMessageLength(length: number, maxLength: number) {
   if (length < 4) {
     throw new PgProtocolError(`Invalid PostgreSQL message length: ${length}`);

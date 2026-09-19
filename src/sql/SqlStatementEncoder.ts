@@ -1,7 +1,8 @@
 import type { SimpleQueryEncoder, StatementEncoder } from "@/interface/Query.ts";
 import { getJsDataEncoder } from "@/codec/js_data_encoder.ts";
 import type { JsDataEncoderMap } from "@/interface/js_data_encoder.ts";
-import { calcUTF16ByteLength } from "@/_utils/string.ts";
+import { calcUTF16ByteLength, encodeUTF16StringInto } from "@/_utils/string.ts";
+import { encodeInt16BE, encodeInt32BE } from "@/_utils/number.ts";
 
 /** @public */
 export class TemplateSqlStatementEncoder implements StatementEncoder, SimpleQueryEncoder {
@@ -14,23 +15,23 @@ export class TemplateSqlStatementEncoder implements StatementEncoder, SimpleQuer
   #args: unknown[];
   #chunks: TemplateStringsArray;
   calculateParseByteLength(): number {
-    return calcParseByteLength(this.#chunks);
+    return this.#getEncoder().calculateParseByteLength();
   }
 
   encodeParseInto(data: Uint8Array, offset: number): number {
-    throw new Error("Method not implemented.");
+    return this.#getEncoder().encodeParseInto(data, offset);
   }
   calculateBindByteLength(): number {
-    throw new Error("Method not implemented.");
+    return this.#getEncoder().calculateBindByteLength();
   }
   encodeBindInto(data: Uint8Array, offset: number): number {
-    throw new Error("Method not implemented.");
+    return this.#getEncoder().encodeBindInto(data, offset);
   }
   calculateByteLength(): number {
-    throw new Error("Method not implemented.");
+    return this.#getEncoder().calculateByteLength();
   }
   encodeQueryInto(data: Uint8Array, offset: number): number {
-    throw new Error("Method not implemented.");
+    return this.#getEncoder().encodeQueryInto(data, offset);
   }
 
   calculateArgsByteLength(): number {
@@ -41,6 +42,26 @@ export class TemplateSqlStatementEncoder implements StatementEncoder, SimpleQuer
   }
   encodeArgs(): Uint8Array {
     throw new Error("Method not implemented.");
+  }
+
+  #encoder?: TextSqlStatementEncoder;
+  #getEncoder(): TextSqlStatementEncoder {
+    if (this.#encoder) return this.#encoder;
+
+    const args: (string | null)[] = [];
+    for (let index = 0; index < this.#args.length; index++) {
+      const value = this.#args[index];
+      if (value instanceof String) continue;
+      if (value === null) {
+        args.push(null);
+        continue;
+      }
+      const encoder = getJsDataEncoder(this.#encoderMap, value);
+      const oid = typeof encoder.oid === "function" ? encoder.oid(value) : encoder.oid;
+      args.push(encoder.encodeToText(value, oid));
+    }
+    this.#encoder = new TextSqlStatementEncoder(this.toTemplate(), args, this.#encoderMap);
+    return this.#encoder;
   }
 
   #template?: string;
@@ -54,8 +75,8 @@ export class TemplateSqlStatementEncoder implements StatementEncoder, SimpleQuer
     let template = chunks[0];
     let argOffset = 1;
     for (let i = 1; i < chunks.length; i++) {
-      if (args[i] instanceof String) {
-        template += args[i];
+      if (args[i - 1] instanceof String) {
+        template += args[i - 1];
       } else {
         template += `$${argOffset++}`;
       }
@@ -90,26 +111,6 @@ export class TemplateSqlStatementEncoder implements StatementEncoder, SimpleQuer
   }
 }
 
-function calcParseByteLength(chunks: readonly string[]) {
-  let sqlByteLength = calcUTF16ByteLength(chunks[0]);
-  for (let i = 1; i < chunks.length; i++) {
-    sqlByteLength += 1 + calcUTF8UInt16ByteLength(i); // $n
-    sqlByteLength += calcUTF16ByteLength(chunks[i]);
-  }
-  // UTF8 SQL + 1(CSTRING_TERMINATOR) + UTF8 statement + 1(CSTRING_TERMINATOR) + UInt16(argsLength) + OID * argsLength
-  // statement='', argsLength=0 =>  length = sqlByteLength + 4
-  return sqlByteLength + 4;
-}
-function calcUTF8UInt16ByteLength(n: number) {
-  if (n < 0) throw new RangeError("Value must be non-negative");
-  if (n < 10) return 1;
-  if (n < 100) return 2;
-  if (n < 1000) return 3;
-  if (n < 10000) return 4;
-  if (n <= 0xffff) return 4;
-  throw new RangeError("PostgresSQL parameter must be less than or equal to 0xffff");
-}
-
 /** @public */
 export class TextSqlStatementEncoder implements StatementEncoder, SimpleQueryEncoder {
   constructor(sqlStatement: string, args?: undefined);
@@ -124,23 +125,49 @@ export class TextSqlStatementEncoder implements StatementEncoder, SimpleQueryEnc
   #args?: (string | null)[];
   calculateParseByteLength(): number {
     const sqlByteLength = calcUTF16ByteLength(this.#sqlStatement);
-    //TODO
-    throw new Error("Method not implemented.");
+    return 1 + sqlByteLength + 1 + 2 + (this.#args?.length ?? 0) * 4;
   }
   encodeParseInto(data: Uint8Array, offset: number): number {
-    throw new Error("Method not implemented.");
+    data[offset++] = 0;
+    offset += encodeUTF16StringInto(this.#sqlStatement, data.subarray(offset));
+    data[offset++] = 0;
+    const argsLength = this.#args?.length ?? 0;
+    offset += encodeInt16BE(data, offset, argsLength);
+    for (let index = 0; index < argsLength; index++) offset += encodeInt32BE(data, offset, 0);
+    return offset;
   }
   calculateBindByteLength(): number {
-    throw new Error("Method not implemented.");
+    let byteLength = 8;
+    for (const value of this.#args ?? []) {
+      byteLength += 4 + (value === null ? 0 : calcUTF16ByteLength(value));
+    }
+    return byteLength;
   }
   encodeBindInto(data: Uint8Array, offset: number): number {
-    throw new Error("Method not implemented.");
+    data[offset++] = 0;
+    data[offset++] = 0;
+    offset += encodeInt16BE(data, offset, 0);
+    const args = this.#args ?? [];
+    offset += encodeInt16BE(data, offset, args.length);
+    for (const value of args) {
+      if (value === null) {
+        offset += encodeInt32BE(data, offset, -1);
+      } else {
+        const byteLength = calcUTF16ByteLength(value);
+        offset += encodeInt32BE(data, offset, byteLength);
+        offset += encodeUTF16StringInto(value, data.subarray(offset));
+      }
+    }
+    offset += encodeInt16BE(data, offset, 0);
+    return offset;
   }
   calculateByteLength(): number {
-    throw new Error("Method not implemented.");
+    return calcUTF16ByteLength(this.#sqlStatement) + 1;
   }
   encodeQueryInto(data: Uint8Array, offset: number): number {
-    throw new Error("Method not implemented.");
+    offset += encodeUTF16StringInto(this.#sqlStatement, data.subarray(offset));
+    data[offset++] = 0;
+    return offset;
   }
   toTemplate(): string {
     return this.#sqlStatement;

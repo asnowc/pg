@@ -159,7 +159,7 @@ export function encodeExecuteMessage(maxRows: number, portal?: Uint8Array): Uint
     offset += portal.byteLength;
   }
   buffer[offset++] = CSTRING_TERMINATOR;
-  offset = encodeInt32BE(buffer, offset, maxRows);
+  offset += encodeInt32BE(buffer, offset, maxRows);
   assertWrittenLength(buffer, offset);
   return buffer;
 }

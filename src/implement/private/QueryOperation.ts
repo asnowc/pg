@@ -48,7 +48,7 @@ export class QueryOperation
   }
   query<T>(queryable: SqlStatement<T>, options?: QueryOptions): QueryReader<T> {
     const encoder = sqlStatementToSqlEncoder(queryable);
-    return new QueryReaderImpl<T>(this.#getSession, encoder);
+    return new QueryReaderImpl<T>(this.#getSession, encoder, this.#release, options);
   }
   queryStream(options?: QueryOptions): ReadableWritablePair<SampleQueryReader, Uint8Array> {
     throw new Error("Not implemented");

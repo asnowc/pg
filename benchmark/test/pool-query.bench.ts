@@ -10,7 +10,7 @@ async function run() {
     import("../lib/pg.ts"),
     import("../lib/pgPromise.ts"),
     import("../lib/postgres.ts"),
-    import("../lib/slonik.ts"),
+    // import("../lib/slonik.ts"),
   ]);
   const poolQueryTests = libs.map((item): PoolQueryTest<any> => item.poolQueryTest);
 

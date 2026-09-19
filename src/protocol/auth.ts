@@ -12,15 +12,12 @@ import { readLength } from "@/_utils/ByteStream.ts";
 /**
  * 执行密码/SASL 认证并读取到首个 ReadyForQuery。调用前必须已发送 StartupMessage。
  */
-export async function startAuthentication(
+export function startAuthentication(
   stream: PgSession,
   options: PgAuthenticationExchangeOptions,
 ): Promise<void> {
   let sasl: PgSaslExchange | undefined;
-  const { promise, resolve, reject } = Promise.withResolvers<void>();
-  stream.subscribe({
-    resolve,
-    reject,
+  return stream.subscribe({
     async onMessage(reader, type, bodyLength) {
       const body = await readLength(reader, bodyLength);
 
@@ -61,7 +58,6 @@ export async function startAuthentication(
       }
     },
   });
-  return promise;
 }
 
 /**
