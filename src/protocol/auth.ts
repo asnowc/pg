@@ -13,9 +13,10 @@ class AuthenticationState {
     this.sasl = undefined;
     this.finishResolvers = Promise.withResolvers<void>();
     session.onData = this.onData.bind(this);
-    session.onEnd = this.onEnd.bind(this);
+    session.onEnd = () => {
+      this.finishResolvers.reject(new PgAuthenticationError("Connection ended before authentication completed."));
+    };
   }
-  isReady = false;
   private readonly finishResolvers: PromiseWithResolvers<void>;
   get finish() {
     return this.finishResolvers.promise;
@@ -60,10 +61,6 @@ class AuthenticationState {
     }
     this.messageInfo = null;
     this.onMessage(info.type, body);
-  }
-  private onEnd() {
-    if (this.isReady) this.finishResolvers.resolve();
-    else this.finishResolvers.reject(new PgAuthenticationError("Connection ended before authentication completed."));
   }
 
   private backendKey?: PgBackendKeyData;
