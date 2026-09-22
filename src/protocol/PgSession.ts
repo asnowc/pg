@@ -10,13 +10,21 @@ import {
   PgTransactionStatus,
 } from "@/protocol.ts";
 import { AsyncMessageType } from "@/interface/protocol.ts";
+import type { ReaderWriter, WriterBuffer } from "@/_utils/DataBuffer.ts";
 
 const DEFAULT_MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
+const SASSING_BUFFER_WORK_SIZE = 8 * 1024;
+
+export interface PgController {
+  readonly reader: ReaderWriter;
+  readonly writer: WriterBuffer;
+}
+
 export class PgSession {
-  constructor(stream: ByteStream, public maxMessageSize: number = DEFAULT_MAX_MESSAGE_SIZE) {
+  constructor(stream: ByteStream, config: { maxMessageSize?: number; bufferWorkSize?: number }) {
     this.#stream = stream;
-    this.maxMessageSize = maxMessageSize;
-    this.#buffer = new Uint8Array(10);
+    this.maxMessageSize = config.maxMessageSize ?? DEFAULT_MAX_MESSAGE_SIZE;
+    this.#buffer = new Uint8Array(config.bufferWorkSize ?? SASSING_BUFFER_WORK_SIZE);
     this.#bufferView = new DataView(this.#buffer.buffer);
     this.finish = this.start().then(() => {
       if (!this.isCloseCalled) {
@@ -27,6 +35,7 @@ export class PgSession {
       this.#subscriber.reject(error);
     });
   }
+  maxMessageSize: number;
 
   processId: number | null = null;
   secretKey: number | null = null;

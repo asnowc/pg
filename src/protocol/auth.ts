@@ -2,62 +2,121 @@ import { PgAuthenticationError } from "@/error.ts";
 import type { PgAuthenticationExchangeOptions, PgSaslExchange } from "@/interface/Connection.ts";
 import { decodeBase64, decodeUTF16String, encodeBase64 } from "@/_utils/string.ts";
 import { AuthCode, BackendMessageCode, PgTransactionStatus } from "./const.ts";
-import { decodeBackendKeyData, decodeError, decodeNegotiateProtocolVersion } from "./decode.ts";
+import { decodeBackendKeyData, decodeError, decodeNegotiateProtocolVersion, PgBackendKeyData } from "./decode.ts";
 import type { PgSession } from "./PgSession.ts";
 import { encodePasswordMessage } from "./encode.ts";
 import { decodeInt32BE } from "@/_utils/number.ts";
 import { PgProtocolError } from "@/_utils/error.ts";
-import { readLength } from "@/_utils/ByteStream.ts";
+import type { ReaderWriter } from "@/_utils/DataBuffer.ts";
+class AuthenticationState {
+  constructor(private session: ReaderWriter, private options: PgAuthenticationExchangeOptions) {
+    this.sasl = undefined;
+    this.finishResolvers = Promise.withResolvers<void>();
+    session.onData = this.onData.bind(this);
+    session.onEnd = this.onEnd.bind(this);
+  }
+  isReady = false;
+  private readonly finishResolvers: PromiseWithResolvers<void>;
+  get finish() {
+    return this.finishResolvers.promise;
+  }
+  private messageInfo: {
+    type: number;
+    bodyLength?: number;
+    bodyTotalLength: number;
+    bodyChunks: Uint8Array[];
+  } | null = null;
+  private onData() {
+    const session = this.session;
+    let info = this.messageInfo;
+    if (!info) {
+      info = {
+        type: session.readUInt8BE(),
+        bodyTotalLength: 0,
+        bodyChunks: [],
+      };
+      this.messageInfo = info;
+    }
+    if (info.bodyLength === undefined) {
+      if (session.byteLength < 4) return void session.resetOffset();
+      info.bodyLength = session.readInt32BE() - 4;
+    }
+    const dataByteLength = session.byteLength;
+    if (dataByteLength + info.bodyTotalLength < info.bodyLength!) {
+      info.bodyTotalLength += dataByteLength;
+      info.bodyChunks.push(session.readBinary(dataByteLength));
+      return void session.resetOffset();
+    }
+    let body: Uint8Array;
+    if (info.bodyTotalLength === 0) {
+      body = session.readBinary(info.bodyLength!);
+    } else {
+      body = new Uint8Array(info.bodyTotalLength);
+      let offset = 0;
+      for (const chunk of info.bodyChunks) {
+        body.set(chunk, offset);
+        offset += chunk.length;
+      }
+    }
+    this.messageInfo = null;
+    this.onMessage(info.type, body);
+  }
+  private onEnd() {
+    if (this.isReady) this.finishResolvers.resolve();
+    else this.finishResolvers.reject(new PgAuthenticationError("Connection ended before authentication completed."));
+  }
+
+  private backendKey?: PgBackendKeyData;
+  private sasl?: PgSaslExchange;
+
+  private onMessage(type: number, body: Uint8Array) {
+    const session = this.session;
+    switch (type) {
+      case BackendMessageCode.ReadyForQuery: {
+        const statusCode = body[0];
+        if (statusCode !== PgTransactionStatus.Idle) {
+          this.finishResolvers.reject(new PgProtocolError("Unexpected transaction status: " + statusCode));
+          return;
+        }
+        break;
+      }
+      case BackendMessageCode.NegotiateProtocolVersion: {
+        const { newestMinorVersion, unsupportedOptions } = decodeNegotiateProtocolVersion(body);
+        // Handle NegotiateProtocolVersion message if needed
+        break;
+      }
+
+      case BackendMessageCode.Authentication: {
+        sasl = respondAuthentication(session, body, options, sasl);
+        break;
+      }
+
+      case BackendMessageCode.BackendKeyData: {
+        this.backendKey = decodeBackendKeyData(body);
+        break;
+      }
+
+      case BackendMessageCode.Error: {
+        const message = decodeError(body);
+        this.finishResolvers.reject(new PgAuthenticationError(message.fields.message, { cause: message }));
+        return;
+      }
+
+      default:
+        break;
+    }
+  }
+}
 
 /**
  * 执行密码/SASL 认证并读取到首个 ReadyForQuery。调用前必须已发送 StartupMessage。
  */
-export function startAuthentication(
-  stream: PgSession,
+export async function startAuthentication(
+  session: ReaderWriter,
   options: PgAuthenticationExchangeOptions,
 ): Promise<void> {
-  let sasl: PgSaslExchange | undefined;
-  return stream.subscribe({
-    async onMessage(reader, type, bodyLength) {
-      const body = await readLength(reader, bodyLength);
-
-      switch (type) {
-        case BackendMessageCode.ReadyForQuery: {
-          const statusCode = body[0];
-          if (statusCode !== PgTransactionStatus.Idle) {
-            throw new PgProtocolError("Unexpected transaction status: " + statusCode);
-          }
-          stream.removeSubscriber();
-          break;
-        }
-        case BackendMessageCode.NegotiateProtocolVersion: {
-          const { newestMinorVersion, unsupportedOptions } = decodeNegotiateProtocolVersion(body);
-          // Handle NegotiateProtocolVersion message if needed
-          break;
-        }
-
-        case BackendMessageCode.Authentication: {
-          sasl = await respondAuthentication(stream, body, options, sasl);
-          break;
-        }
-
-        case BackendMessageCode.BackendKeyData: {
-          const backendKey = decodeBackendKeyData(body);
-          stream.processId = backendKey.processId;
-          stream.secretKey = backendKey.secretKey;
-          break;
-        }
-
-        case BackendMessageCode.Error: {
-          const message = decodeError(body);
-          throw new PgAuthenticationError(message.fields.message, { cause: message });
-        }
-
-        default:
-          break;
-      }
-    },
-  });
+  const state = new AuthenticationState(session, options);
+  return state.finish;
 }
 
 /**
