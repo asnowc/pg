@@ -1,6 +1,6 @@
 import type { Duplex } from "node:stream";
 import type { ByteStream } from "@/interface/ByteStream.ts";
-import { BufferReader, BufferWriter, FixedBufferReader } from "@/_utils/DataBuffer.ts";
+import { ByteBuffer, FixedBufferReader } from "@/_utils/DataBuffer.ts";
 import { writeInto } from "@/_utils/ByteStream.ts";
 
 export function createDuplexByteConnection(duplex: Duplex): ByteStream {
@@ -84,10 +84,12 @@ class NodeDuplexConnection implements ByteStream {
   }
 }
 
-export class DenoBuffer extends FixedBufferReader implements BufferWriter {
+export class DenoBuffer extends FixedBufferReader implements ByteBuffer {
   constructor(private conn: Deno.Conn, bufferSize: number = 8 * 1024) {
     const buffer = new ArrayBuffer(bufferSize);
-    super(buffer);
+    const uint8Buffer = new Uint8Array(buffer);
+    super(uint8Buffer);
+    this.writerBuffer = new Uint8Array(bufferSize);
   }
   async start() {
     let size: number | null;
@@ -102,28 +104,34 @@ export class DenoBuffer extends FixedBufferReader implements BufferWriter {
     else if (size) {
       this.offsetEnd += size;
       this.onData();
-      this.resetOffset();
+      this.gc();
     }
     return size;
   }
+  readonly writerBuffer: Uint8Array;
+  writerOffset: number = 0;
   onData() {
     throw new Error("No custom onData implementation provided");
   }
-  write(data: Uint8Array): void {
-    writeInto(this.conn, data);
-    throw new Error("No custom write implementation provided");
+  onEnd() {
+    throw new Error("No custom onEnd implementation provided");
+  }
+  write(data: Uint8Array): Promise<void> {
+    return writeInto(this.conn, data);
   }
   closeWrite(): Promise<void> {
     return this.conn.closeWrite();
   }
 }
 
-export class NodeBuffer extends FixedBufferReader implements BufferWriter {
+export class NodeBuffer extends FixedBufferReader implements ByteBuffer {
   constructor(private duplex: Duplex, bufferSize: number = 8 * 1024) {
-    const buffer = new ArrayBuffer(bufferSize);
-    super(buffer);
+    const readerBuffer = new Uint8Array(bufferSize);
+    super(readerBuffer);
+    this.writerBuffer = new Uint8Array(bufferSize);
   }
-
+  readonly writerBuffer: Uint8Array;
+  writerOffset: number = 0;
   start() {
     this.duplex.on("data", (chunk) => {
       while (chunk.byteLength) {
@@ -132,15 +140,22 @@ export class NodeBuffer extends FixedBufferReader implements BufferWriter {
         chunk = chunk.subarray(length);
         this.offsetEnd += length;
         this.onData();
-        this.resetOffset();
+        this.gc();
       }
     });
   }
   onData() {
     throw new Error("No custom onData implementation provided");
   }
-  write(data: Uint8Array) {
-    this.duplex.write(data);
+  onEnd() {
+    throw new Error("No custom onEnd implementation provided");
+  }
+  write(data: Uint8Array): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.duplex.write(data, (err: unknown) => {
+        err ? reject(err) : resolve();
+      });
+    });
   }
   closeWrite(): Promise<void> {
     return new Promise((resolve, reject) => {

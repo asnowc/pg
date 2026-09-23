@@ -2,191 +2,129 @@ import { PgAuthenticationError } from "@/error.ts";
 import type { PgAuthenticationExchangeOptions, PgSaslExchange } from "@/interface/Connection.ts";
 import { decodeBase64, decodeUTF16String, encodeBase64 } from "@/_utils/string.ts";
 import { AuthCode, BackendMessageCode, PgTransactionStatus } from "./const.ts";
-import { decodeBackendKeyData, decodeError, decodeNegotiateProtocolVersion, PgBackendKeyData } from "./decode.ts";
-import type { PgSession } from "./PgSession.ts";
+import { decodeBackendKeyData, decodeError, decodeNegotiateProtocolVersion, type PgBackendKeyData } from "./decode.ts";
 import { encodePasswordMessage } from "./encode.ts";
-import { decodeInt32BE } from "@/_utils/number.ts";
 import { PgProtocolError } from "@/_utils/error.ts";
-import type { BufferReader, BufferWriter } from "@/_utils/DataBuffer.ts";
-class MessageHandle {
-  constructor(public onBodyData: (type: number, bodyLength: number, session: BufferReader) => void) {
+import {
+  type BufferReader,
+  type BufferWriter,
+  type ByteBuffer,
+  type ByteChunkParser,
+  FixedBufferReader,
+} from "@/_utils/DataBuffer.ts";
+import { PgMessageFullParser } from "@/protocol/MessageParser.ts";
+type AuthenticationData = true | Promise<void>;
+type AuthenticationResult = {
+  backendKey?: PgBackendKeyData;
+  newestMinorVersion: number;
+  unsupportedOptions: string[];
+  promise?: Promise<void>;
+};
+class AuthenticationState implements ByteChunkParser<AuthenticationResult> {
+  constructor(private writer: BufferWriter, private options: PgAuthenticationExchangeOptions) {
   }
-  type?: number;
-  bodyLength?: number;
-  onData(session: BufferReader) {
-    if (this.type === undefined) this.type = session.readUInt8BE();
-    if (this.bodyLength === undefined) {
-      if (session.byteLength < 4) return;
-      this.bodyLength = session.readInt32BE() - 4;
+
+  #message?: PgMessageFullParser;
+  next(reader: BufferReader): AuthenticationResult | undefined {
+    this.#message ??= new PgMessageFullParser(reader.readUInt8BE());
+    const body = this.#message.next(reader);
+    if (body) {
+      const result = this.onMessage(this.#message.type, body);
+      if (!result) return;
+      return { ...this.getResult(), promise: result instanceof Promise ? result : undefined };
     }
-    this.onBodyData(this.type, this.bodyLength, session);
   }
-  bodyTotalLength: number = 0;
-  bodyChunks: Uint8Array[] = [];
-}
-class AuthenticationState {
-  constructor(private session: BufferReader, private options: PgAuthenticationExchangeOptions) {
-    this.finishResolvers = Promise.withResolvers<void>();
-    this.handler = new MessageHandle((type, bodyLength, session) => {
-      // Implement body data handling logic here if needed
-    });
-    session.onData = () => this.handler.onData(this.session);
-    session.onEnd = () => {
-      this.finishResolvers.reject(new PgAuthenticationError("Connection ended before authentication completed."));
+  getResult() {
+    return {
+      backendKey: this.backendKey,
+      newestMinorVersion: this.negotiateProtocolVersion?.newestMinorVersion ?? 0,
+      unsupportedOptions: this.negotiateProtocolVersion?.unsupportedOptions ?? [],
     };
   }
-  private handler = new MessageHandle();
-  private readonly finishResolvers: PromiseWithResolvers<void>;
-  get finish() {
-    return this.finishResolvers.promise;
-  }
-
-  private onData() {
-    const session = this.session;
-    let info = this.messageInfo;
-    if (!info) {
-      info = {
-        type: session.readUInt8BE(),
-        bodyTotalLength: 0,
-        bodyChunks: [],
-      };
-      this.messageInfo = info;
-    }
-    if (info.bodyLength === undefined) {
-      if (session.byteLength < 4) return void session.resetOffset();
-      info.bodyLength = session.readInt32BE() - 4;
-    }
-    const dataByteLength = session.byteLength;
-    if (dataByteLength + info.bodyTotalLength < info.bodyLength!) {
-      info.bodyTotalLength += dataByteLength;
-      info.bodyChunks.push(session.readBinary(dataByteLength));
-      return void session.resetOffset();
-    }
-    let body: Uint8Array;
-    if (info.bodyTotalLength === 0) {
-      body = session.readBinary(info.bodyLength!);
-    } else {
-      body = new Uint8Array(info.bodyTotalLength);
-      let offset = 0;
-      for (const chunk of info.bodyChunks) {
-        body.set(chunk, offset);
-        offset += chunk.length;
-      }
-    }
-    this.messageInfo = null;
-    this.onMessage(info.type, body);
-  }
-
   private backendKey?: PgBackendKeyData;
+  private negotiateProtocolVersion?: {
+    newestMinorVersion: number;
+    unsupportedOptions: string[];
+  };
 
-  private onMessage(type: number, body: Uint8Array) {
+  private onMessage(type: number, body: Uint8Array): AuthenticationData | undefined {
     switch (type) {
-      case BackendMessageCode.ReadyForQuery: {
-        const statusCode = body[0];
-        if (statusCode !== PgTransactionStatus.Idle) {
-          this.finishResolvers.reject(new PgProtocolError("Unexpected transaction status: " + statusCode));
-          return;
-        }
-        break;
-      }
-      case BackendMessageCode.NegotiateProtocolVersion: {
-        const { newestMinorVersion, unsupportedOptions } = decodeNegotiateProtocolVersion(body);
-        // Handle NegotiateProtocolVersion message if needed
-        break;
-      }
-
       case BackendMessageCode.Authentication: {
-        this.onAuth(body);
-        break;
+        return this.onAuth(new FixedBufferReader(body));
       }
-
       case BackendMessageCode.BackendKeyData: {
         this.backendKey = decodeBackendKeyData(body);
         break;
       }
-
       case BackendMessageCode.Error: {
         const message = decodeError(body);
-        this.finishResolvers.reject(new PgAuthenticationError(message.fields.message, { cause: message }));
+        throw new PgAuthenticationError(message.fields.message, { cause: message });
+      }
+      case BackendMessageCode.NegotiateProtocolVersion: {
+        this.negotiateProtocolVersion = decodeNegotiateProtocolVersion(body);
+        break;
+      }
+      case BackendMessageCode.ReadyForQuery: {
+        const statusCode = body[0];
+        if (statusCode !== PgTransactionStatus.Idle) {
+          throw new PgProtocolError("Unexpected transaction status: " + statusCode);
+        }
         return;
       }
-
       default:
         break;
     }
   }
 
-  private auth?: AuthMessageHandler;
-  private onAuth(body: Uint8Array) {
-    const view = new DataView(body.buffer, body.byteOffset, body.byteLength);
-    const code = view.getInt32(0);
+  private auth?: ByteChunkParser<AuthenticationData>;
+  private onAuth(reader: FixedBufferReader): AuthenticationData | undefined {
+    this.auth ??= getAuthParser(reader.readUInt32BE(), this.writer, this.options);
+    return this.auth.next(reader);
   }
 }
-
 /**
  * 执行密码/SASL 认证并读取到首个 ReadyForQuery。调用前必须已发送 StartupMessage。
  */
 export async function startAuthentication(
-  session: ReaderWriter,
+  byteBuffer: ByteBuffer,
   options: PgAuthenticationExchangeOptions,
-): Promise<void> {
-  const state = new AuthenticationState(session, options);
-  return state.finish;
+): Promise<AuthenticationResult> {
+  const state = new AuthenticationState(byteBuffer, options);
+  return new Promise<AuthenticationResult>((resolve, reject) => {
+    byteBuffer.onData = () => {
+      let result: AuthenticationResult | undefined;
+      try {
+        result = state.next(byteBuffer);
+      } catch (err) {
+        reject(err);
+        return;
+      }
+
+      if (result) {
+        if (result.promise) {
+          result.promise.then(() => resolve(result), reject);
+          return;
+        } else {
+          resolve(result);
+        }
+      }
+    };
+  });
 }
-interface AuthMessageHandler {
-  onMessage(body: Uint8Array): void;
-}
-class Auth {
-  constructor() {}
-  onMessage(body: Uint8Array) {
-  }
-}
-/**
- * 从认证阶段消息构造认证响应，供自定义连接状态机使用。
- */
-async function respondAuthentication(
-  stream: PgSession,
-  body: Uint8Array,
+function getAuthParser(
+  code: number,
+  writer: BufferWriter,
   options: PgAuthenticationExchangeOptions,
-  state?: PgSaslExchange,
-): Promise<PgSaslExchange | undefined> {
-  const code = decodeInt32BE(body, 0);
-  const offset = 4;
+): ByteChunkParser<AuthenticationData> {
   switch (code) {
     case AuthCode.OK:
-      return state;
-    case AuthCode.CLEARTEXT_PWD: {
-      const password = typeof options.password === "function" ? await options.password() : options.password;
-      if (password === undefined) {
-        throw new PgAuthenticationError("PostgreSQL requested a password, but none was provided");
-      }
-      await stream.write(encodePasswordMessage({ password }));
-      return state;
-    }
-    case AuthCode.SASL: {
-      const mechanisms = decodeSASLMechanisms(body, offset);
-      if (!mechanisms) {
-        throw new PgProtocolError("Invalid AuthenticationSASL message: missing terminator");
-      }
-      const password = typeof options.password === "function" ? await options.password() : options.password;
-      const createExchange = options.createSaslExchange ?? createScramExchange;
-      const exchange = await createExchange({ mechanisms, user: options.user, password });
-      const data = await exchange.initialResponse();
-      await stream.write(encodePasswordMessage({ mechanism: exchange.mechanism, data }));
-      return exchange;
-    }
-    case AuthCode.SASL_CONTINUE: {
-      const data = body.subarray(offset);
-      if (!state || !data) throw new PgAuthenticationError("Unexpected SASL continuation");
-      await stream.write(encodePasswordMessage({ data: await state.continue(data) }));
-      return state;
-    }
-    case AuthCode.SASL_FINAL: {
-      const data = body.subarray(offset);
-      if (!state || !data) throw new PgAuthenticationError("Unexpected SASL final message");
-      await state.final?.(data);
-      return state;
-    }
+      return {
+        next: () => true,
+      };
+    case AuthCode.CLEARTEXT_PWD:
+      return new AuthCleartextPasswordParser(writer, options);
+    case AuthCode.SASL:
+      return new AuthSASLParser(writer, options);
     case AuthCode.MD5_PWD:
       throw createUnsupportedAuthenticationMethod("MD5_PWD");
     case AuthCode.GSS:
@@ -197,6 +135,81 @@ async function respondAuthentication(
       throw new Error(`Unsupported PostgreSQL authentication code: ${code}`); //TODO: 优化不支持的认证方式提示
   }
 }
+
+class AuthSASLParser implements ByteChunkParser<Promise<void> | true> {
+  constructor(
+    private writer: BufferWriter,
+    private options: PgAuthenticationExchangeOptions,
+  ) {
+  }
+  f1?: {
+    mechanisms: string[];
+    exchange?: PgSaslExchange;
+  };
+  mechanism?: string[];
+  next(reader: BufferReader): Promise<void> | true | undefined {
+    if (!this.f1) {
+      this.f1 = this.start(reader);
+      return;
+    }
+    const state = this.f1.exchange;
+    const code = reader.readUInt32BE();
+    switch (code) {
+      case AuthCode.OK:
+        return true;
+      case AuthCode.SASL_CONTINUE: {
+        const data = reader.readBinary(reader.readerLength);
+        if (!state) throw new PgAuthenticationError("Unexpected SASL continuation");
+        this.writer.writeWith(async () => encodePasswordMessage({ data: await state.continue(data) }));
+        return;
+      }
+      case AuthCode.SASL_FINAL: {
+        const data = reader.readBinary(reader.readerLength);
+        if (!state) throw new PgAuthenticationError("Unexpected SASL final message");
+        return state.final?.(data) ?? true;
+      }
+      default:
+        throw new PgAuthenticationError(`Unexpected SASL authentication code: ${code}`);
+    }
+  }
+  start(reader: BufferReader): NonNullable<typeof this.f1> {
+    const mechanisms = decodeSASLMechanisms(reader.readBinary(reader.readerLength), 0);
+    if (!mechanisms) {
+      throw new PgProtocolError("Invalid AuthenticationSASL message: missing terminator");
+    }
+
+    this.writer.writeWith(async () => {
+      const options = this.options;
+      const password = typeof options.password === "function" ? await options.password() : options.password;
+      const createExchange = options.createSaslExchange ?? createScramExchange;
+      const exchange = await createExchange({ mechanisms, user: options.user, password });
+      const data = await exchange.initialResponse();
+      this.f1!.exchange = exchange;
+      return encodePasswordMessage({ mechanism: exchange.mechanism, data });
+    });
+    return { mechanisms };
+  }
+}
+class AuthCleartextPasswordParser implements ByteChunkParser<true> {
+  constructor(private writer: BufferWriter, private options: PgAuthenticationExchangeOptions) {
+  }
+  next(reader: BufferReader): true | undefined {
+    this.continue();
+    return true;
+  }
+  continue(): void {
+    this.writer.writeWith(async () => {
+      let password = this.options.password;
+      if (typeof password === "function") password = await password();
+      if (password === undefined) {
+        throw new PgAuthenticationError("PostgreSQL requested a password, but none was provided");
+      }
+      return encodePasswordMessage({ password });
+    });
+  }
+}
+type AuthParser = AuthSASLParser | AuthCleartextPasswordParser;
+
 function createUnsupportedAuthenticationMethod(method: string) {
   throw new Error(`Unsupported PostgreSQL authentication method: ${method}`);
 }

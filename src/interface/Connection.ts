@@ -14,24 +14,35 @@ export interface PgAuthenticationExchangeOptions {
   password?: string | (() => string | Promise<string>);
 
   /** 覆盖或扩展内置 SCRAM-SHA-256 认证，例如 OAUTHBEARER。 */
-  createSaslExchange?: (
-    context: { mechanisms: readonly string[]; user: string; password?: string },
-  ) => PgSaslExchange | Promise<PgSaslExchange>;
-  onAsyncMessage?: (message: PgAsyncMessage) => void | Promise<void>;
+  createSaslExchange?: (context: CreateSaslExchangeContext) => PgSaslExchange | Promise<PgSaslExchange>;
+  onAsyncMessage?: (message: PgAsyncMessage) => void;
 }
 
-type PgTlsMode = "disable" | "prefer" | "require";
 /** @public */
-export interface PgTlsOptions {
-  mode: PgTlsMode;
-  /** 平台负责 TLS 握手，并返回升级后的同一逻辑连接。 */
-  upgrade(stream: ByteStream): ByteStream | Promise<ByteStream>;
-}
-/** @public */
-export interface PgConnectOptions extends PgAuthenticationExchangeOptions {
+export interface PgConnectOptions<T> extends PgAuthenticationExchangeOptions {
   database: string;
-  /** 配置后先执行 SSL 协商；未配置时直接使用传入的字节流。 */
-  tls?: PgTlsOptions;
+  /**
+   * 配置连接的加密选项. 当前仅支持 TLS 加密。
+   */
+  encryption?:
+    | ConnectionEncryptionOptions<T>
+    | (() => ConnectionEncryptionOptions<T> | undefined | Promise<ConnectionEncryptionOptions<T> | undefined>);
+
   /** 消息帧最大长度限制。 */
   maxMessageSize?: number;
 }
+/** @public */
+export type ConnectionEncryptionOptions<T> = TLSEncryptionOptions<T>;
+
+/**
+ * TLS 加密选项。
+ * @public
+ */
+export type TLSEncryptionOptions<T> = {
+  mode: "TLS";
+  /** 平台负责 TLS 握手，并返回升级后的同一逻辑连接。 */
+  upgradeTLS(connection: T): Promise<T>;
+};
+
+/** @public */
+export type CreateSaslExchangeContext = { mechanisms: readonly string[]; user: string; password?: string };

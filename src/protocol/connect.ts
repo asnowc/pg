@@ -1,29 +1,39 @@
-import type { ByteStream } from "@/interface/ByteStream.ts";
-import type { PgConnectOptions, PgTlsOptions } from "@/interface/Connection.ts";
+import type { PgConnectOptions, TLSEncryptionOptions } from "@/interface/Connection.ts";
 import { PROTOCOL_VERSION, TLSResponseCode } from "./const.ts";
 import { PgAuthenticationError } from "@/error.ts";
 import { encodeNegotiateTlsMessage, encodeStartupMessage } from "./encode.ts";
 import { startAuthentication } from "./auth.ts";
 import { readLength } from "@/_utils/ByteStream.ts";
 import { PgSession } from "@/protocol.ts";
+import type { ByteBuffer } from "@/_utils/DataBuffer.ts";
 
 export async function connectFromByteStream(
-  byteStream: ByteStream,
-  options: PgConnectOptions,
+  byteStream: ByteBuffer,
+  options: PgConnectOptions<ByteBuffer>,
 ): Promise<PgSession> {
-  const { tls, maxMessageSize, user, database } = options;
-  let stream = byteStream;
+  const { encryption, maxMessageSize, user, database } = options;
+  let stream: ByteBuffer = byteStream;
+  if (encryption) {
+    //TODO: 查询服务器支持的加密方式
+    const encryptionOptions = typeof encryption === "function" ? await encryption() : encryption;
+    if (encryptionOptions) {
+      if (encryptionOptions.mode === "TLS") stream = await negotiateTls(stream, encryptionOptions);
+      else {
+        throw new PgAuthenticationError(`Unsupported encryption mode: ${encryptionOptions.mode}`);
+      }
+    }
+  }
   try {
-    if (tls && tls.mode !== "disable") stream = await negotiateTls(stream, tls);
     const startupMessage = encodeStartupMessage(
       PROTOCOL_VERSION,
       getStartupParameters({ user, database }),
     );
-    const session = new PgSession(stream, { maxMessageSize });
-    await Promise.all([session.write(startupMessage), startAuthentication(session, options)]);
+    byteStream.write(startupMessage);
+    const info = await startAuthentication(byteStream, options);
+    const session = new PgSession(byteStream, { maxMessageSize });
     return session;
   } catch (error) {
-    stream.close();
+    byteStream.destroy();
     throw error;
   }
 }
@@ -31,12 +41,11 @@ export async function connectFromByteStream(
 /**
  * 发送 SSLRequest，并在服务端接受时调用注入的 TLS 升级函数。
  */
-async function negotiateTls(stream: ByteStream, options: PgTlsOptions): Promise<ByteStream> {
-  await stream.write(encodeNegotiateTlsMessage());
-  const responseData = await readLength(stream, 1);
+async function negotiateTls(byteBuffer: ByteBuffer, options: TLSEncryptionOptions<ByteBuffer>): Promise<ByteBuffer> {
+  await byteBuffer.write(encodeNegotiateTlsMessage());
+  const responseData = await readLength(byteBuffer, 1);
   const responseCode = responseData[0];
-  if (responseCode === TLSResponseCode.Accepted) return await options.upgrade(stream);
-  if (responseCode === TLSResponseCode.Rejected && options.mode === "prefer") return stream;
+  if (responseCode === TLSResponseCode.Accepted) return await options.upgradeTLS(byteBuffer);
   if (responseCode === TLSResponseCode.Rejected) throw new PgAuthenticationError("PostgreSQL server refused TLS");
   throw new PgAuthenticationError(`Invalid PostgreSQL SSL response: 0x${responseCode.toString(16)}`);
 }

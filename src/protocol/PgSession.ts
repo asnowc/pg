@@ -1,4 +1,4 @@
-import type { AsyncReader, ByteStream } from "@/interface/ByteStream.ts";
+import type { AsyncReader } from "@/interface/ByteStream.ts";
 import { readInto, readLength, writeInto } from "@/_utils/ByteStream.ts";
 import { PgProtocolError } from "@/_utils/error.ts";
 import {
@@ -10,18 +10,13 @@ import {
   PgTransactionStatus,
 } from "@/protocol.ts";
 import { AsyncMessageType } from "@/interface/protocol.ts";
-import type { ReaderWriter, BufferWriter } from "@/_utils/DataBuffer.ts";
+import type { ByteBuffer } from "@/_utils/DataBuffer.ts";
 
 const DEFAULT_MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
 const SASSING_BUFFER_WORK_SIZE = 8 * 1024;
 
-export interface PgController {
-  readonly reader: ReaderWriter;
-  readonly writer: BufferWriter;
-}
-
 export class PgSession {
-  constructor(stream: ByteStream, config: { maxMessageSize?: number; bufferWorkSize?: number }) {
+  constructor(stream: ByteBuffer, config: { maxMessageSize?: number; bufferWorkSize?: number }) {
     this.#stream = stream;
     this.maxMessageSize = config.maxMessageSize ?? DEFAULT_MAX_MESSAGE_SIZE;
     this.#buffer = new Uint8Array(config.bufferWorkSize ?? SASSING_BUFFER_WORK_SIZE);
@@ -41,7 +36,7 @@ export class PgSession {
   secretKey: number | null = null;
   parameters: Record<string, string> = {};
 
-  readonly #stream: ByteStream;
+  readonly #stream: ByteBuffer;
   readonly finish: Promise<void>;
 
   private async start() {

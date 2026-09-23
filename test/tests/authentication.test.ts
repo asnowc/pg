@@ -74,9 +74,9 @@ test("TLS fixture 使用受信 CA 建立连接", async () => {
   await using db = await PgConnection.connect(conn, {
     user: USER.tls,
     database: PUBLIC_DB_CONNECT_INFO.database,
-    tls: {
-      mode: "require",
-      upgrade: async () => {
+    encryption: {
+      mode: "TLS",
+      upgradeTLS: async () => {
         const ca = await Deno.readTextFile(TLS_CA_FILE);
         return Deno.startTls(conn, { caCerts: [ca] });
       },
