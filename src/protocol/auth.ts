@@ -7,26 +7,40 @@ import type { PgSession } from "./PgSession.ts";
 import { encodePasswordMessage } from "./encode.ts";
 import { decodeInt32BE } from "@/_utils/number.ts";
 import { PgProtocolError } from "@/_utils/error.ts";
-import type { ReaderWriter } from "@/_utils/DataBuffer.ts";
+import type { BufferReader, BufferWriter } from "@/_utils/DataBuffer.ts";
+class MessageHandle {
+  constructor(public onBodyData: (type: number, bodyLength: number, session: BufferReader) => void) {
+  }
+  type?: number;
+  bodyLength?: number;
+  onData(session: BufferReader) {
+    if (this.type === undefined) this.type = session.readUInt8BE();
+    if (this.bodyLength === undefined) {
+      if (session.byteLength < 4) return;
+      this.bodyLength = session.readInt32BE() - 4;
+    }
+    this.onBodyData(this.type, this.bodyLength, session);
+  }
+  bodyTotalLength: number = 0;
+  bodyChunks: Uint8Array[] = [];
+}
 class AuthenticationState {
-  constructor(private session: ReaderWriter, private options: PgAuthenticationExchangeOptions) {
-    this.sasl = undefined;
+  constructor(private session: BufferReader, private options: PgAuthenticationExchangeOptions) {
     this.finishResolvers = Promise.withResolvers<void>();
-    session.onData = this.onData.bind(this);
+    this.handler = new MessageHandle((type, bodyLength, session) => {
+      // Implement body data handling logic here if needed
+    });
+    session.onData = () => this.handler.onData(this.session);
     session.onEnd = () => {
       this.finishResolvers.reject(new PgAuthenticationError("Connection ended before authentication completed."));
     };
   }
+  private handler = new MessageHandle();
   private readonly finishResolvers: PromiseWithResolvers<void>;
   get finish() {
     return this.finishResolvers.promise;
   }
-  private messageInfo: {
-    type: number;
-    bodyLength?: number;
-    bodyTotalLength: number;
-    bodyChunks: Uint8Array[];
-  } | null = null;
+
   private onData() {
     const session = this.session;
     let info = this.messageInfo;
@@ -64,10 +78,8 @@ class AuthenticationState {
   }
 
   private backendKey?: PgBackendKeyData;
-  private sasl?: PgSaslExchange;
 
   private onMessage(type: number, body: Uint8Array) {
-    const session = this.session;
     switch (type) {
       case BackendMessageCode.ReadyForQuery: {
         const statusCode = body[0];
@@ -84,7 +96,7 @@ class AuthenticationState {
       }
 
       case BackendMessageCode.Authentication: {
-        sasl = respondAuthentication(session, body, options, sasl);
+        this.onAuth(body);
         break;
       }
 
@@ -103,6 +115,12 @@ class AuthenticationState {
         break;
     }
   }
+
+  private auth?: AuthMessageHandler;
+  private onAuth(body: Uint8Array) {
+    const view = new DataView(body.buffer, body.byteOffset, body.byteLength);
+    const code = view.getInt32(0);
+  }
 }
 
 /**
@@ -115,7 +133,14 @@ export async function startAuthentication(
   const state = new AuthenticationState(session, options);
   return state.finish;
 }
-
+interface AuthMessageHandler {
+  onMessage(body: Uint8Array): void;
+}
+class Auth {
+  constructor() {}
+  onMessage(body: Uint8Array) {
+  }
+}
 /**
  * 从认证阶段消息构造认证响应，供自定义连接状态机使用。
  */

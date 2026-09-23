@@ -10,14 +10,14 @@ import {
   PgTransactionStatus,
 } from "@/protocol.ts";
 import { AsyncMessageType } from "@/interface/protocol.ts";
-import type { ReaderWriter, WriterBuffer } from "@/_utils/DataBuffer.ts";
+import type { ReaderWriter, BufferWriter } from "@/_utils/DataBuffer.ts";
 
 const DEFAULT_MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
 const SASSING_BUFFER_WORK_SIZE = 8 * 1024;
 
 export interface PgController {
   readonly reader: ReaderWriter;
-  readonly writer: WriterBuffer;
+  readonly writer: BufferWriter;
 }
 
 export class PgSession {
