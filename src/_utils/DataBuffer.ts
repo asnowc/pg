@@ -1,8 +1,11 @@
+/**
+ * 二进制缓冲区读取器。
+ */
 export interface BufferReader {
   /** 可读取的字节长度 */
   get readerLength(): number;
   readInt8(): number;
-  readUInt8BE(): number;
+  readUInt8(): number;
   readInt16BE(): number;
   readUInt16BE(): number;
   readInt32BE(): number;
@@ -17,6 +20,9 @@ export interface BufferReader {
   /** 复制指定长度的字节，不会影响原始缓冲区的数据 */
   copyBinary(size: number): Uint8Array;
 }
+/**
+ * 二进制缓冲区队列写入器。
+ */
 export interface BufferWriter {
   startWrite(onWriteInto: (buffer: Uint8Array, offset: number) => number | Promise<number>): void;
   write(data: Uint8Array): void;
@@ -25,7 +31,7 @@ export interface BufferWriter {
 }
 
 export interface ByteBuffer extends BufferReader, BufferWriter {
-  onData: () => void;
+  startRead(onData: () => boolean): void;
   onEnd: () => void;
   destroy(): void;
 }
@@ -49,7 +55,7 @@ export class FixedBufferReader implements BufferReader {
     this.#offset += 1;
     return value;
   }
-  readUInt8BE(): number {
+  readUInt8(): number {
     const value = this.view.getUint8(this.#offset);
     this.#offset += 1;
     return value;

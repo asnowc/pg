@@ -1,5 +1,4 @@
 import type { PgAsyncMessage } from "@/interface/protocol.ts";
-import type { ByteStream } from "./ByteStream.ts";
 
 /** @public */
 export interface PgSaslExchange {

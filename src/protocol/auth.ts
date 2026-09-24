@@ -13,28 +13,56 @@ import {
   FixedBufferReader,
 } from "@/_utils/DataBuffer.ts";
 import { PgMessageFullParser } from "@/protocol/MessageParser.ts";
+
+/**
+ * 执行密码/SASL 认证并读取到首个 ReadyForQuery。调用前必须已发送 StartupMessage。
+ */
+export async function startAuthentication(
+  byteBuffer: ByteBuffer,
+  options: PgAuthenticationExchangeOptions,
+): Promise<AuthenticationResult> {
+  const state = new AuthenticationState(byteBuffer, options);
+  return new Promise<AuthenticationResult>((resolve, reject) => {
+    byteBuffer.startRead((): boolean => {
+      let result: AuthenticationResult | undefined;
+      try {
+        result = state.next(byteBuffer);
+      } catch (err) {
+        reject(err);
+        return false;
+      }
+
+      if (result) {
+        if (result.promise) result.promise.then(() => resolve(result), reject);
+        else resolve(result);
+      }
+      return !!result;
+    });
+  });
+}
+
 type AuthenticationData = true | Promise<void>;
-type AuthenticationResult = {
+export type AuthenticationResult = {
   backendKey?: PgBackendKeyData;
   newestMinorVersion: number;
   unsupportedOptions: string[];
   promise?: Promise<void>;
 };
-class AuthenticationState implements ByteChunkParser<AuthenticationResult> {
+export class AuthenticationState implements ByteChunkParser<AuthenticationResult> {
   constructor(private writer: BufferWriter, private options: PgAuthenticationExchangeOptions) {
   }
 
-  #message?: PgMessageFullParser;
+  private message?: PgMessageFullParser;
   next(reader: BufferReader): AuthenticationResult | undefined {
-    this.#message ??= new PgMessageFullParser(reader.readUInt8BE());
-    const body = this.#message.next(reader);
+    this.message ??= new PgMessageFullParser(reader.readUInt8());
+    const body = this.message.next(reader);
     if (body) {
-      const result = this.onMessage(this.#message.type, body);
+      const result = this.onMessage(this.message.type, body);
       if (!result) return;
       return { ...this.getResult(), promise: result instanceof Promise ? result : undefined };
     }
   }
-  getResult() {
+  private getResult() {
     return {
       backendKey: this.backendKey,
       newestMinorVersion: this.negotiateProtocolVersion?.newestMinorVersion ?? 0,
@@ -46,11 +74,12 @@ class AuthenticationState implements ByteChunkParser<AuthenticationResult> {
     newestMinorVersion: number;
     unsupportedOptions: string[];
   };
-
+  private authOk?: AuthenticationData;
   private onMessage(type: number, body: Uint8Array): AuthenticationData | undefined {
     switch (type) {
       case BackendMessageCode.Authentication: {
-        return this.onAuth(new FixedBufferReader(body));
+        this.onAuthMessage(new FixedBufferReader(body));
+        break;
       }
       case BackendMessageCode.BackendKeyData: {
         this.backendKey = decodeBackendKeyData(body);
@@ -69,58 +98,41 @@ class AuthenticationState implements ByteChunkParser<AuthenticationResult> {
         if (statusCode !== PgTransactionStatus.Idle) {
           throw new PgProtocolError("Unexpected transaction status: " + statusCode);
         }
-        return;
+
+        return this.authOk ?? true;
       }
       default:
         break;
     }
   }
 
-  private auth?: ByteChunkParser<AuthenticationData>;
-  private onAuth(reader: FixedBufferReader): AuthenticationData | undefined {
-    this.auth ??= getAuthParser(reader.readUInt32BE(), this.writer, this.options);
-    return this.auth.next(reader);
+  private auth?: AuthParser<AuthenticationData>;
+  private authWaitOk?: AuthenticationData;
+
+  /**
+   * 传给 onAuth 的 reader，必须是一个完整的认证消息缓冲区
+   */
+  private onAuthMessage(reader: FixedBufferReader): AuthenticationData | undefined {
+    const code = reader.readUInt32BE();
+    if (code === AuthCode.OK) return this.authWaitOk ?? true;
+    this.auth ??= getAuthParser(code, this.writer, this.options);
+    if (this.authWaitOk) {
+      throw new PgAuthenticationError("Unexpected authentication message after " + this.auth.authCode + " message");
+    }
+    const result = this.auth.next(reader);
+    if (result instanceof Promise) {
+      result.catch(() => {}); // 避免 Unhandled Promise Rejection
+    }
+    return result;
   }
 }
-/**
- * 执行密码/SASL 认证并读取到首个 ReadyForQuery。调用前必须已发送 StartupMessage。
- */
-export async function startAuthentication(
-  byteBuffer: ByteBuffer,
-  options: PgAuthenticationExchangeOptions,
-): Promise<AuthenticationResult> {
-  const state = new AuthenticationState(byteBuffer, options);
-  return new Promise<AuthenticationResult>((resolve, reject) => {
-    byteBuffer.onData = () => {
-      let result: AuthenticationResult | undefined;
-      try {
-        result = state.next(byteBuffer);
-      } catch (err) {
-        reject(err);
-        return;
-      }
 
-      if (result) {
-        if (result.promise) {
-          result.promise.then(() => resolve(result), reject);
-          return;
-        } else {
-          resolve(result);
-        }
-      }
-    };
-  });
-}
 function getAuthParser(
   code: number,
   writer: BufferWriter,
   options: PgAuthenticationExchangeOptions,
-): ByteChunkParser<AuthenticationData> {
+): AuthParser<AuthenticationData> {
   switch (code) {
-    case AuthCode.OK:
-      return {
-        next: () => true,
-      };
     case AuthCode.CLEARTEXT_PWD:
       return new AuthCleartextPasswordParser(writer, options);
     case AuthCode.SASL:
@@ -135,18 +147,21 @@ function getAuthParser(
       throw new Error(`Unsupported PostgreSQL authentication code: ${code}`); //TODO: 优化不支持的认证方式提示
   }
 }
+interface AuthParser<T> extends ByteChunkParser<T> {
+  authCode: string;
+}
 
-class AuthSASLParser implements ByteChunkParser<Promise<void> | true> {
+class AuthSASLParser implements AuthParser<Promise<void> | true> {
   constructor(
     private writer: BufferWriter,
     private options: PgAuthenticationExchangeOptions,
   ) {
   }
+  authCode = "SASL";
   f1?: {
     mechanisms: string[];
     exchange?: PgSaslExchange;
   };
-  mechanism?: string[];
   next(reader: BufferReader): Promise<void> | true | undefined {
     if (!this.f1) {
       this.f1 = this.start(reader);
@@ -155,9 +170,8 @@ class AuthSASLParser implements ByteChunkParser<Promise<void> | true> {
     const state = this.f1.exchange;
     const code = reader.readUInt32BE();
     switch (code) {
-      case AuthCode.OK:
-        return true;
       case AuthCode.SASL_CONTINUE: {
+        this.authCode = "SASL_CONTINUE";
         const data = reader.readBinary(reader.readerLength);
         if (!state) throw new PgAuthenticationError("Unexpected SASL continuation");
         this.writer.writeWith(async () => encodePasswordMessage({ data: await state.continue(data) }));
@@ -190,14 +204,11 @@ class AuthSASLParser implements ByteChunkParser<Promise<void> | true> {
     return { mechanisms };
   }
 }
-class AuthCleartextPasswordParser implements ByteChunkParser<true> {
+class AuthCleartextPasswordParser implements AuthParser<true> {
   constructor(private writer: BufferWriter, private options: PgAuthenticationExchangeOptions) {
   }
+  authCode = "CLEAR_TEXT";
   next(reader: BufferReader): true | undefined {
-    this.continue();
-    return true;
-  }
-  continue(): void {
     this.writer.writeWith(async () => {
       let password = this.options.password;
       if (typeof password === "function") password = await password();
@@ -206,9 +217,9 @@ class AuthCleartextPasswordParser implements ByteChunkParser<true> {
       }
       return encodePasswordMessage({ password });
     });
+    return true;
   }
 }
-type AuthParser = AuthSASLParser | AuthCleartextPasswordParser;
 
 function createUnsupportedAuthenticationMethod(method: string) {
   throw new Error(`Unsupported PostgreSQL authentication method: ${method}`);

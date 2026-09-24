@@ -91,36 +91,35 @@ export class DenoBuffer extends FixedBufferReader implements ByteBuffer {
     super(uint8Buffer);
     this.writerBuffer = new Uint8Array(bufferSize);
   }
-  async start() {
-    let size: number | null;
+  async startRead(onData: () => boolean) {
+    this.#onDataNotice = onData;
+    let isContinue: boolean;
     do {
-      size = await this.readInto();
-      if (size === null) break;
-    } while (true);
+      this.gc();
+      isContinue = await this.readInto();
+    } while (isContinue);
   }
-  private async readInto(): Promise<number | null> {
+  private async readInto(): Promise<boolean> {
     const size = await this.conn.read(this.getUnused());
-    if (size === null) return null;
+    if (size === null) return false;
     else if (size) {
       this.offsetEnd += size;
-      this.onData();
-      this.gc();
+      return this.#onDataNotice();
     }
-    return size;
+    return true;
   }
+  #onDataNotice: () => boolean = noListener;
+  onEnd: () => void = noListener;
   readonly writerBuffer: Uint8Array;
   writerOffset: number = 0;
-  onData() {
-    throw new Error("No custom onData implementation provided");
-  }
-  onEnd() {
-    throw new Error("No custom onEnd implementation provided");
-  }
   write(data: Uint8Array): Promise<void> {
     return writeInto(this.conn, data);
   }
   closeWrite(): Promise<void> {
     return this.conn.closeWrite();
+  }
+  destroy(): void {
+    this.conn.close();
   }
 }
 
@@ -132,24 +131,41 @@ export class NodeBuffer extends FixedBufferReader implements ByteBuffer {
   }
   readonly writerBuffer: Uint8Array;
   writerOffset: number = 0;
-  start() {
-    this.duplex.on("data", (chunk) => {
-      while (chunk.byteLength) {
-        const length = this.buffer.byteLength - this.offsetEnd;
-        this.buffer.set(chunk, this.offsetEnd);
-        chunk = chunk.subarray(length);
-        this.offsetEnd += length;
-        this.onData();
-        this.gc();
+  startRead(onData: () => boolean) {
+    this.#onDataNotice = onData;
+    const rest = this.#rest;
+    if (rest) {
+      this.#rest = undefined;
+      if (this.#onData(rest)) return;
+    }
+    this.duplex.on("data", this.#onData);
+  }
+  /**
+   * 如果返回 true ，表示暂停处理数据；如果返回 false ，表示继续处理数据。
+   */
+  #onData = (chunk: Uint8Array): boolean => {
+    while (chunk.byteLength) {
+      this.gc();
+      const length = this.buffer.byteLength - this.offsetEnd;
+      this.buffer.set(chunk, this.offsetEnd);
+      chunk = chunk.subarray(length);
+      this.offsetEnd += length;
+
+      const isContinue = this.#onDataNotice();
+      if (!isContinue) {
+        if (chunk.byteLength) {
+          this.#rest = chunk;
+        }
+        this.duplex.off("data", this.#onData);
+        this.#onDataNotice = noListener;
+        return true;
       }
-    });
-  }
-  onData() {
-    throw new Error("No custom onData implementation provided");
-  }
-  onEnd() {
-    throw new Error("No custom onEnd implementation provided");
-  }
+    }
+    return false;
+  };
+  #rest?: Uint8Array;
+  #onDataNotice: () => boolean = noListener;
+  onEnd: () => void = noListener;
   write(data: Uint8Array): Promise<void> {
     return new Promise((resolve, reject) => {
       this.duplex.write(data, (err: unknown) => {
@@ -164,4 +180,10 @@ export class NodeBuffer extends FixedBufferReader implements ByteBuffer {
       });
     });
   }
+  destroy(): void {
+    this.duplex.destroy();
+  }
+}
+function noListener(): never {
+  throw new Error("Internal Error: No listener provided");
 }

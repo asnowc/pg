@@ -30,8 +30,7 @@ export async function connectFromByteStream(
     );
     byteStream.write(startupMessage);
     const info = await startAuthentication(byteStream, options);
-    const session = new PgSession(byteStream, { maxMessageSize });
-    return session;
+    return new PgSession(byteStream, { maxMessageSize });
   } catch (error) {
     byteStream.destroy();
     throw error;
