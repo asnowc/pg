@@ -1,8 +1,11 @@
+name: pg_test
+
 services:
   postgres-auth:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: dockerfile
+    container_name: pg_test
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: admin-password

@@ -34,11 +34,11 @@
 - 示例和实现优先使用 `using` 或 `await using` 自动释放连接、事务和游标。
 
 ## 测试约定
-
+- 没有明确要求添加测试的情况下，不要添加测试
+- 当要求修复某个测试文件时，在修复完成后无需运行项目所有的测试。
 - 除认证测试外，连接与连接池测试应从 [test/fixtures/db_connect.ts](../test/fixtures/db_connect.ts) 获取
   `PgConnection`，不要重复 建立连接。
 - 行为测试按能力归入现有测试区域；避免用多层 `describe` 堆叠场景，也不要依赖特定测试文件名。
-- 协议单元测试使用可控 `ByteStream`，覆盖短读、EOF、非法长度、并发读取锁和关闭顺序。
 - 集成测试使用 Docker PostgreSQL。默认环境变量包括：
   - `TEST_LOGIN_DB`：可创建和删除临时数据库的管理员连接。
   - `TEST_PASSWORD_DB`：cleartext password 测试连接。

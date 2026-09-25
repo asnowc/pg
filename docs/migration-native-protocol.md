@@ -97,3 +97,4 @@ const { rows } = await copy.closeWrite();
 - 跨查询共享一个 `Sync` 的流水线优化。
 
 高层 API 的公开签名保持不变，但底层连接错误现在使用本库的 `PgDatabaseError`，不再暴露 npm `pg` 的错误对象。
+在 test\tests\internal  目录下新增两个测试文件，分别添加对  #sym:FixedBufferReader  和 #sym:FixedBufferWriter 类的对应问题，其余文件的问题暂时忽略

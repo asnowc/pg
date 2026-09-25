@@ -22,35 +22,34 @@ import {
   FRAME,
   PgFormat,
 } from "@/protocol.ts";
-import { readLength } from "@/_utils/ByteStream.ts";
 import { PgDatabaseError } from "@/error.ts";
 import { PG_DATA_DECODER_V1 } from "@/codec/pg_data_decoder.ts";
 import { decodeUTF16String } from "@/_utils/string.ts";
 import type { PgFieldDescription } from "@/protocol/messages.ts";
 import type { QueryDecoder } from "@/interface/Query.ts";
+import { QueryQueue } from "@/protocol/QueryQueue.ts";
+import { BufferWriter } from "@/_utils/StreamWriter.ts";
+import { BufferReader, StreamParser, StreamReader } from "@/_utils/StreamReader.ts";
 
 export default class QueryReader<T = unknown> implements IQueryReader<T> {
   constructor(
-    session: PgSession | (() => Promise<PgSession>),
+    session: QueryQueue,
     statement: StatementEncoder & QueryDecoder<unknown>,
-    release: (session: PgSession) => void = () => {},
     options: QueryOptions = {},
   ) {
     this.#source = { getSession: session, statement };
-    this.#release = release;
     this.#options = options;
   }
   #source?: {
-    getSession: PgSession | (() => Promise<PgSession>);
+    getSession: QueryQueue;
     statement: StatementEncoder & QueryDecoder<unknown>;
   };
-  readonly #release: (session: PgSession) => void;
   readonly #options: QueryOptions;
-  async #getSession() {
+  #getSession() {
     const source = this.#source;
     if (!source) throw new Error("QueryReader has already been consumed");
     this.#source = undefined;
-    const session = typeof source.getSession === "function" ? await source.getSession() : source.getSession;
+    const session = source.getSession;
     return { session, statement: source.statement };
   }
 
@@ -86,29 +85,16 @@ export default class QueryReader<T = unknown> implements IQueryReader<T> {
   }
 
   async #consume(): Promise<CollectedQueryResult<T>> {
-    const { session, statement } = await this.#getSession();
-    let synchronized = false;
-    try {
-      const collecting = collectQueryResult<T>(session, statement, this.#options);
-      await sendExecuteWithResult(session, statement, true);
-      const result = await collecting;
-      synchronized = true;
-      return result;
-    } catch (error) {
-      if (error instanceof SynchronizedQueryError) synchronized = true;
-      throw error instanceof SynchronizedQueryError ? error.cause : error;
-    } finally {
-      if (synchronized) this.#release(session);
-    }
+    const { session, statement } = this.#getSession();
   }
 }
 
-async function sendExecuteWithResult(session: PgSession, statement: StatementEncoder, describe?: boolean) {
-  await session.write(encodeParseMessage(statement));
-  await session.write(encodeBindMessage(statement));
-  if (describe) await session.write(encodeDescribeMessage(DescribeTarget.Portal));
-  await session.write(encodeExecuteMessage(0));
-  await session.write(FRAME.SYNC);
+function sendExecuteWithResult(session: BufferWriter, statement: StatementEncoder, describe?: boolean) {
+  session.pushData(encodeParseMessage(statement));
+  session.pushData(encodeBindMessage(statement));
+  if (describe) session.pushData(encodeDescribeMessage(DescribeTarget.Portal));
+  session.pushData(encodeExecuteMessage(0));
+  session.pushData(FRAME.SYNC);
 }
 
 type CollectedQueryResult<T> = {
@@ -117,50 +103,37 @@ type CollectedQueryResult<T> = {
   notices: string[];
   rowCount: number;
 };
-
-async function collectQueryResult<T>(
-  session: PgSession,
-  statement: QueryDecoder<unknown>,
-  options: QueryOptions,
-): Promise<CollectedQueryResult<T>> {
-  const rows: T[] = [];
-  const notices: string[] = [];
-  let descriptions: PgFieldDescription[] = [];
-  let fields: readonly Readonly<FieldInfo>[] = [];
-  let rowCount = 0;
-  let databaseError: PgDatabaseError | undefined;
-
-  await session.subscribe({
-    onMessage: async (reader, type, length) => {
-      const body = await readLength(reader, length);
-      switch (type) {
-        case BackendMessageCode.RowDescription:
-          descriptions = decodeRowDescription(body);
-          fields = descriptions.map(toFieldInfo);
-          break;
-        case BackendMessageCode.DataRow:
-          rows.push(decodeRow<T>(decodeDataRow(body), descriptions, fields, statement, options));
-          break;
-        case BackendMessageCode.CommandComplete:
-          rowCount = decodeRowCount(decodeCommandComplete(body));
-          break;
-        case BackendMessageCode.Error: {
-          const message = decodeError(body);
-          databaseError = new PgDatabaseError(message.fields);
-          break;
-        }
-        case BackendMessageCode.ReadyForQuery:
-          session.transactionStatus = decodeReadyForQuery(body);
-          session.removeSubscriber();
-          break;
-        default:
-          break;
-      }
-    },
-  });
-
-  if (databaseError) throw new SynchronizedQueryError(databaseError);
-  return { rows, fields, notices, rowCount };
+class CollectedQueryResultImpl<T> implements StreamParser<CollectedQueryResult<T>> {
+  constructor(readonly bodyLength: number) {
+  }
+  rows: T[] = [];
+  fields: readonly Readonly<FieldInfo>[] = [];
+  notices: string[] = [];
+  rowCount = 0;
+  next(reader: StreamReader): CollectedQueryResult<T> | undefined {
+    while (reader.readableLength) {
+      this.type ??= reader.readUInt8();
+      if (reader.readableLength < 4) return;
+      this.bodyLength ??= reader.readUInt32BE();
+      this.onData(reader, this.type, this.bodyLength);
+    }
+  }
+  async onData(reader: StreamReader, type: number, length: number) {
+    switch (type) {
+      case BackendMessageCode.RowDescription:
+        descriptions = decodeRowDescription(body);
+        fields = descriptions.map(toFieldInfo);
+        break;
+      case BackendMessageCode.DataRow:
+        rows.push(decodeRow<T>(decodeDataRow(body), descriptions, fields, statement, options));
+        break;
+      case BackendMessageCode.CommandComplete:
+        rowCount = decodeRowCount(decodeCommandComplete(body));
+        break;
+      default:
+        break;
+    }
+  }
 }
 
 class SynchronizedQueryError extends Error {

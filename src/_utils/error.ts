@@ -7,3 +7,14 @@ export class PgProtocolError extends Error {
     this.name = "PgProtocolError";
   }
 }
+export class UnexpectedEOFError extends Error {
+  constructor() {
+    super("Unexpected end of file");
+    this.name = "UnexpectedEOFError";
+  }
+}
+export class InternalError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(`@asla/pg internal error: ${message}`, options);
+  }
+}

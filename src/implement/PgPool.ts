@@ -1,17 +1,17 @@
 import { ResourcePool } from "@/_utils/ResourcePool.ts";
 import type { PgSession } from "@/protocol.ts";
-import type { ByteStream } from "@/interface/ByteStream.ts";
 import type { PgPoolConnection as IPgPoolConnection } from "./PgPoolConnection.ts";
 import { QueryOperation } from "./private/QueryOperation.ts";
-import { connectFromByteStream } from "@/protocol/connect.ts";
-import type { PgConnectOptions } from "@/interface/Connection.ts";
+import { connectPgSession } from "@/protocol/connect.ts";
+import type { ConnectionSource, PgConnectOptions } from "@/interface/Connection.ts";
+import { QueryQueue } from "@/protocol/QueryQueue.ts";
 /**
  * 原生连接池配置。建连和认证由调用方注入 。
  *  @public
  */
 export interface CreatePoolOptions {
   /** 每次调用必须返回一个新的、已经完成认证的连接。 */
-  create: () => Promise<{ stream: ByteStream; connectOptions: PgConnectOptions }>;
+  create: () => Promise<{ stream: ConnectionSource; connectOptions: PgConnectOptions<ConnectionSource> }>;
   /** 最大连接数，默认 3。必须是正整数。 */
   maxCount?: number;
   /** 空闲回收时间（毫秒），默认 0（不回收）。 */
@@ -32,11 +32,12 @@ export class PgPool extends QueryOperation implements AsyncDisposable {
    */
   constructor(options: CreatePoolOptions) {
     checkOptions(options);
-    super(() => this.#pool.get(), (session) => this.#release(session));
+    const queue = new QueryQueue();
+    super(queue);
     this.#pool = new ResourcePool({
       create: async () => {
         const { connectOptions, stream } = await options.create();
-        return connectFromByteStream(stream, connectOptions);
+        return connectPgSession(stream, connectOptions);
       },
       dispose: closeByteStream,
     }, {
@@ -44,8 +45,9 @@ export class PgPool extends QueryOperation implements AsyncDisposable {
       maxCount: options.maxCount,
       usageLimit: options.usageLimit,
     });
+    this.#queryQueue = queue;
   }
-
+  #queryQueue: QueryQueue;
   /** 空闲连接数 */
   get idleCount(): number {
     return this.#pool.idleCount;
@@ -95,7 +97,7 @@ function closeByteStream(session: PgSession) {
 
 class PgPoolConnection extends QueryOperation implements IPgPoolConnection {
   constructor(session: PgSession, onRelease: (session: PgSession) => void) {
-    super(() => Promise.resolve(session), onRelease);
+    super(session.queryQueue);
     this.#release = onRelease;
     this.#session = session;
   }

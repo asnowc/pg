@@ -1,4 +1,5 @@
 import type { PgAsyncMessage } from "@/interface/protocol.ts";
+import type { Duplex } from "node:stream";
 
 /** @public */
 export interface PgSaslExchange {
@@ -18,7 +19,7 @@ export interface PgAuthenticationExchangeOptions {
 }
 
 /** @public */
-export interface PgConnectOptions<T> extends PgAuthenticationExchangeOptions {
+export interface PgConnectOptions<T = ConnectionSource> extends PgAuthenticationExchangeOptions {
   database: string;
   /**
    * 配置连接的加密选项. 当前仅支持 TLS 加密。
@@ -40,8 +41,19 @@ export type ConnectionEncryptionOptions<T> = TLSEncryptionOptions<T>;
 export type TLSEncryptionOptions<T> = {
   mode: "TLS";
   /** 平台负责 TLS 握手，并返回升级后的同一逻辑连接。 */
-  upgradeTLS(connection: T): Promise<T>;
+  upgradeTLS(connection: T): Promise<ConnectionSource>;
 };
 
 /** @public */
 export type CreateSaslExchangeContext = { mechanisms: readonly string[]; user: string; password?: string };
+
+/** @public */
+export type PrunedDenoConn = {
+  close: () => void;
+  read: (p: Uint8Array) => Promise<number | null>;
+  write: (p: Uint8Array) => Promise<number>;
+  closeWrite: () => Promise<void>;
+};
+
+/** @public */
+export type ConnectionSource = Duplex | PrunedDenoConn;

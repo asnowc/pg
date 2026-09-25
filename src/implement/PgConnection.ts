@@ -1,13 +1,12 @@
 import { QueryOperation } from "./private/QueryOperation.ts";
-import type { ByteStream } from "@/interface/ByteStream.ts";
 import type { PgSession } from "@/protocol.ts";
-import type { PgConnectOptions } from "@/interface/Connection.ts";
-import { connectFromByteStream } from "@/protocol/connect.ts";
+import type { ConnectionSource, PgConnectOptions } from "@/interface/Connection.ts";
+import { connectPgSession } from "@/protocol/connect.ts";
 
 /** @public */
 export class PgConnection extends QueryOperation implements AsyncDisposable {
-  static async connect(conn: ByteStream, options: PgConnectOptions): Promise<PgConnection> {
-    const session = await connectFromByteStream(conn, options);
+  static async connect<T extends ConnectionSource>(source: T, options: PgConnectOptions<T>): Promise<PgConnection> {
+    const session = await connectPgSession(source, options);
     return new PgConnection(session);
   }
   private constructor(session: PgSession) {

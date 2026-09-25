@@ -16,7 +16,7 @@ export interface DbConnectOption {
 
 /**
  * @public
- * @deprecated 请建立 `ByteStream` 后调用 `connectFromStream()`。
+ * @deprecated  已废弃。
  */
 export async function createDbConnection(
   url: string | URL | DbConnectOption,

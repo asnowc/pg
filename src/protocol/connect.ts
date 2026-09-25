@@ -3,22 +3,36 @@ import { PROTOCOL_VERSION, TLSResponseCode } from "./const.ts";
 import { PgAuthenticationError } from "@/error.ts";
 import { encodeNegotiateTlsMessage, encodeStartupMessage } from "./encode.ts";
 import { startAuthentication } from "./auth.ts";
-import { readLength } from "@/_utils/ByteStream.ts";
+import { UnexpectedEOFError } from "@/_utils/error.ts";
 import { PgSession } from "@/protocol.ts";
-import type { ByteBuffer } from "@/_utils/DataBuffer.ts";
+import { ConnectionStream } from "@/_utils/ConnectionStream.ts";
+import { ConnectionSource } from "@asla/pg";
+import { Duplex } from "node:stream";
+import { DenoBufferStream, NodeBufferStream } from "@/platforms.ts";
 
-export async function connectFromByteStream(
-  byteStream: ByteBuffer,
-  options: PgConnectOptions<ByteBuffer>,
+function createConnectionStream<T extends ConnectionSource>(source: T): ConnectionStream {
+  let stream: ConnectionStream;
+  if (source instanceof Duplex) {
+    stream = new NodeBufferStream(source);
+  } else {
+    stream = new DenoBufferStream(source);
+  }
+  return stream;
+}
+export async function connectPgSession<T extends ConnectionSource>(
+  source: T,
+  options: PgConnectOptions<T>,
 ): Promise<PgSession> {
   const { encryption, maxMessageSize, user, database } = options;
-  let stream: ByteBuffer = byteStream;
+  let stream = createConnectionStream(source);
   if (encryption) {
     //TODO: 查询服务器支持的加密方式
     const encryptionOptions = typeof encryption === "function" ? await encryption() : encryption;
     if (encryptionOptions) {
-      if (encryptionOptions.mode === "TLS") stream = await negotiateTls(stream, encryptionOptions);
-      else {
+      if (encryptionOptions.mode === "TLS") {
+        const newSource = await negotiateTls(stream, source, encryptionOptions);
+        stream = createConnectionStream(newSource);
+      } else {
         throw new PgAuthenticationError(`Unsupported encryption mode: ${encryptionOptions.mode}`);
       }
     }
@@ -28,11 +42,11 @@ export async function connectFromByteStream(
       PROTOCOL_VERSION,
       getStartupParameters({ user, database }),
     );
-    byteStream.write(startupMessage);
-    const info = await startAuthentication(byteStream, options);
-    return new PgSession(byteStream, { maxMessageSize });
+    stream.pushData(startupMessage);
+    const info = await startAuthentication(stream, options);
+    return new PgSession(stream, { maxMessageSize, authResult: info });
   } catch (error) {
-    byteStream.destroy();
+    stream.destroy();
     throw error;
   }
 }
@@ -40,18 +54,31 @@ export async function connectFromByteStream(
 /**
  * 发送 SSLRequest，并在服务端接受时调用注入的 TLS 升级函数。
  */
-async function negotiateTls(byteBuffer: ByteBuffer, options: TLSEncryptionOptions<ByteBuffer>): Promise<ByteBuffer> {
-  await byteBuffer.write(encodeNegotiateTlsMessage());
-  const responseData = await readLength(byteBuffer, 1);
-  const responseCode = responseData[0];
-  if (responseCode === TLSResponseCode.Accepted) return await options.upgradeTLS(byteBuffer);
-  if (responseCode === TLSResponseCode.Rejected) throw new PgAuthenticationError("PostgreSQL server refused TLS");
-  throw new PgAuthenticationError(`Invalid PostgreSQL SSL response: 0x${responseCode.toString(16)}`);
+async function negotiateTls<T>(
+  stream: ConnectionStream,
+  source: T,
+  encryptionOptions: TLSEncryptionOptions<T>,
+): Promise<ConnectionSource> {
+  stream.pushData(encodeNegotiateTlsMessage());
+  return new Promise<ConnectionSource>((resolve, reject) => {
+    stream.startReadLoop(() => {
+      const responseCode = stream.readUInt8();
+      if (responseCode === TLSResponseCode.Accepted) resolve(encryptionOptions.upgradeTLS(source));
+      else if (responseCode === TLSResponseCode.Rejected) {
+        reject(new PgAuthenticationError("PostgreSQL server refused TLS"));
+      } else {
+        reject(new PgAuthenticationError(`Invalid PostgreSQL SSL response: 0x${responseCode.toString(16)}`));
+      }
+      return true;
+    }, () => {
+      reject(new UnexpectedEOFError());
+    });
+  });
 }
 /**
  * StartupMessage 的参数。user 是协议要求的唯一必填参数。
  */
-export interface PgStartupOptions {
+interface PgStartupOptions {
   user: string;
   database?: string;
   applicationName?: string;

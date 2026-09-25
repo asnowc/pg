@@ -1,7 +1,6 @@
 export * from "./interface/Query.ts";
 export * from "./interface/Connection.ts";
 export * from "./interface/protocol.ts";
-export * from "./interface/ByteStream.ts";
 
 export * from "./error.ts";
 

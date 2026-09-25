@@ -11,7 +11,7 @@ const USER = {
   tls: "auth_tls",
 } as const;
 
-function authenticate(options: Omit<PgConnectOptions, "database"> & { database?: string }) {
+function authenticate(options: Omit<PgConnectOptions<Deno.Conn>, "database"> & { database?: string }) {
   return denoConnect({
     database: PUBLIC_DB_CONNECT_INFO.database,
     hostname: PUBLIC_DB_CONNECT_INFO.hostname,
@@ -70,7 +70,6 @@ test("服务端拒绝客户端选择的不支持 SASL 机制", async () => {
 });
 test("TLS fixture 使用受信 CA 建立连接", async () => {
   const conn = await Deno.connect({ hostname: PUBLIC_DB_CONNECT_INFO.hostname, port: PUBLIC_DB_CONNECT_INFO.port });
-
   await using db = await PgConnection.connect(conn, {
     user: USER.tls,
     database: PUBLIC_DB_CONNECT_INFO.database,

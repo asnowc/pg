@@ -1,178 +1,149 @@
-import type { Duplex } from "node:stream";
-import type { ByteStream } from "@/interface/ByteStream.ts";
-import { ByteBuffer, FixedBufferReader } from "@/_utils/DataBuffer.ts";
-import { writeInto } from "@/_utils/ByteStream.ts";
+import { Duplex } from "node:stream";
+import type { ConnectionStream } from "@/_utils/ConnectionStream.ts";
+import { InternalError } from "@/_utils/error.ts";
+import { BufferReader } from "@/_utils/StreamReader.ts";
+import { BufferWriter, BufferWriterFunction, BufferWriterWriteInto } from "@/_utils/StreamWriter.ts";
+import type { PrunedDenoConn } from "@/interface/Connection.ts";
 
-export function createDuplexByteConnection(duplex: Duplex): ByteStream {
-  return new NodeDuplexConnection(duplex);
+interface PipeStreamOptions {
+  writerBufferSize?: number;
+  readerBufferSize?: number;
 }
-class NodeDuplexConnection implements ByteStream {
-  constructor(private duplex: Duplex) {
-    if (duplex.readableFlowing !== false) duplex.pause();
-    duplex.on("readable", () => {
-      const item = this.#waiting;
-      if (!item) return;
-      const chunk = duplex.read(item.buffer.byteLength) as Uint8Array | null;
-      if (chunk) {
-        item.buffer.set(chunk);
-        item.resolve(chunk.byteLength);
-        this.#waiting = undefined;
-      }
-    });
-    duplex.on("end", () => {
-      const item = this.#waiting;
-      if (!item) return;
-      item.resolve(null);
-      this.#waiting = undefined;
-    });
-    duplex.on("close", (err) => {
-      const item = this.#waiting;
-      if (!item) return;
-      const error = err ?? new Error("Stream closed unexpectedly");
-      item.reject(error);
-      this.#waiting = undefined;
-    });
+export class DenoBufferStream extends BufferReader implements ConnectionStream {
+  constructor(private conn: PrunedDenoConn, options: PipeStreamOptions = {}) {
+    const { readerBufferSize = 8 * 1024, writerBufferSize = 8 * 1024 } = options;
+    super(new Uint8Array(readerBufferSize));
+    this.writer = new BufferWriter(new Uint8Array(writerBufferSize), (data) => this.conn.write(data), this.#onError);
   }
-  close(): void {
-    this.duplex.destroy();
-  }
-  write(p: Uint8Array): Promise<number> {
-    const duplex = this.duplex;
-    if (duplex.destroyed) return Promise.reject(duplex.errored ?? new Error("Writable stream has been destroyed"));
-    // end() 后在 write 会抛出异常，所以无需额外处理
-    return new Promise((resolve, reject) => {
-      const byteLength = p.byteLength;
-      duplex.write(p, (err: unknown) => {
-        err ? reject(err) : resolve(byteLength);
-      });
-    });
-  }
-  closeWrite(): Promise<void> {
-    const duplex = this.duplex;
-    if (duplex.errored) return Promise.reject(duplex.errored);
-    if (duplex.writableEnded) return Promise.resolve();
-    return new Promise((resolve, reject) => {
-      duplex.end((err: unknown) => {
-        err ? reject(err) : resolve();
-      });
-    });
-  }
-
-  #waiting?: {
-    resolve: (value: number | null) => void;
-    reject: (reason?: any) => void;
-
-    buffer: Uint8Array;
+  #onError = (err: unknown) => {
+    this.onError?.(err);
+    this.destroy();
   };
-  async read(p: Uint8Array): Promise<number | null> {
-    const duplex = this.duplex;
-    if (duplex.destroyed) throw duplex.errored ?? new Error("Readable stream has been destroyed");
-    if (duplex.readableEnded) return null;
-    if (this.#waiting) {
-      throw new Error("Another read is already in progress");
-    }
-
-    const chunk = duplex.read(p.byteLength) as Uint8Array | null;
-    if (chunk) {
-      p.set(chunk);
-      return chunk.byteLength;
-    }
-
-    return new Promise((resolve, reject) => {
-      this.#waiting = { buffer: p, resolve, reject };
-    });
+  onError?: (error: unknown) => void;
+  async startReadLoop(onData: () => boolean | void, onEnd: () => void) {
+    this.#startReadLoop(onData, onEnd).catch(this.#onError);
+    return;
   }
-}
-
-export class DenoBuffer extends FixedBufferReader implements ByteBuffer {
-  constructor(private conn: Deno.Conn, bufferSize: number = 8 * 1024) {
-    const buffer = new ArrayBuffer(bufferSize);
-    const uint8Buffer = new Uint8Array(buffer);
-    super(uint8Buffer);
-    this.writerBuffer = new Uint8Array(bufferSize);
-  }
-  async startRead(onData: () => boolean) {
-    this.#onDataNotice = onData;
-    let isContinue: boolean;
+  async #startReadLoop(onData: () => boolean | void, onEnd: () => void) {
+    let isEnd: boolean | void | undefined;
+    let size: number | null;
     do {
       this.gc();
-      isContinue = await this.readInto();
-    } while (isContinue);
+      const chunk = this.buffer.subarray(this.readerBufferWriteOffset);
+      if (chunk.byteLength === 0) {
+        throw new InternalError("The BufferReader did not read any data when the onData method was called");
+      }
+      size = await this.conn.read(chunk);
+      if (size === null) return onEnd();
+      if (size === 0) continue;
+
+      this.readerBufferWriteOffset += size;
+      isEnd = onData();
+    } while (!isEnd);
   }
-  private async readInto(): Promise<boolean> {
-    const size = await this.conn.read(this.getUnused());
-    if (size === null) return false;
-    else if (size) {
-      this.offsetEnd += size;
-      return this.#onDataNotice();
-    }
-    return true;
+
+  private readonly writer: BufferWriter;
+  pushData(data: Uint8Array): void {
+    return this.writer.pushData(data);
   }
-  #onDataNotice: () => boolean = noListener;
-  onEnd: () => void = noListener;
-  readonly writerBuffer: Uint8Array;
-  writerOffset: number = 0;
-  write(data: Uint8Array): Promise<void> {
-    return writeInto(this.conn, data);
+  pushWrite(write: BufferWriterFunction): void {
+    return this.writer.pushWrite(write);
+  }
+  pushWriteInto(onWriteInto: BufferWriterWriteInto): void {
+    return this.writer.pushWriteInto(onWriteInto);
   }
   closeWrite(): Promise<void> {
     return this.conn.closeWrite();
   }
+  private destroyed = false;
   destroy(): void {
-    this.conn.close();
+    if (this.destroyed) return;
+    this.destroyed = true;
+    try {
+      this.conn.close();
+    } catch {
+      // The socket may already be closed after EOF.
+    }
   }
 }
 
-export class NodeBuffer extends FixedBufferReader implements ByteBuffer {
-  constructor(private duplex: Duplex, bufferSize: number = 8 * 1024) {
-    const readerBuffer = new Uint8Array(bufferSize);
-    super(readerBuffer);
-    this.writerBuffer = new Uint8Array(bufferSize);
+export class NodeBufferStream extends BufferReader implements ConnectionStream {
+  constructor(private duplex: Duplex, options: PipeStreamOptions = {}) {
+    const { readerBufferSize = 8 * 1024, writerBufferSize = 8 * 1024 } = options;
+    super(new Uint8Array(readerBufferSize));
+    this.writer = new BufferWriter(
+      new Uint8Array(writerBufferSize),
+      (data) => {
+        return new Promise<number>((resolve, reject) => {
+          this.duplex.write(data, (err) => {
+            err ? reject(err) : resolve(data.byteLength);
+          });
+        });
+      },
+      (err) => {
+        this.onError?.(err);
+        this.destroy();
+      },
+    );
   }
-  readonly writerBuffer: Uint8Array;
-  writerOffset: number = 0;
-  startRead(onData: () => boolean) {
-    this.#onDataNotice = onData;
-    const rest = this.#rest;
+
+  private onDataNotice: () => boolean | void = noListener;
+  private onEnd: () => void = noListener;
+  onError?: (error: unknown) => void;
+  startReadLoop(onData: () => boolean | void, onEnd: () => void): void {
+    this.onDataNotice = onData;
+    this.onEnd = onEnd;
+    const rest = this.rest;
     if (rest) {
-      this.#rest = undefined;
-      if (this.#onData(rest)) return;
+      this.rest = undefined;
+      if (this.onData(rest)) return;
     }
-    this.duplex.on("data", this.#onData);
+    this.duplex.on("data", this.onData);
+    this.duplex.on("end", this.onEnd);
   }
   /**
    * 如果返回 true ，表示暂停处理数据；如果返回 false ，表示继续处理数据。
    */
-  #onData = (chunk: Uint8Array): boolean => {
+  private onData = (chunk: Uint8Array): boolean => {
     while (chunk.byteLength) {
       this.gc();
-      const length = this.buffer.byteLength - this.offsetEnd;
-      this.buffer.set(chunk, this.offsetEnd);
+      const length = this.pushReaderBufferData(chunk);
       chunk = chunk.subarray(length);
-      this.offsetEnd += length;
 
-      const isContinue = this.#onDataNotice();
-      if (!isContinue) {
-        if (chunk.byteLength) {
-          this.#rest = chunk;
+      let shouldStop = false;
+      while (true) {
+        const readableLength = this.readableLength;
+        if (this.onDataNotice()) {
+          shouldStop = true;
+          break;
         }
-        this.duplex.off("data", this.#onData);
-        this.#onDataNotice = noListener;
+        if (this.readableLength === readableLength) break;
+      }
+      if (shouldStop) {
+        if (chunk.byteLength) {
+          this.rest = chunk;
+        }
+        this.duplex.off("data", this.onData);
+        this.duplex.off("end", this.onEnd);
+        this.onDataNotice = noListener;
         return true;
       }
     }
     return false;
   };
-  #rest?: Uint8Array;
-  #onDataNotice: () => boolean = noListener;
-  onEnd: () => void = noListener;
-  write(data: Uint8Array): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.duplex.write(data, (err: unknown) => {
-        err ? reject(err) : resolve();
-      });
-    });
+  private rest?: Uint8Array;
+
+  private readonly writer: BufferWriter;
+  pushData(data: Uint8Array): void {
+    return this.writer.pushData(data);
   }
+  pushWrite(write: BufferWriterFunction): void {
+    return this.writer.pushWrite(write);
+  }
+  pushWriteInto(onWriteInto: BufferWriterWriteInto): void {
+    return this.writer.pushWriteInto(onWriteInto);
+  }
+
   closeWrite(): Promise<void> {
     return new Promise((resolve, reject) => {
       this.duplex.end((err: unknown) => {

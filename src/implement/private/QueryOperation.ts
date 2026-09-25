@@ -20,6 +20,7 @@ import type {
 } from "@/interface/Query.ts";
 import { sqlStatementToSqlEncoder } from "./sql_statement.ts";
 import QueryReaderImpl from "./QueryReader.ts";
+import { QueryQueue } from "@/protocol/QueryQueue.ts";
 
 export class QueryOperation
   implements
@@ -28,12 +29,10 @@ export class QueryOperation
     CopyQueryOperation,
     CursorQueryOperation,
     TransactionQueryOperation {
-  constructor(getSession: () => Promise<PgSession>, release: (session: PgSession) => void) {
-    this.#getSession = getSession;
-    this.#release = release;
+  constructor(queryQueue: QueryQueue) {
+    this.#queryQueue = queryQueue;
   }
-  #getSession: () => Promise<PgSession>;
-  #release: (session: PgSession) => void;
+  #queryQueue: QueryQueue;
   begin(mode?: TransactionMode): Transaction {
     throw new Error("Not implemented");
   }
@@ -48,7 +47,7 @@ export class QueryOperation
   }
   query<T>(queryable: SqlStatement<T>, options?: QueryOptions): QueryReader<T> {
     const encoder = sqlStatementToSqlEncoder(queryable);
-    return new QueryReaderImpl<T>(this.#getSession, encoder, this.#release, options);
+    return new QueryReaderImpl<T>(this.#queryQueue, encoder, options);
   }
   queryStream(options?: QueryOptions): ReadableWritablePair<SampleQueryReader, Uint8Array> {
     throw new Error("Not implemented");

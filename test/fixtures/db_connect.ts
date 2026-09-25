@@ -45,7 +45,7 @@ export const test = viTest.extend<BaseContext>({
           port: PUBLIC_DB_CONNECT_INFO.port,
         });
         return {
-          stream,
+          stream: stream,
           connectOptions: {
             user: PUBLIC_DB_CONNECT_INFO.user,
             database: PUBLIC_DB_CONNECT_INFO.database,

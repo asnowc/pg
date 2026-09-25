@@ -30,7 +30,7 @@
   },
   "lint": {
     "rules": {
-      "exclude": ["require-await", "no-unused-vars"]
+      "exclude": ["require-await", "no-unused-vars", "verbatim-module-syntax"]
     }
   },
   "test": {
