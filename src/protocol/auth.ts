@@ -1,13 +1,12 @@
-import { PgAuthenticationError } from "@/error.ts";
 import type { PgAuthenticationExchangeOptions } from "@/interface/Connection.ts";
 import { AuthCode, BackendMessageCode, PgTransactionStatus } from "./const.ts";
 import { decodeBackendKeyData, decodeError, decodeNegotiateProtocolVersion, type PgBackendKeyData } from "./decode.ts";
 import { PgProtocolError, UnexpectedEOFError } from "@/_utils/error.ts";
-import { checkMessageLength, MessageFullParser } from "./MessageParser.ts";
-import { BufferReader, StreamParser, StreamReader } from "@/_utils/StreamReader.ts";
+import { MessageParsers } from "./parsers/MessageParser.ts";
 import { ConnectionStream } from "@/_utils/ConnectionStream.ts";
-import { StreamWriter } from "@/_utils/StreamWriter.ts";
-import { AuthenticationData, AuthParser, getAuthParser } from "./AuthParser.ts";
+import { AuthenticationData, AuthParser, getAuthParser } from "./parsers/AuthParser.ts";
+import { BufferReader } from "@/_utils/StreamReader.ts";
+import { PgAuthenticationError } from "@/error.ts";
 
 const DEFAULT_MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
 
@@ -15,27 +14,61 @@ const DEFAULT_MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
  * 执行密码/SASL 认证并读取到首个 ReadyForQuery。调用前必须已发送 StartupMessage。
  */
 export async function startAuthentication(
-  byteBuffer: ConnectionStream,
+  conn: ConnectionStream,
   options: PgAuthenticationExchangeOptions,
 ): Promise<AuthenticationResult> {
-  const state = new AuthenticationState(byteBuffer, options);
-  return new Promise<AuthenticationResult>((resolve, reject) => {
-    byteBuffer.startReadLoop((): boolean => {
-      let result: AuthenticationResult | undefined;
-      try {
-        result = state.next(byteBuffer);
-      } catch (err) {
-        reject(err);
-        return true;
-      }
+  const parser = new MessageParsers(DEFAULT_MAX_MESSAGE_SIZE);
+  let backendKey: PgBackendKeyData | undefined;
+  let negotiateProtocolVersion: { newestMinorVersion: number; unsupportedOptions: string[] } | undefined;
 
-      if (result) {
-        if (result.promise) result.promise.then(() => resolve(result), reject);
-        else resolve(result);
-      }
-      return !!result;
-    }, () => reject(new UnexpectedEOFError()));
+  parser.set(BackendMessageCode.BackendKeyData, (data) => {
+    backendKey = decodeBackendKeyData(data);
   });
+  parser.set(BackendMessageCode.NegotiateProtocolVersion, (data) => {
+    negotiateProtocolVersion = decodeNegotiateProtocolVersion(data);
+  });
+
+  let auth: AuthParser<AuthenticationData> | undefined;
+  let authOk: AuthenticationData | undefined;
+  parser.set(BackendMessageCode.Authentication, (data) => {
+    const reader = new BufferReader(data, data.byteLength);
+    const code = reader.readUInt32BE();
+    if (code === AuthCode.OK) return;
+    auth ??= getAuthParser(code, conn, options);
+    const result = auth.next(reader, code);
+    if (result instanceof Promise) {
+      result.catch(() => {}); // 避免 Unhandled Promise Rejection
+    }
+    authOk = result;
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    let isDone = false;
+    conn.listenOnError(reject);
+    conn.startReadLoop(() => {
+      parser.next(conn);
+      return isDone;
+    }, () => reject(new UnexpectedEOFError()));
+    parser.set(BackendMessageCode.ErrorResponse, (data) => {
+      const errorMessage = decodeError(data);
+      throw new PgAuthenticationError(errorMessage.fields.message);
+    });
+    parser.set(BackendMessageCode.ReadyForQuery, (data) => {
+      const statusCode = data[0];
+      if (statusCode !== PgTransactionStatus.Idle) {
+        throw new PgProtocolError("Unexpected transaction status: " + statusCode);
+      }
+      isDone = true;
+      conn.listenOnError(undefined);
+      resolve();
+    });
+  });
+  await authOk;
+  return {
+    backendKey,
+    newestMinorVersion: negotiateProtocolVersion?.newestMinorVersion ?? 0,
+    unsupportedOptions: negotiateProtocolVersion?.unsupportedOptions ?? [],
+  };
 }
 
 export type AuthenticationResult = {
@@ -44,94 +77,3 @@ export type AuthenticationResult = {
   unsupportedOptions: string[];
   promise?: Promise<void>;
 };
-
-class AuthenticationState implements StreamParser<AuthenticationResult> {
-  constructor(private writer: StreamWriter, private options: PgAuthenticationExchangeOptions) {
-  }
-
-  private message?: MessageFullParser;
-  private type?: number;
-
-  next(reader: StreamReader): AuthenticationResult | undefined {
-    while (reader.readableLength > 0) {
-      this.type ??= reader.readUInt8();
-      if (!this.message) {
-        if (reader.readableLength < 4) return;
-
-        const messageLength = reader.readInt32BE();
-        checkMessageLength(messageLength, DEFAULT_MAX_MESSAGE_SIZE);
-        this.message = new MessageFullParser(messageLength - 4);
-      }
-      const message = this.message;
-      const body = message.next(reader);
-      if (body) {
-        const type = this.type;
-        this.message = undefined;
-        this.type = undefined;
-        const result = this.onMessageBody(type, body);
-        if (result) return { ...this.getResult(), promise: result instanceof Promise ? result : undefined };
-      }
-    }
-  }
-  private getResult() {
-    return {
-      backendKey: this.backendKey,
-      newestMinorVersion: this.negotiateProtocolVersion?.newestMinorVersion ?? 0,
-      unsupportedOptions: this.negotiateProtocolVersion?.unsupportedOptions ?? [],
-    };
-  }
-  private backendKey?: PgBackendKeyData;
-  private negotiateProtocolVersion?: {
-    newestMinorVersion: number;
-    unsupportedOptions: string[];
-  };
-  private onMessageBody(type: number, body: Uint8Array): AuthenticationData | undefined {
-    switch (type) {
-      case BackendMessageCode.Authentication: {
-        this.onAuthMessage(new BufferReader(body, body.byteLength));
-        break;
-      }
-      case BackendMessageCode.BackendKeyData: {
-        this.backendKey = decodeBackendKeyData(body);
-        break;
-      }
-      case BackendMessageCode.Error: {
-        const message = decodeError(body);
-        throw new PgAuthenticationError(message.fields.message, { cause: message });
-      }
-      case BackendMessageCode.NegotiateProtocolVersion: {
-        this.negotiateProtocolVersion = decodeNegotiateProtocolVersion(body);
-        break;
-      }
-      case BackendMessageCode.ReadyForQuery: {
-        const statusCode = body[0];
-        if (statusCode !== PgTransactionStatus.Idle) {
-          throw new PgProtocolError("Unexpected transaction status: " + statusCode);
-        }
-
-        return this.authOk ?? true;
-      }
-      default:
-        break;
-    }
-  }
-
-  private auth?: AuthParser<AuthenticationData>;
-  private authOk?: AuthenticationData;
-
-  /**
-   * 传给 onAuth 的 reader，必须是一个完整的认证消息缓冲区
-   */
-  private onAuthMessage(reader: BufferReader): undefined {
-    const code = reader.readUInt32BE();
-    if (code === AuthCode.OK) {
-      return;
-    }
-    this.auth ??= getAuthParser(code, this.writer, this.options);
-    const result = this.auth.next(reader, code);
-    if (result instanceof Promise) {
-      result.catch(() => {}); // 避免 Unhandled Promise Rejection
-    }
-    this.authOk = result;
-  }
-}

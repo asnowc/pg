@@ -17,10 +17,12 @@ import type {
   Transaction,
   TransactionMode,
   TransactionQueryOperation,
+  TypedSqlStatement,
+  TypedSqlStatementEncoder,
 } from "@/interface/Query.ts";
 import { sqlStatementToSqlEncoder } from "./sql_statement.ts";
 import QueryReaderImpl from "./QueryReader.ts";
-import { QueryQueue } from "@/protocol/QueryQueue.ts";
+import { Pool } from "@/_utils/ResourcePool.ts";
 
 export class QueryOperation
   implements
@@ -29,10 +31,7 @@ export class QueryOperation
     CopyQueryOperation,
     CursorQueryOperation,
     TransactionQueryOperation {
-  constructor(queryQueue: QueryQueue) {
-    this.#queryQueue = queryQueue;
-  }
-  #queryQueue: QueryQueue;
+  constructor(private pool: Pool<PgSession>) {}
   begin(mode?: TransactionMode): Transaction {
     throw new Error("Not implemented");
   }
@@ -45,9 +44,12 @@ export class QueryOperation
   copyTo(queryable: SqlStatement<unknown>, options?: CopyToOptions): ReadableStream<Uint8Array> {
     throw new Error("Not implemented");
   }
-  query<T>(queryable: SqlStatement<T>, options?: QueryOptions): QueryReader<T> {
-    const encoder = sqlStatementToSqlEncoder(queryable);
-    return new QueryReaderImpl<T>(this.#queryQueue, encoder, options);
+  query<T>(
+    queryable: SqlStatement<T> | TypedSqlStatementEncoder<T>,
+    options?: QueryOptions & Pick<TypedSqlStatement, "typeDecoders" | "columnDecoders">,
+  ): QueryReader<T> {
+    const encoder = sqlStatementToSqlEncoder(queryable, options);
+    return new QueryReaderImpl<T>(this.pool, encoder);
   }
   queryStream(options?: QueryOptions): ReadableWritablePair<SampleQueryReader, Uint8Array> {
     throw new Error("Not implemented");

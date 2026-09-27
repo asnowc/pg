@@ -1,19 +1,42 @@
-import type { SimpleQueryEncoder, StatementEncoder } from "@/interface/Query.ts";
+import type { TypedSqlStatementEncoder } from "@/interface/Query.ts";
 import { getJsDataEncoder } from "@/codec/js_data_encoder.ts";
 import type { JsDataEncoderMap } from "@/interface/js_data_encoder.ts";
 import { calcUTF16ByteLength, encodeUTF16StringInto } from "@/_utils/string.ts";
 import { encodeInt16BE, encodeInt32BE } from "@/_utils/number.ts";
-
 /** @public */
-export class TemplateSqlStatementEncoder implements StatementEncoder, SimpleQueryEncoder {
-  constructor(chunks: TemplateStringsArray, args: unknown[], encoderMap: JsDataEncoderMap) {
+export function createTypeSqlStatementEncoder<T = unknown>(
+  sqlStatement: string | Uint8Array,
+  args?: (string | null)[],
+): TypedSqlStatementEncoder<T>;
+/** @public */
+export function createTypeSqlStatementEncoder<T = unknown>(
+  chunks: readonly string[],
+  args: unknown[],
+  encoderMap: JsDataEncoderMap,
+): TypedSqlStatementEncoder<T>;
+export function createTypeSqlStatementEncoder(
+  chunks: readonly string[] | string | Uint8Array,
+  args: unknown[] = [],
+  encoderMap?: JsDataEncoderMap,
+) {
+  if (typeof chunks === "string") {
+    return new TextSqlStatementEncoder(chunks, args as (string | null)[]);
+  }
+  if (chunks instanceof Uint8Array) {
+    throw new Error("Uint8Array input is not supported yet."); //TODO: 支持 Uint8Array 输入
+  }
+  return new TemplateSqlStatementEncoder(chunks, args, encoderMap!);
+}
+/** @public */
+export class TemplateSqlStatementEncoder implements TypedSqlStatementEncoder {
+  constructor(chunks: readonly string[], args: unknown[], encoderMap: JsDataEncoderMap) {
     this.#chunks = chunks;
     this.#args = args;
-    this.#encoderMap = encoderMap;
+    this.#encoderMap = encoderMap ?? new Map();
   }
   #encoderMap: JsDataEncoderMap;
   #args: unknown[];
-  #chunks: TemplateStringsArray;
+  #chunks: ReadonlyArray<string>;
   calculateParseByteLength(): number {
     return this.#getEncoder().calculateParseByteLength();
   }
@@ -27,27 +50,16 @@ export class TemplateSqlStatementEncoder implements StatementEncoder, SimpleQuer
   encodeBindInto(data: Uint8Array, offset: number): number {
     return this.#getEncoder().encodeBindInto(data, offset);
   }
-  calculateByteLength(): number {
-    return this.#getEncoder().calculateByteLength();
+  calculateQueryByteLength(): number {
+    return this.#getEncoder().calculateQueryByteLength();
   }
   encodeQueryInto(data: Uint8Array, offset: number): number {
     return this.#getEncoder().encodeQueryInto(data, offset);
   }
 
-  calculateArgsByteLength(): number {
-    throw new Error("Method not implemented.");
-  }
-  encodeArgsInto(data: Uint8Array, offset: number): number {
-    throw new Error("Method not implemented.");
-  }
-  encodeArgs(): Uint8Array {
-    throw new Error("Method not implemented.");
-  }
-
   #encoder?: TextSqlStatementEncoder;
   #getEncoder(): TextSqlStatementEncoder {
     if (this.#encoder) return this.#encoder;
-
     const args: (string | null)[] = [];
     for (let index = 0; index < this.#args.length; index++) {
       const value = this.#args[index];
@@ -60,7 +72,7 @@ export class TemplateSqlStatementEncoder implements StatementEncoder, SimpleQuer
       const oid = typeof encoder.oid === "function" ? encoder.oid(value) : encoder.oid;
       args.push(encoder.encodeToText(value, oid));
     }
-    this.#encoder = new TextSqlStatementEncoder(this.toTemplate(), args, this.#encoderMap);
+    this.#encoder = new TextSqlStatementEncoder(this.toTemplate(), args);
     return this.#encoder;
   }
 
@@ -87,9 +99,7 @@ export class TemplateSqlStatementEncoder implements StatementEncoder, SimpleQuer
   }
   #stringified?: string;
   toString(): string {
-    if (this.#stringified) {
-      return this.#stringified;
-    }
+    if (this.#stringified) return this.#stringified;
     const args = this.#args;
     const chunks = this.#chunks;
     const encoderMap = this.#encoderMap;
@@ -111,16 +121,13 @@ export class TemplateSqlStatementEncoder implements StatementEncoder, SimpleQuer
   }
 }
 
-/** @public */
-export class TextSqlStatementEncoder implements StatementEncoder, SimpleQueryEncoder {
+class TextSqlStatementEncoder {
   constructor(sqlStatement: string, args?: undefined);
-  constructor(sqlStatement: string, args: (string | null)[], encoderMap: JsDataEncoderMap);
-  constructor(sqlStatement: string, args?: (string | null)[], encoderMap?: JsDataEncoderMap) {
+  constructor(sqlStatement: string, args: (string | null)[]);
+  constructor(sqlStatement: string, args?: (string | null)[]) {
     this.#sqlStatement = sqlStatement;
     this.#args = args;
-    this.#encoderMap = encoderMap;
   }
-  #encoderMap?: JsDataEncoderMap;
   #sqlStatement: string;
   #args?: (string | null)[];
   calculateParseByteLength(): number {
@@ -161,7 +168,7 @@ export class TextSqlStatementEncoder implements StatementEncoder, SimpleQueryEnc
     offset += encodeInt16BE(data, offset, 0);
     return offset;
   }
-  calculateByteLength(): number {
+  calculateQueryByteLength(): number {
     return calcUTF16ByteLength(this.#sqlStatement) + 1;
   }
   encodeQueryInto(data: Uint8Array, offset: number): number {

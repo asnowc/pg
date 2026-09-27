@@ -4,7 +4,6 @@ import type { PgPoolConnection as IPgPoolConnection } from "./PgPoolConnection.t
 import { QueryOperation } from "./private/QueryOperation.ts";
 import { connectPgSession } from "@/protocol/connect.ts";
 import type { ConnectionSource, PgConnectOptions } from "@/interface/Connection.ts";
-import { QueryQueue } from "@/protocol/QueryQueue.ts";
 /**
  * 原生连接池配置。建连和认证由调用方注入 。
  *  @public
@@ -32,9 +31,7 @@ export class PgPool extends QueryOperation implements AsyncDisposable {
    */
   constructor(options: CreatePoolOptions) {
     checkOptions(options);
-    const queue = new QueryQueue();
-    super(queue);
-    this.#pool = new ResourcePool({
+    const pool = new ResourcePool({
       create: async () => {
         const { connectOptions, stream } = await options.create();
         return connectPgSession(stream, connectOptions);
@@ -45,9 +42,9 @@ export class PgPool extends QueryOperation implements AsyncDisposable {
       maxCount: options.maxCount,
       usageLimit: options.usageLimit,
     });
-    this.#queryQueue = queue;
+    super(pool);
+    this.#pool = pool;
   }
-  #queryQueue: QueryQueue;
   /** 空闲连接数 */
   get idleCount(): number {
     return this.#pool.idleCount;
@@ -97,21 +94,29 @@ function closeByteStream(session: PgSession) {
 
 class PgPoolConnection extends QueryOperation implements IPgPoolConnection {
   constructor(session: PgSession, onRelease: (session: PgSession) => void) {
-    super(session.queryQueue);
+    super({
+      get: async () => this.#getSession(),
+      release: (session) => this.#session = session,
+    });
     this.#release = onRelease;
     this.#session = session;
   }
-  #session?: PgSession;
-  #release: (session: PgSession) => void;
-  release(): void {
-    if (!this.#session) {
-      return;
-    }
-    this.#release(this.#session);
+  #getSession() {
+    if (!this.#session) throw new Error("PoolConnection is already released");
+    const session = this.#session;
     this.#session = undefined;
+    return session;
+  }
+  #session?: PgSession;
+  #release?: (session: PgSession) => void;
+  release(): void {
+    if (!this.#release) return;
+    const session = this.#getSession();
+    if (!session) throw new Error("PoolConnection is already released");
+    this.#release(session);
   }
   get released(): boolean {
-    return !this.#session;
+    return !this.#release;
   }
   [Symbol.dispose]() {
     return this.release();

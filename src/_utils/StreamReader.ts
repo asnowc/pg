@@ -2,6 +2,8 @@
  * 字节流读取器。执行读取操作前需要确保有足够的可读字节。
  */
 export interface StreamReader {
+  /** 当前读取偏移量，即下一个读取操作将从该偏移量开始 */
+  get readerReadOffset(): number;
   /** 可读取的字节长度 */
   get readableLength(): number;
   readInt8(): number;
@@ -24,7 +26,7 @@ export interface StreamReader {
 /**
  * 用于解析字节块的接口，每次调用 next 方法时传入一个 BufferReader，返回解析结果或 undefined。
  */
-export interface StreamParser<T> {
+export interface StreamParser<T = unknown> {
   next(reader: StreamReader): undefined | T;
 }
 
@@ -40,6 +42,9 @@ export class BufferReader implements StreamReader {
   #readOffset: number = 0;
   /** 已写入的偏移量，即下一个写入操作将从该偏移量开始 */
   readerBufferWriteOffset: number;
+  get readerReadOffset(): number {
+    return this.#readOffset;
+  }
 
   /** 将数据推入缓冲区，返回实际写入缓冲区的字节数 */
   pushReaderBufferData(chunk: Uint8Array): number {

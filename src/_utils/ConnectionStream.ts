@@ -9,4 +9,5 @@ export interface ConnectionStream extends StreamReader, StreamWriter {
   startReadLoop(onData: () => boolean | undefined | void, onEnd: () => void): void;
   destroy(): void;
   closeWrite(): Promise<void>;
+  listenOnError(onError: undefined | ((error: Error) => void)): void;
 }

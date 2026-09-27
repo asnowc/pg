@@ -10,7 +10,10 @@ export class PgConnection extends QueryOperation implements AsyncDisposable {
     return new PgConnection(session);
   }
   private constructor(session: PgSession) {
-    super(async () => session, () => {});
+    super({
+      get: async () => this.#session,
+      release: () => {},
+    });
     this.#session = session;
   }
   #session: PgSession;
@@ -22,10 +25,6 @@ export class PgConnection extends QueryOperation implements AsyncDisposable {
   }
   get closed(): boolean {
     return this.#session === undefined;
-  }
-  get finished(): Promise<void> {
-    if (!this.#session) return Promise.resolve();
-    return this.#session.finish;
   }
   close(): Promise<void> {
     return this.#session.close();

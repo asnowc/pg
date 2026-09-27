@@ -16,11 +16,16 @@ export class DenoBufferStream extends BufferReader implements ConnectionStream {
     this.writer = new BufferWriter(new Uint8Array(writerBufferSize), (data) => this.conn.write(data), this.#onError);
   }
   #onError = (err: unknown) => {
-    this.onError?.(err);
+    if (this.onError) this.onError(err instanceof Error ? err : new Error(String(err)));
+    else console.error(new InternalError("Unhandled error in DenoBufferStream"));
     this.destroy();
   };
-  onError?: (error: unknown) => void;
-  async startReadLoop(onData: () => boolean | void, onEnd: () => void) {
+  private onError?: (error: Error) => void;
+  listenOnError(onError?: (error: Error) => void): void {
+    if (onError && this.onError) throw new InternalError("Error listener already set");
+    this.onError = onError;
+  }
+  startReadLoop(onData: () => boolean | void, onEnd: () => void) {
     this.#startReadLoop(onData, onEnd).catch(this.#onError);
     return;
   }
@@ -81,7 +86,8 @@ export class NodeBufferStream extends BufferReader implements ConnectionStream {
         });
       },
       (err) => {
-        this.onError?.(err);
+        if (this.onError) this.onError(err instanceof Error ? err : new Error(String(err)));
+        else console.error(new InternalError("Unhandled error in NodeBufferStream"));
         this.destroy();
       },
     );
@@ -89,7 +95,11 @@ export class NodeBufferStream extends BufferReader implements ConnectionStream {
 
   private onDataNotice: () => boolean | void = noListener;
   private onEnd: () => void = noListener;
-  onError?: (error: unknown) => void;
+  private onError?: (error: Error) => void;
+  listenOnError(onError?: (error: Error) => void): void {
+    if (onError && this.onError) throw new InternalError("Error listener already set");
+    this.onError = onError;
+  }
   startReadLoop(onData: () => boolean | void, onEnd: () => void): void {
     this.onDataNotice = onData;
     this.onEnd = onEnd;

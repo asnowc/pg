@@ -99,13 +99,13 @@ export function decodeRowDescription(data: Uint8Array): PgFieldDescription[] {
     const nameEnd = findCStringTerminator(data, offset);
     item.name = decodeUTF16String(data.subarray(offset, nameEnd));
     offset = nameEnd + 1;
-    item.tableOid = decodeUInt32BE(data, offset);
+    item.tableOID = decodeUInt32BE(data, offset);
     offset += 4;
     item.columnAttribute = decodeInt16BE(data, offset);
     offset += 2;
-    item.dataTypeOid = decodeUInt32BE(data, offset);
+    item.typeOID = decodeUInt32BE(data, offset);
     offset += 4;
-    item.dataTypeSize = decodeInt16BE(data, offset);
+    item.typeSize = decodeInt16BE(data, offset);
     offset += 2;
     item.typeModifier = decodeInt32BE(data, offset);
     offset += 4;

@@ -1,5 +1,5 @@
 import type { FieldInfo, QueryCompletion, QueryResult } from "./QueryResult.ts";
-import type { QueryDecoder, SqlStatement, SqlStatements } from "./QueryStatement.ts";
+import type { SqlStatement, SqlStatements, TypedSqlStatement, TypedSqlStatementEncoder } from "./QueryStatement.ts";
 import type { QueryCommonOptions } from "./_internal.ts";
 
 /**
@@ -8,7 +8,7 @@ import type { QueryCommonOptions } from "./_internal.ts";
  * @public
  * @since 0.3.0
  */
-export type QueryOptions = QueryCommonOptions & Pick<QueryDecoder<unknown>, "typeDecoders" | "columnDecoders">;
+export type QueryOptions = QueryCommonOptions;
 
 /**
  * 支持扩展查询的操作。
@@ -29,7 +29,11 @@ export type ExtendedQueryOperation = {
    * const rows = await conn.query(sql).getRows();
    * ```
    */
-  query<T>(queryable: SqlStatement<T>, options?: QueryOptions): QueryReader<T>;
+  query<T>(
+    queryable: SqlStatement<T>,
+    options?: QueryOptions & Pick<TypedSqlStatement, "typeDecoders" | "columnDecoders">,
+  ): QueryReader<T>;
+  query<T>(queryable: TypedSqlStatementEncoder<T>, options?: QueryOptions): QueryReader<T>;
 };
 /**
  * 支持简单查询的操作。

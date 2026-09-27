@@ -29,10 +29,16 @@ type PoolConnState = {
   /** isFree 状态更新的最后更新时间 */
   date: number;
 };
+
+export interface Pool<T> {
+  get(): Promise<T>;
+  release(conn: T): void;
+}
+
 /**
  * 资源池，可以用于实现连接池
  */
-export class ResourcePool<T> {
+export class ResourcePool<T> implements Pool<T> {
   static defaultMaxCount = 3;
   #pool = new Map<T, PoolConnState>();
   #free = new Set<T>();

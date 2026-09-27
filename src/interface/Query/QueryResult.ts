@@ -7,10 +7,8 @@ export interface QueryCompletion {
 
 /** @public */
 export type FieldInfo = {
-  /** 字段在本次查询返回的索引 */
-  index: number;
   name: string;
-  typeId: number;
+  typeOID: number;
   typeSize: number;
   typeModifier: number;
 };

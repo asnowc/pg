@@ -38,7 +38,7 @@ export enum BackendMessageCode {
   /** @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-EMPTYQUERYRESPONSE */
   EmptyQueryResponse = 0x49,
   /** @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-ERRORRESPONSE */
-  Error = 0x45,
+  ErrorResponse = 0x45,
   /** @deprecated 已废弃 */
   FunctionCallResponse = 0x56,
   /** @see https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-NEGOTIATEPROTOCOLVERSION */

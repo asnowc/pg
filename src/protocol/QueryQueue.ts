@@ -1,23 +1,92 @@
-import { QueryDecoder, StatementEncoder } from "@/interface/Query.ts";
-import { BufferReader, StreamParser, StreamReader } from "@/_utils/StreamReader.ts";
-import { BufferWriter } from "@/_utils/StreamWriter.ts";
-import { MessageParser } from "./MessageParser.ts";
+import { MessageParsers } from "./parsers/MessageParser.ts";
+import { BackendMessageCode, PgTransactionStatus } from "./const.ts";
+import type { TypedSqlStatementEncoder } from "@/interface/Query.ts";
+import { LinkList } from "@/_utils/LinkList.ts";
+import { PgProtocolError } from "@/_utils/error.ts";
+import { type MessageRequest, QueryAction, ResultReceiver } from "./parsers/QueryResult.ts";
+import { QueryResultParser } from "./parsers/QueryResultParser.ts";
 
-export class QueryQueue {
-  readonly queue: ((writer: BufferWriter) => StreamParser<unknown>)[] = [];
-  get length() {
-    return this.queue.length;
-  }
-  dequeue() {
-    return this.queue.shift();
-  }
-  onMessage(reader: StreamReader, type: number, bodyLength: number): StreamParser<unknown> {
+export class QueryResultQueue {
+  constructor(parsers: MessageParsers) {
+    parsers.set(BackendMessageCode.DataRow, (body) => {
+      this.getCurrentQuery().dataRow(body);
+    });
+    parsers.set(BackendMessageCode.CommandComplete, (body) => {
+    });
+    parsers.set(BackendMessageCode.ErrorResponse, (body) => {
+    });
+    parsers.set(BackendMessageCode.EmptyQueryResponse, (body) => {
+    });
+    parsers.set(BackendMessageCode.NoData, () => {
+      this.getCurrentQuery().noData();
+    });
+    parsers.set(BackendMessageCode.PortalSuspended, () => {
+      this.getCurrentQuery().portalSuspended();
+    });
+    parsers.set(BackendMessageCode.RowDescription, (body) => {
+      this.getCurrentQuery().rowDescription(body);
+    });
+    parsers.set(BackendMessageCode.ReadyForQuery, (body) => {
+    });
   }
 
-  extendedQuery(onQuery: (writer: BufferWriter) => StreamParser<unknown>) {
-    this.queue.push(onQuery);
+  private transactionStatus: PgTransactionStatus = PgTransactionStatus.Idle;
+  readonly maxPipelineCount: number = 100;
+  private pipelineCount: number = 0;
+  private writeQueue = new LinkList<MessageRequest>();
+  extendedQuery<T>(statement: TypedSqlStatementEncoder): Promise<QueryResultParser<T>> {
+    return new Promise<QueryResultParser<any>>((resolve, reject) => {
+      this.writeQueue.enqueue({
+        type: QueryAction.ExtendedQuery,
+        statement,
+        resolve,
+        reject,
+      });
+    });
   }
-  simpleQuery(onQuery: (writer: BufferWriter) => StreamParser<unknown>) {
-    this.queue.push(onQuery);
+  simpleQuery(statement: TypedSqlStatementEncoder) {}
+
+  private previousAction?: QueryAction;
+  checkWriteQueue(type: number) {
+    const { writeQueue, readQueue } = this;
+    let item = writeQueue.dequeue();
+    while (item) {
+      switch (item.type) {
+        case QueryAction.ExtendedQuery: {
+          // readQueue.enqueue();
+          const resver = new QueryResultParser(item.resolve, item.reject, item.statement);
+          readQueue.enqueue(resver);
+          break;
+        }
+        case QueryAction.SimpleQuery:
+          break;
+        case QueryAction.StartTransaction:
+          break;
+        case QueryAction.EndTransaction:
+          break;
+        default:
+          break;
+      }
+      this.previousAction = item.type;
+      item = writeQueue.dequeue();
+    }
+  }
+
+  private readQueue = new LinkList<ResultReceiver>();
+
+  private getCurrentQuery<T>(): QueryResultParser<T> {
+    const query = this.readQueue.head;
+    if (!query) throw new PgProtocolError("No current query available");
+    if (isQueryQueryResultReceiver(query)) return query as QueryResultParser<T>;
+    throw new PgProtocolError("Current query is not a query result receiver");
   }
 }
+function isQueryQueryResultReceiver(receiver: unknown): receiver is QueryResultParser {
+  return receiver instanceof QueryResultParser;
+}
+
+// E= ExtendedQuery,Start=StartTransaction,END=EndTransaction
+// 流水线: [E,E,E Sync]
+// 事务前后必当有 Sync: [E,E,E, Sync, Start, E,E, END, Sync]
+// RollbackSavePoint 前必有 Sync： [E,E,E, Sync, Start, E,E, Sync, RollbackTo, E,E, END, Sync ]
+// 简单查询前必定有 Sync, 且简单查询后面必须不能处于事务中: [E,E,E Sync, Simple], [E,E,Sync]

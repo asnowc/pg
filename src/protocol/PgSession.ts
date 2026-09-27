@@ -1,12 +1,12 @@
-import { QueryQueue } from "@/protocol/QueryQueue.ts";
+import { QueryResultQueue } from "./QueryQueue.ts";
 import { AuthenticationResult } from "./auth.ts";
 import { encodeTerminateMessage } from "./encode.ts";
 import { decodeNotice, decodeNotification, decodeParameterStatus } from "./decode.ts";
-import { BackendMessageCode, PgTransactionStatus } from "./const.ts";
+import { BackendMessageCode } from "./const.ts";
 import { AsyncMessageType } from "@/interface/protocol.ts";
-import { checkMessageLength, MessageFullParser } from "./MessageParser.ts";
+import { MessageParsers } from "./parsers/MessageParser.ts";
 import { ConnectionStream } from "@/_utils/ConnectionStream.ts";
-import { StreamParser, StreamReader } from "@/_utils/StreamReader.ts";
+import { StreamWriter } from "@/_utils/StreamWriter.ts";
 
 const DEFAULT_MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
 
@@ -17,99 +17,69 @@ export class PgSession {
   ) {
     const { authResult, maxMessageSize = DEFAULT_MAX_MESSAGE_SIZE } = this.config;
     this.stream = stream;
-    this.maxMessageSize = maxMessageSize;
     this.processId = authResult.backendKey?.processId ?? null;
     this.secretKey = authResult.backendKey?.secretKey ?? null;
 
-    stream.startReadLoop(this.#onData, () => {
+    const parser = new MessageParsers(maxMessageSize);
+    parser.set(BackendMessageCode.ParameterStatus, (data) => {
+      const { name, value } = decodeParameterStatus(data);
+      this.parameters[name] = value;
+    });
+    parser.set(BackendMessageCode.NotificationResponse, (data) => {
+      const message = decodeNotification(data);
+      const asyncData = {
+        type: AsyncMessageType.Notification,
+        processId: message.processId,
+        channel: message.channel,
+        payload: message.payload,
+      };
+    });
+    parser.set(BackendMessageCode.NoticeResponse, (data) => {
+      const message = decodeNotice(data);
+      const asyncData = { type: AsyncMessageType.Notice, fields: message.fields, info: message.info };
+    });
+    this.queryQueue = new QueryResultQueue(parser);
+
+    stream.startReadLoop(() => parser.next(this.stream), () => {
       if (!this.isCloseCalled) this.destroy();
     });
+    stream.listenOnError((err) => {
+    });
   }
-  readonly maxMessageSize: number;
+  get writer(): StreamWriter {
+    return this.stream;
+  }
 
   readonly processId: number | null;
   readonly secretKey: number | null;
   readonly parameters: Record<string, string> = {};
+  readonly queryQueue: QueryResultQueue;
 
-  transactionStatus: PgTransactionStatus = PgTransactionStatus.Idle;
-
-  #current?: { readonly type: number; bodyLength?: number; parser?: StreamParser<unknown> };
-
-  #onData = (): void => {
-    const reader = this.stream;
-    let current = this.#current;
-    while (reader.readableLength) {
-      if (!current) {
-        current = { type: reader.readUInt8() };
-        this.#current = current;
-      }
-      if (!current.bodyLength) {
-        if (reader.readableLength < 4) return;
-        const messageLength = reader.readInt32BE();
-        checkMessageLength(messageLength, this.maxMessageSize);
-        current.bodyLength = messageLength - 4;
-      }
-      if (!current.parser) current.parser = this.#onMessage(reader, current.type, current.bodyLength!);
-      const result = current.parser.next(reader);
-      if (!result) return;
-      this.#current = undefined;
-    }
-  };
-  #onMessage(reader: StreamReader, type: number, bodyLength: number): StreamParser<unknown> {
-    switch (type) {
-      case BackendMessageCode.ParameterStatus: {
-        return new MessageFullParser(bodyLength, (data) => {
-          const { name, value } = decodeParameterStatus(data);
-          this.parameters[name] = value;
-        });
-      }
-      case BackendMessageCode.NotificationResponse: {
-        return new MessageFullParser(bodyLength, (bin) => {
-          const message = decodeNotification(bin);
-          const data = {
-            type: AsyncMessageType.Notification,
-            processId: message.processId,
-            channel: message.channel,
-            payload: message.payload,
-          };
-        });
-      }
-      case BackendMessageCode.NoticeResponse: {
-        return new MessageFullParser(bodyLength, (done) => {
-          const message = decodeNotice(done as Uint8Array);
-          const data = { type: AsyncMessageType.Notice, fields: message.fields, info: message.info };
-        });
-      }
-      default:
-        return this.queryQueue.onMessage(reader, type, bodyLength);
-    }
-  }
-  readonly queryQueue = new QueryQueue();
   /** 如果为 true , 则不可在进行写入操作 */
   private get isCloseCalled() {
-    return !!this.#closePromise;
+    return !!this.closePromise;
   }
   async close(): Promise<void> {
     if (this.isCloseCalled) {
-      await this.#closePromise;
+      await this.closePromise;
       return;
     }
     const promise = this.#close().then(
-      () => this.#closePromise = undefined,
-      () => this.#closePromise = undefined,
+      () => this.closePromise = undefined,
+      () => this.closePromise = undefined,
     );
-    this.#closePromise = promise;
-    return this.#closePromise;
+    this.closePromise = promise;
+    return this.closePromise;
   }
-  #closePromise?: Promise<void> | boolean;
+  private closePromise?: Promise<void> | boolean;
   async #close() {
-    if (this.isCloseCalled) return this.#closePromise;
-    this.#closePromise = true;
+    if (this.isCloseCalled) return this.closePromise;
+    this.closePromise = true;
     this.stream.pushData(encodeTerminateMessage());
     return this.stream.closeWrite();
   }
   destroy(): void {
     this.stream.destroy();
-    this.#closePromise = true;
+    this.closePromise = true;
   }
 }

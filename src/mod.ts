@@ -1,6 +1,8 @@
 export * from "./interface/Query.ts";
 export * from "./interface/Connection.ts";
 export * from "./interface/protocol.ts";
+export * from "./interface/pg_data_decoder.ts";
+export * from "./interface/js_data_encoder.ts";
 
 export * from "./error.ts";
 

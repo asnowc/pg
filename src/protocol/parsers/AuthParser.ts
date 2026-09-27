@@ -1,8 +1,8 @@
 import { PgAuthenticationError } from "@/error.ts";
 import type { PgAuthenticationExchangeOptions, PgSaslExchange } from "@/interface/Connection.ts";
 import { decodeBase64, decodeUTF16String, encodeBase64 } from "@/_utils/string.ts";
-import { AuthCode } from "./const.ts";
-import { encodePasswordMessage } from "./encode.ts";
+import { AuthCode } from "../const.ts";
+import { encodePasswordMessage } from "../encode.ts";
 import { PgProtocolError } from "@/_utils/error.ts";
 import { StreamParser, StreamReader } from "@/_utils/StreamReader.ts";
 import { StreamWriter } from "@/_utils/StreamWriter.ts";

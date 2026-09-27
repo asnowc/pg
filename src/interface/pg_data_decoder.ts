@@ -1,6 +1,6 @@
 /** @public */
 export type PgDataDecodeContext = Readonly<{
-  typeId: number;
+  typeOID: number;
   typeSize: number;
   typeModifier: number;
 }>;

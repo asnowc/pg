@@ -31,10 +31,10 @@ export interface PgErrorFields {
 
 export interface PgFieldDescription {
   name: string;
-  tableOid: PgOid;
+  tableOID: PgOid;
   columnAttribute: number;
-  dataTypeOid: PgOid;
-  dataTypeSize: number;
+  typeOID: PgOid;
+  typeSize: number;
   typeModifier: number;
   format: PgFormat;
 }
