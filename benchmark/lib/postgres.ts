@@ -6,7 +6,7 @@ export const LIB_NAME = "postgres";
 
 export const poolInfo: PoolInfo<Sql> = {
   name: LIB_NAME,
-  createPool: ({ poolSize }) => postgres({ ...DB_CONNECT_INFO, max: poolSize }),
+  createPool: ({ poolSize }) => postgres({ ...DB_CONNECT_INFO, max: poolSize, prepare: false }),
   closePool: (pool) => pool.end(),
 };
 

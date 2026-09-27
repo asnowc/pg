@@ -44,6 +44,11 @@ export class QueryResultQueue {
       });
     });
   }
+  beginTransaction(statement: TypedSqlStatementEncoder) {
+    this.writeQueue.enqueue({
+      type: QueryAction.StartTransaction,
+    });
+  }
   simpleQuery(statement: TypedSqlStatementEncoder) {}
 
   private previousAction?: QueryAction;
@@ -84,9 +89,3 @@ export class QueryResultQueue {
 function isQueryQueryResultReceiver(receiver: unknown): receiver is QueryResultParser {
   return receiver instanceof QueryResultParser;
 }
-
-// E= ExtendedQuery,Start=StartTransaction,END=EndTransaction
-// 流水线: [E,E,E Sync]
-// 事务前后必当有 Sync: [E,E,E, Sync, Start, E,E, END, Sync]
-// RollbackSavePoint 前必有 Sync： [E,E,E, Sync, Start, E,E, Sync, RollbackTo, E,E, END, Sync ]
-// 简单查询前必定有 Sync, 且简单查询后面必须不能处于事务中: [E,E,E Sync, Simple], [E,E,Sync]
