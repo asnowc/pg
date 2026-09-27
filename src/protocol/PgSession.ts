@@ -7,6 +7,9 @@ import { AsyncMessageType } from "@/interface/protocol.ts";
 import { MessageParsers } from "./parsers/MessageParser.ts";
 import { ConnectionStream } from "@/_utils/ConnectionStream.ts";
 import { StreamWriter } from "@/_utils/StreamWriter.ts";
+import type { TransactionMode, TypedSqlStatementEncoder } from "@/interface/Query.ts";
+import { PgTransactionStatus } from "./const.ts";
+import type { QueryResultParser } from "./parsers/QueryResultParser.ts";
 
 const DEFAULT_MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
 
@@ -38,12 +41,14 @@ export class PgSession {
       const message = decodeNotice(data);
       const asyncData = { type: AsyncMessageType.Notice, fields: message.fields, info: message.info };
     });
-    this.queryQueue = new QueryResultQueue(parser);
+    this.queryQueue = new QueryResultQueue(parser, this.stream);
 
     stream.startReadLoop(() => parser.next(this.stream), () => {
+      this.queryQueue.fail(new Error("PostgreSQL connection closed"));
       if (!this.isCloseCalled) this.destroy();
     });
     stream.listenOnError((err) => {
+      this.queryQueue.fail(err);
     });
   }
   get writer(): StreamWriter {
@@ -53,7 +58,29 @@ export class PgSession {
   readonly processId: number | null;
   readonly secretKey: number | null;
   readonly parameters: Record<string, string> = {};
-  readonly queryQueue: QueryResultQueue;
+  private readonly queryQueue: QueryResultQueue;
+
+  get hasPending(): boolean {
+    return this.queryQueue.hasPending;
+  }
+  get isFailed(): boolean {
+    return this.queryQueue.isFailed;
+  }
+  setOnIdle(callback: () => void): void {
+    this.queryQueue.onIdle = callback;
+  }
+  simpleQuery(statement: TypedSqlStatementEncoder): Promise<QueryResultParser[]> {
+    return this.queryQueue.simpleQuery(statement);
+  }
+  extendedQuery<T>(statement: TypedSqlStatementEncoder, sync = true): Promise<QueryResultParser<T>> {
+    return this.queryQueue.extendedQuery<T>(statement, sync);
+  }
+  synchronize(): Promise<PgTransactionStatus> {
+    return this.queryQueue.synchronize();
+  }
+  beginTransaction(mode?: TransactionMode): Promise<void> {
+    return this.queryQueue.beginTransaction(mode);
+  }
 
   /** 如果为 true , 则不可在进行写入操作 */
   private get isCloseCalled() {
@@ -79,6 +106,7 @@ export class PgSession {
     return this.stream.closeWrite();
   }
   destroy(): void {
+    this.queryQueue.fail(new Error("PostgreSQL connection destroyed"));
     this.stream.destroy();
     this.closePromise = true;
   }

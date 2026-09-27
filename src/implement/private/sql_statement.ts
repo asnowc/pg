@@ -1,30 +1,21 @@
 import type { SqlStatement, TypedSqlStatement, TypedSqlStatementEncoder } from "@/interface/Query.ts";
 import { createTypeSqlStatementEncoder } from "@/sql/SqlStatementEncoder.ts";
+import { PG_DATA_DECODER_V1 } from "@/codec/pg_data_decoder.ts";
 
 export function sqlStatementToSqlEncoder(
   queryable: SqlStatement<unknown> | TypedSqlStatementEncoder,
   options?: Pick<TypedSqlStatement, "columnDecoders" | "typeDecoders">,
 ): TypedSqlStatementEncoder {
   if (typeof queryable === "string" || queryable instanceof Uint8Array) {
-    if (!options || !hasDecoders(options)) throw new Error("No column or type decoders provided.");
     const encoder = createTypeSqlStatementEncoder(queryable);
-    encoder.typeDecoders = options.typeDecoders;
-    encoder.columnDecoders = options.columnDecoders;
+    encoder.typeDecoders = options?.typeDecoders ?? PG_DATA_DECODER_V1;
+    encoder.columnDecoders = options?.columnDecoders;
     return encoder;
   } else if ("calculateParseByteLength" in queryable) return queryable; //忽略 options
 
-  if ((!options || !hasDecoders(options)) && hasDecoders(queryable)) {
-    throw new Error("No column or type decoders provided.");
-  }
-
   const encoder = createTypeSqlStatementEncoder(queryable.sqlStatement, queryable.textArgs);
-  encoder.typeDecoders = queryable.typeDecoders ?? options?.typeDecoders;
+  encoder.typeDecoders = queryable.typeDecoders ?? options?.typeDecoders ?? PG_DATA_DECODER_V1;
   encoder.columnDecoders = queryable.columnDecoders ?? options?.columnDecoders;
 
   return encoder;
-}
-function getDecoders() {
-}
-function hasDecoders(options: Pick<TypedSqlStatement, "columnDecoders" | "typeDecoders">) {
-  return !!(options.columnDecoders || options.typeDecoders);
 }

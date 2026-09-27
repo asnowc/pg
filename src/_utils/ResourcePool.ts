@@ -1,6 +1,8 @@
 export interface ResourceManager<T> {
   create(option: CreateConnectionOptions): Promise<T>;
   dispose(conn: T, force?: boolean): void;
+  isBusy?(conn: T): boolean;
+  isUsable?(conn: T): boolean;
 }
 
 export type CreateConnectionOptions = {
@@ -18,7 +20,7 @@ type CloseInfo = {
   error: Error;
   closing?: {
     resolve: () => void;
-    reject: (reason?: any) => void;
+    reject: (reason?: unknown) => void;
     promise: Promise<void>;
   };
 };
@@ -72,7 +74,7 @@ export class ResourcePool<T> implements Pool<T> {
       item.resolve(conn);
       return;
     }
-    if (this.#closed) {
+    if (this.#closed && !this.#handler.isBusy?.(conn)) {
       this.#pool.delete(conn);
       this.#handler.dispose(conn);
       this.#checkCloseResolve(this.#closed);
@@ -116,11 +118,16 @@ export class ResourcePool<T> implements Pool<T> {
     }
   }
 
-  #queue = Array<{ resolve(conn: T): void; reject(e: any): void }>();
+  #queue = Array<{ resolve(conn: T): void; reject(e: unknown): void }>();
   /** 获取一个已经存在的空闲连接，如果没有则返回 null。连接池关闭不会影响此方法 */
   getExists(): T | null {
     for (const item of this.#free) {
       this.#free.delete(item);
+      if (this.#handler.isUsable?.(item) === false) {
+        this.#pool.delete(item);
+        this.#handler.dispose(item);
+        continue;
+      }
       return item;
     }
     return null;
@@ -129,11 +136,13 @@ export class ResourcePool<T> implements Pool<T> {
   get(): Promise<T> {
     if (this.#closed) return Promise.reject(this.#closed.error);
     if (this.#free.size) {
-      const conn = this.getExists()!;
-      const state = this.#pool.get(conn)!;
-      state.date = Date.now();
-      state.useTotal++;
-      return Promise.resolve(conn);
+      const conn = this.getExists();
+      if (conn) {
+        const state = this.#pool.get(conn)!;
+        state.date = Date.now();
+        state.useTotal++;
+        return Promise.resolve(conn);
+      }
     }
     return new Promise<T>((resolve, reject) => {
       this.#queue.push({ resolve, reject });
@@ -144,7 +153,15 @@ export class ResourcePool<T> implements Pool<T> {
     const state = this.#pool.get(conn);
     if (!state) return;
 
-    if (this.#usageLimit > 0 && state.useTotal >= this.#usageLimit) {
+    if (this.#handler.isUsable?.(conn) === false) {
+      this.#pool.delete(conn);
+      this.#handler.dispose(conn);
+      if (this.#closed) this.#checkCloseResolve(this.#closed);
+      else this.#checkNewConnect();
+      return;
+    }
+
+    if (this.#usageLimit > 0 && state.useTotal >= this.#usageLimit && !this.#handler.isBusy?.(conn)) {
       this.#pool.delete(conn);
       this.#handler.dispose(conn);
       if (this.#closed) this.#checkCloseResolve(this.#closed);
@@ -153,6 +170,18 @@ export class ResourcePool<T> implements Pool<T> {
     }
 
     this.#onConnectFree(conn, state);
+  }
+
+  notifyIdle(conn: T): void {
+    const state = this.#pool.get(conn);
+    if (!state || !this.#free.has(conn) || this.#handler.isBusy?.(conn)) return;
+    if (this.#closed || this.#handler.isUsable?.(conn) === false ||
+      (this.#usageLimit > 0 && state.useTotal >= this.#usageLimit)) {
+      this.#free.delete(conn);
+      this.#pool.delete(conn);
+      this.#handler.dispose(conn);
+      if (this.#closed) this.#checkCloseResolve(this.#closed);
+    }
   }
 
   /** 连接池最大数量 */
@@ -214,11 +243,11 @@ export class ResourcePool<T> implements Pool<T> {
 
     for (const item of this.#free) {
       const state = this.#pool.get(item);
-      if (state && (now - state.date > idleTimeout)) {
+      if (state && (now - state.date > idleTimeout) && !this.#handler.isBusy?.(item)) {
         this.#free.delete(item);
         this.#pool.delete(item);
         this.#handler.dispose(item);
-      } else {
+      } else if (!state || now - state.date <= idleTimeout) {
         break;
       }
     }
@@ -247,7 +276,7 @@ export class ResourcePool<T> implements Pool<T> {
     }
 
     let resolve: () => void;
-    let reject: (reason?: any) => void;
+    let reject: (reason?: unknown) => void;
     const promise = new Promise<void>((res, rej) => {
       resolve = res;
       reject = rej;
@@ -296,9 +325,10 @@ export class ResourcePool<T> implements Pool<T> {
   /** 关闭所有空闲连接 */
   clearFree(): void {
     for (const item of this.#free) {
+      if (this.#handler.isBusy?.(item)) continue;
+      this.#free.delete(item);
       this.#pool.delete(item);
       this.#handler.dispose(item);
     }
-    this.#free.clear();
   }
 }

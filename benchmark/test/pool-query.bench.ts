@@ -16,8 +16,8 @@ async function run() {
 
   const queryTests: (keyof TestQueries<unknown>)[] = [
     "select",
-    "selectArg",
-    "selectArgs",
+    // "selectArg",
+    // "selectArgs",
     // "selectWhere",
   ];
   for (const name of queryTests) {

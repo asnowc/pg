@@ -23,6 +23,8 @@ import type {
 import { sqlStatementToSqlEncoder } from "./sql_statement.ts";
 import QueryReaderImpl from "./QueryReader.ts";
 import { Pool } from "@/_utils/ResourcePool.ts";
+import { TransactionImpl } from "./TransactionImpl.ts";
+import { createTypeSqlStatementEncoder } from "@/sql/SqlStatementEncoder.ts";
 
 export class QueryOperation
   implements
@@ -33,7 +35,7 @@ export class QueryOperation
     TransactionQueryOperation {
   constructor(private pool: Pool<PgSession>) {}
   begin(mode?: TransactionMode): Transaction {
-    throw new Error("Not implemented");
+    return new TransactionImpl(this.pool, mode);
   }
   open<T>(queryable: SqlStatement<T>, options?: CursorOpenOptions): Promise<Cursor<T>> {
     throw new Error("Not implemented");
@@ -56,7 +58,23 @@ export class QueryOperation
   }
   simpleQuery(queryable: SqlStatements, options?: QueryOptions): AsyncIterable<SampleQueryReader>;
   simpleQuery(queryable: ReadableStream<Uint8Array>, options?: QueryOptions): AsyncIterable<SampleQueryReader>;
-  simpleQuery(queryable: unknown, options?: unknown): AsyncIterable<SampleQueryReader<unknown>> {
-    throw new Error("Not implemented");
+  async *simpleQuery(queryable: unknown, _options?: unknown): AsyncIterable<SampleQueryReader<unknown>> {
+    if (typeof queryable !== "string") throw new TypeError("Only string simple queries are supported");
+    const session = await this.pool.get();
+    let results: Promise<import("@/protocol/parsers/QueryResultParser.ts").QueryResultParser[]>;
+    try {
+      results = session.simpleQuery(createTypeSqlStatementEncoder(queryable));
+    } finally {
+      this.pool.release(session);
+    }
+    for (const result of await results) {
+      yield {
+        rowCount: result.rowCount,
+        fields: result.fields ?? [],
+        notices: result.notices,
+        rows: result.rows,
+        [Symbol.iterator]: () => result.rows[Symbol.iterator](),
+      };
+    }
   }
 }

@@ -34,9 +34,13 @@ export class PgPool extends QueryOperation implements AsyncDisposable {
     const pool = new ResourcePool({
       create: async () => {
         const { connectOptions, stream } = await options.create();
-        return connectPgSession(stream, connectOptions);
+        const session = await connectPgSession(stream, connectOptions);
+        session.setOnIdle(() => pool.notifyIdle(session));
+        return session;
       },
       dispose: closeByteStream,
+      isBusy: (session) => session.hasPending,
+      isUsable: (session) => !session.isFailed,
     }, {
       idleTimeout: options.idleTimeout,
       maxCount: options.maxCount,
@@ -112,8 +116,9 @@ class PgPoolConnection extends QueryOperation implements IPgPoolConnection {
   release(): void {
     if (!this.#release) return;
     const session = this.#getSession();
-    if (!session) throw new Error("PoolConnection is already released");
-    this.#release(session);
+    const release = this.#release;
+    this.#release = undefined;
+    release(session);
   }
   get released(): boolean {
     return !this.#release;

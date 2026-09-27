@@ -3,6 +3,11 @@ import type { ExtendedQueryOperation } from "./Query.ts";
 
 /** @public */
 export interface TransactionQueryOperation {
+  /**
+   * 创建独占连接的事务对象，并异步发送 `BEGIN`；结束事务后释放连接。
+   *
+   * @since 0.3.0
+   */
   begin(mode?: TransactionMode): Transaction;
 }
 /**
@@ -33,20 +38,34 @@ export interface TransactionQueryOperation {
  *
  * ```
  * @public
+ * @since 0.3.0
  */
 export interface Transaction extends ExtendedQueryOperation, CursorQueryOperation, AsyncDisposable {
+  /** @since 0.3.0 */
   readonly mode: TransactionMode;
-  /** 回滚，并释放连接 */
+  /**
+   * 回滚并在确认连接空闲后释放。
+   * @since 0.3.0
+   */
   rollback(): Promise<void>;
-  /** 回滚到保存点 */
+  /**
+   * 在同步先前查询后回滚到保存点。
+   * @since 0.3.0
+   */
   rollbackTo(savePoint: string): Promise<void>;
+  /** @since 0.3.0 */
   savePoint(savePoint: string): Promise<void>;
-  /** 提交，并释放连接 */
+  /**
+   * 提交并在确认连接空闲后释放。
+   * @since 0.3.0
+   */
   commit(): Promise<void>;
+  /** @since 0.3.0 */
   get released(): boolean;
 }
 /**
  * @public
+ * @since 0.3.0
  */
 export type TransactionMode =
   | "SERIALIZABLE"

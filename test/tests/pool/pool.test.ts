@@ -46,6 +46,31 @@ test("最大连接数量 默认为 3", async function ({ resourceManage }) {
 });
 
 describe("close", () => {
+  test("已归还但仍有在途查询的连接会延迟关闭", async () => {
+    const connection = {};
+    let busy = true;
+    const dispose = vi.fn();
+    const pool = new ResourcePool({
+      create: async () => connection,
+      dispose,
+      isBusy: () => busy,
+    }, { usageLimit: 1 });
+    const borrowed = await pool.get();
+    pool.release(borrowed);
+    const reused = await pool.get();
+    expect(reused).toBe(connection);
+    pool.release(reused);
+    const closing = pool.close();
+    let closed = false;
+    void closing.then(() => closed = true);
+    await Promise.resolve();
+    expect(dispose).not.toHaveBeenCalled();
+    expect(closed).toBe(false);
+    busy = false;
+    pool.notifyIdle(connection);
+    await closing;
+    expect(dispose).toHaveBeenCalledWith(connection);
+  });
   test("close() 后尝试再连接应抛出异常", async function ({ pool }) {
     const conn = pool.get();
     const closePromise = pool.close();

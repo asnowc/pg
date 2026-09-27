@@ -17,7 +17,7 @@ import { PgDatabaseError } from "@/error.ts";
 import { decodeUTF16String } from "@/_utils/string.ts";
 import { StreamWriter } from "@/_utils/StreamWriter.ts";
 import { PgProtocolError } from "@/_utils/error.ts";
-import { QueryAction } from "./QueryResult.ts";
+import { QueryAction } from "./QueryTask.ts";
 
 export class QueryResultParser<T = unknown> {
   type: QueryAction.ExtendedQuery = QueryAction.ExtendedQuery;
@@ -40,7 +40,7 @@ export class QueryResultParser<T = unknown> {
   }
   rowDescription(body: Uint8Array) {
     this.descriptions = decodeRowDescription(body);
-    this.fields = this.descriptions;
+    this.fields = this.descriptions.map((description, index) => ({ ...description, index }));
   }
   commandComplete(body: Uint8Array) {
     this.rowCount = decodeRowCount(decodeCommandComplete(body));
@@ -51,10 +51,9 @@ export class QueryResultParser<T = unknown> {
   }
   errorResponse(body: Uint8Array) {
     const error = decodeError(body);
-    throw new PgDatabaseError(error.fields);
+    this.reject(new PgDatabaseError(error.fields));
   }
   noData() {
-    this.resolve(this);
   }
   emptyQueryResponse() {
     this.resolve(this);

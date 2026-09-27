@@ -9,12 +9,13 @@ import { PgSession } from "@/protocol.ts";
 import { QueryResultParser } from "@/protocol/parsers/QueryResultParser.ts";
 
 export default class QueryReader<T = unknown> implements IQueryReader<T> {
-  constructor(pool: Pool<PgSession>, statement: TypedSqlStatementEncoder) {
-    this.#source = { pool, statement };
+  constructor(pool: Pool<PgSession>, statement: TypedSqlStatementEncoder, sync = true) {
+    this.#source = { pool, statement, sync };
   }
   #source?: {
     pool: Pool<PgSession>;
     statement: TypedSqlStatementEncoder;
+    sync: boolean;
   };
   #getSession() {
     const source = this.#source;
@@ -56,12 +57,14 @@ export default class QueryReader<T = unknown> implements IQueryReader<T> {
   }
 
   async #consume<T>(): Promise<QueryResultParser<T>> {
-    const { pool, statement } = this.#getSession();
+    const { pool, statement, sync } = this.#getSession();
     const session = await pool.get();
+    let result: Promise<QueryResultParser<T>>;
     try {
-      return await session.queryQueue.extendedQuery<T>(statement);
+      result = session.extendedQuery<T>(statement, sync);
     } finally {
       pool.release(session);
     }
+    return await result;
   }
 }
