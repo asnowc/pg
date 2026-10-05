@@ -21,8 +21,7 @@ import type {
   TypedSqlStatementEncoder,
 } from "@/interface/Query.ts";
 import { sqlStatementToSqlEncoder } from "./sql_statement.ts";
-import QueryReaderImpl from "./QueryReader.ts";
-import { Pool } from "@/_utils/ResourcePool.ts";
+import QueryReaderImpl, { SessionHandle } from "./QueryReader.ts";
 import { TransactionImpl } from "./TransactionImpl.ts";
 import { createTypeSqlStatementEncoder } from "@/sql/SqlStatementEncoder.ts";
 
@@ -33,7 +32,7 @@ export class QueryOperation
     CopyQueryOperation,
     CursorQueryOperation,
     TransactionQueryOperation {
-  constructor(private pool: Pool<PgSession>) {}
+  constructor(private pool: SessionHandle) {}
   begin(mode?: TransactionMode): Transaction {
     return new TransactionImpl(this.pool, mode);
   }

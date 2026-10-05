@@ -4,16 +4,23 @@ import type {
   QueryResult,
   TypedSqlStatementEncoder,
 } from "@/interface/Query.ts";
-import { Pool } from "@/_utils/ResourcePool.ts";
 import { PgSession } from "@/protocol.ts";
 import { QueryResultParser } from "@/protocol/parsers/QueryResultParser.ts";
 
+export interface SessionHandle {
+  get: () => Promise<PgSession>;
+  release: (session: PgSession) => void;
+}
 export default class QueryReader<T = unknown> implements IQueryReader<T> {
-  constructor(pool: Pool<PgSession>, statement: TypedSqlStatementEncoder, sync = true) {
+  constructor(
+    pool: SessionHandle,
+    statement: TypedSqlStatementEncoder,
+    sync = true,
+  ) {
     this.#source = { pool, statement, sync };
   }
   #source?: {
-    pool: Pool<PgSession>;
+    pool: SessionHandle;
     statement: TypedSqlStatementEncoder;
     sync: boolean;
   };

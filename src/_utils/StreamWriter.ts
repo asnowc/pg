@@ -1,3 +1,43 @@
+export class BfWriter {
+  constructor(
+    buffer: ArrayBuffer,
+    offset: number,
+    length: number,
+    private callWrite: (data: Uint8Array) => Promise<number>,
+  ) {
+    this.buffer = new Uint8Array(buffer, offset, length);
+    this.view = new DataView(buffer);
+    this.writeOffset = 0;
+  }
+  readonly buffer: Uint8Array;
+  readonly view: DataView;
+  writeOffset: number;
+  async write(): Promise<number> {
+    const written = await this.callWrite(this.buffer.subarray(0, this.writeOffset));
+    if (written < this.writeOffset) {
+      this.buffer.copyWithin(0, written, this.writeOffset);
+      this.writeOffset -= written;
+    } else {
+      this.writeOffset = 0;
+    }
+    return this.writeOffset;
+  }
+  private pendingWrite?: any;
+  nextWrite(): Promise<number> {
+    return new Promise<number>((resolve, reject) => {
+      this.pendingWrite = setTimeout(() => {
+        this.write().then(resolve, reject);
+      }, 0);
+    });
+  }
+  clearNextWrite(): void {
+    if (this.pendingWrite) {
+      clearTimeout(this.pendingWrite);
+      this.pendingWrite = undefined;
+    }
+  }
+}
+
 /**
  * 二进制缓冲区队列写入器。
  */

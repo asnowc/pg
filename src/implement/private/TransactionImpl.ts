@@ -11,10 +11,9 @@ import type {
 } from "@/interface/Query.ts";
 import type { PgSession } from "@/protocol/PgSession.ts";
 import { PgTransactionStatus } from "@/protocol/const.ts";
-import type { Pool } from "@/_utils/ResourcePool.ts";
 import { createTypeSqlStatementEncoder } from "@/sql/SqlStatementEncoder.ts";
 import { sqlStatementToSqlEncoder } from "./sql_statement.ts";
-import QueryReader from "./QueryReader.ts";
+import QueryReader, { SessionHandle } from "./QueryReader.ts";
 
 function quoteIdentifier(name: string): string {
   if (!name || name.includes("\0")) throw new TypeError("Invalid savepoint name");
@@ -27,7 +26,7 @@ export class TransactionImpl implements Transaction {
   private ended = false;
   private active = false;
 
-  constructor(private readonly pool: Pool<PgSession>, mode: TransactionMode = "READ COMMITTED") {
+  constructor(private readonly pool: SessionHandle, mode: TransactionMode = "READ COMMITTED") {
     this.mode = mode;
     this.session = pool.get().then(async (session) => {
       try {

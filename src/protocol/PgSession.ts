@@ -82,7 +82,7 @@ export class PgSession {
     return this.queryQueue.beginTransaction(mode);
   }
 
-  /** 如果为 true , 则不可在进行写入操作 */
+  /** 如果为 true , 则不可再进行写入操作 */
   private get isCloseCalled() {
     return !!this.closePromise;
   }

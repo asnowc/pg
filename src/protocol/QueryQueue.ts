@@ -19,6 +19,11 @@ import { createTypeSqlStatementEncoder } from "@/sql/SqlStatementEncoder.ts";
 import { PG_DATA_DECODER_V1 } from "@/codec/pg_data_decoder.ts";
 import type { StreamWriter } from "@/_utils/StreamWriter.ts";
 
+type PromiseResolve<T> = {
+  resolve: (value: T) => void;
+  reject: (reason: unknown) => void;
+};
+
 type PendingQuery = {
   parser: QueryResultParser;
   result?: QueryResultParser;
@@ -38,7 +43,9 @@ type PendingSimple = {
   reject: (reason: unknown) => void;
 };
 type PendingResult = PendingQuery | PendingSync | PendingSimple;
-
+interface Writer {
+  write(data: Uint8Array): Promise<number>;
+}
 export class QueryResultQueue {
   constructor(parsers: MessageParsers, private readonly writer: StreamWriter) {
     parsers.set(BackendMessageCode.DataRow, (body) => {
@@ -129,6 +136,8 @@ export class QueryResultQueue {
   }
 
   private transactionStatus: PgTransactionStatus = PgTransactionStatus.Idle;
+  private writeTransactionStatus: PgTransactionStatus = PgTransactionStatus.Idle;
+  
   readonly maxPipelineCount: number = 100;
   private pipelineCount: number = 0;
   private writeQueue = new LinkList<QueryTask>();
@@ -145,7 +154,10 @@ export class QueryResultQueue {
     this.writeQueue.enqueue(task);
     this.checkWriteQueue();
   }
-  extendedQuery<T>(statement: TypedSqlStatementEncoder, sync = true): Promise<QueryResultParser<T>> {
+  extendedQuery<T>(
+    statement: TypedSqlStatementEncoder,
+    sync = true,
+  ): Promise<QueryResultParser<T>> {
     if (this.failed) return Promise.reject(this.failed);
     return new Promise<QueryResultParser<T>>((resolve, reject) => {
       this.writeQueue.enqueue({
@@ -292,4 +304,8 @@ export class QueryResultQueue {
     if ("parser" in query) return query.parser as QueryResultParser<T>;
     throw new PgProtocolError("Current query is not a query result receiver");
   }
+
+  writable: boolean = true;
+  /** 等待结果的任务数量 */
+  waitingQueryResultNumber: number = 0;
 }

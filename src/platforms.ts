@@ -57,6 +57,9 @@ export class DenoBufferStream extends BufferReader implements ConnectionStream {
   pushWriteInto(onWriteInto: BufferWriterWriteInto): void {
     return this.writer.pushWriteInto(onWriteInto);
   }
+  write(data: Uint8Array): Promise<number> {
+    return this.conn.write(data);
+  }
   closeWrite(): Promise<void> {
     return this.conn.closeWrite();
   }
@@ -78,13 +81,7 @@ export class NodeBufferStream extends BufferReader implements ConnectionStream {
     super(new Uint8Array(readerBufferSize));
     this.writer = new BufferWriter(
       new Uint8Array(writerBufferSize),
-      (data) => {
-        return new Promise<number>((resolve, reject) => {
-          this.duplex.write(data, (err) => {
-            err ? reject(err) : resolve(data.byteLength);
-          });
-        });
-      },
+      (data) => this.write(data),
       (err) => {
         if (this.onError) this.onError(err instanceof Error ? err : new Error(String(err)));
         else console.error(new InternalError("Unhandled error in NodeBufferStream"));
@@ -152,6 +149,13 @@ export class NodeBufferStream extends BufferReader implements ConnectionStream {
   }
   pushWriteInto(onWriteInto: BufferWriterWriteInto): void {
     return this.writer.pushWriteInto(onWriteInto);
+  }
+  write(data: Uint8Array): Promise<number> {
+    return new Promise<number>((resolve, reject) => {
+      this.duplex.write(data, (err) => {
+        err ? reject(err) : resolve(data.byteLength);
+      });
+    });
   }
 
   closeWrite(): Promise<void> {

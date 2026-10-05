@@ -2,27 +2,38 @@ import type { TypedSqlStatementEncoder } from "@/interface/Query.ts";
 import { QueryResultParser } from "./QueryResultParser.ts";
 
 export type QueryTask =
+  | BeginTransactionTask
+  | EndTransactionTask
   | ExtendedQueryTask
   | SimpleQueryTask;
 
-interface TaskBase<T> {
-  resolve: (result: T) => void;
-  reject: (reason: unknown) => void;
-}
-export interface ConnectTask extends TaskBase<{ resolve: () => void; reject: (reason: unknown) => void }> {}
-
-export interface ExtendedQueryTask extends TaskBase<QueryResultParser> {
+export interface ExtendedQueryTask {
   type: QueryAction.ExtendedQuery;
   statement: TypedSqlStatementEncoder;
   sync?: boolean;
+  resolve: (result: QueryResultParser) => void;
+  reject: (reason: unknown) => void;
 }
 
-export interface SimpleQueryTask extends TaskBase<QueryResultParser[]> {
+export interface SimpleQueryTask {
   type: QueryAction.SimpleQuery;
   statement: TypedSqlStatementEncoder;
+  resolve: (result: QueryResultParser[]) => void;
+  reject: (reason: unknown) => void;
 }
 
-export type ResultReceiver = QueryResultParser | typeof SYNC;
+export interface BeginTransactionTask {
+  type: QueryAction.Begin;
+}
+export interface EndTransactionTask {
+  type: QueryAction.Commit | QueryAction.Rollback;
+}
+
+export type ResultReceiver =
+  | QueryResultParser
+  | TaskResultType.StartTransaction
+  | TaskResultType.EndTransaction
+  | TaskResultType.Sync;
 
 export interface ParseMessageEncoder {
   statement?: string;
@@ -43,8 +54,17 @@ export interface QueryMessageEncoder {
   done: boolean;
   encodeInto(buffer: Uint8Array, offset: number): number;
 }
-export const SYNC = Symbol("SYNC");
 export enum QueryAction {
   ExtendedQuery,
   SimpleQuery,
+
+  Begin,
+  Commit,
+  Rollback,
+}
+
+export enum TaskResultType {
+  Sync,
+  StartTransaction,
+  EndTransaction,
 }

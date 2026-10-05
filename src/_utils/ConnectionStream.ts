@@ -10,4 +10,5 @@ export interface ConnectionStream extends StreamReader, StreamWriter {
   destroy(): void;
   closeWrite(): Promise<void>;
   listenOnError(onError: undefined | ((error: Error) => void)): void;
+  write(data: Uint8Array): Promise<number>;
 }
