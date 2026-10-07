@@ -2,18 +2,15 @@ import { Duplex } from "node:stream";
 import type { ConnectionStream } from "@/_utils/ConnectionStream.ts";
 import { InternalError } from "@/_utils/error.ts";
 import { BufferReader } from "@/_utils/StreamReader.ts";
-import { BufferWriter, BufferWriterFunction, BufferWriterWriteInto } from "@/_utils/StreamWriter.ts";
 import type { PrunedDenoConn } from "@/interface/Connection.ts";
 
 interface PipeStreamOptions {
-  writerBufferSize?: number;
   readerBufferSize?: number;
 }
 export class DenoBufferStream extends BufferReader implements ConnectionStream {
   constructor(private conn: PrunedDenoConn, options: PipeStreamOptions = {}) {
-    const { readerBufferSize = 8 * 1024, writerBufferSize = 8 * 1024 } = options;
+    const { readerBufferSize = 8 * 1024 } = options;
     super(new Uint8Array(readerBufferSize));
-    this.writer = new BufferWriter(new Uint8Array(writerBufferSize), (data) => this.conn.write(data), this.#onError);
   }
   #onError = (err: unknown) => {
     if (this.onError) this.onError(err instanceof Error ? err : new Error(String(err)));
@@ -47,16 +44,6 @@ export class DenoBufferStream extends BufferReader implements ConnectionStream {
     } while (!isEnd);
   }
 
-  private readonly writer: BufferWriter;
-  pushData(data: Uint8Array): void {
-    return this.writer.pushData(data);
-  }
-  pushWrite(write: BufferWriterFunction): void {
-    return this.writer.pushWrite(write);
-  }
-  pushWriteInto(onWriteInto: BufferWriterWriteInto): void {
-    return this.writer.pushWriteInto(onWriteInto);
-  }
   write(data: Uint8Array): Promise<number> {
     return this.conn.write(data);
   }
@@ -77,17 +64,8 @@ export class DenoBufferStream extends BufferReader implements ConnectionStream {
 
 export class NodeBufferStream extends BufferReader implements ConnectionStream {
   constructor(private duplex: Duplex, options: PipeStreamOptions = {}) {
-    const { readerBufferSize = 8 * 1024, writerBufferSize = 8 * 1024 } = options;
+    const { readerBufferSize = 8 * 1024 } = options;
     super(new Uint8Array(readerBufferSize));
-    this.writer = new BufferWriter(
-      new Uint8Array(writerBufferSize),
-      (data) => this.write(data),
-      (err) => {
-        if (this.onError) this.onError(err instanceof Error ? err : new Error(String(err)));
-        else console.error(new InternalError("Unhandled error in NodeBufferStream"));
-        this.destroy();
-      },
-    );
   }
 
   private onDataNotice: () => boolean | void = noListener;
@@ -140,16 +118,6 @@ export class NodeBufferStream extends BufferReader implements ConnectionStream {
   };
   private rest?: Uint8Array;
 
-  private readonly writer: BufferWriter;
-  pushData(data: Uint8Array): void {
-    return this.writer.pushData(data);
-  }
-  pushWrite(write: BufferWriterFunction): void {
-    return this.writer.pushWrite(write);
-  }
-  pushWriteInto(onWriteInto: BufferWriterWriteInto): void {
-    return this.writer.pushWriteInto(onWriteInto);
-  }
   write(data: Uint8Array): Promise<number> {
     return new Promise<number>((resolve, reject) => {
       this.duplex.write(data, (err) => {

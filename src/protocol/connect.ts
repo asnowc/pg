@@ -5,7 +5,7 @@ import { encodeNegotiateTlsMessage, encodeStartupMessage } from "./encode.ts";
 import { startAuthentication } from "./auth.ts";
 import { UnexpectedEOFError } from "@/_utils/error.ts";
 import { PgSession } from "@/protocol.ts";
-import { ConnectionStream } from "@/_utils/ConnectionStream.ts";
+import { ConnectionStream, writeData } from "@/_utils/ConnectionStream.ts";
 import { ConnectionSource } from "@asla/pg";
 import { Duplex } from "node:stream";
 import { DenoBufferStream, NodeBufferStream } from "@/platforms.ts";
@@ -42,7 +42,7 @@ export async function connectPgSession<T extends ConnectionSource>(
       PROTOCOL_VERSION,
       getStartupParameters({ user, database }),
     );
-    stream.pushData(startupMessage);
+    await writeData(stream, startupMessage);
     const info = await startAuthentication(stream, options);
     return new PgSession(stream, { maxMessageSize, authResult: info, meta: undefined });
   } catch (error) {
@@ -59,7 +59,7 @@ async function negotiateTls<T>(
   source: T,
   encryptionOptions: TLSEncryptionOptions<T>,
 ): Promise<ConnectionSource> {
-  stream.pushData(encodeNegotiateTlsMessage());
+  await writeData(stream, encodeNegotiateTlsMessage());
   return new Promise<ConnectionSource>((resolve, reject) => {
     stream.startReadLoop(() => {
       const responseCode = stream.readUInt8();

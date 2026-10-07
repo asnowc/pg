@@ -7,6 +7,7 @@ import { ConnectionStream } from "@/_utils/ConnectionStream.ts";
 import { AuthenticationData, AuthParser, getAuthParser } from "./parsers/AuthParser.ts";
 import { BufferReader } from "@/_utils/StreamReader.ts";
 import { PgAuthenticationError } from "@/error.ts";
+import { BufferWriter } from "@/_utils/StreamWriter.ts";
 
 const DEFAULT_MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
 
@@ -30,19 +31,20 @@ export async function startAuthentication(
 
   let auth: AuthParser<AuthenticationData> | undefined;
   let authOk: AuthenticationData | undefined;
-  parser.set(BackendMessageCode.Authentication, (data) => {
-    const reader = new BufferReader(data, data.byteLength);
-    const code = reader.readUInt32BE();
-    if (code === AuthCode.OK) return;
-    auth ??= getAuthParser(code, conn, options);
-    const result = auth.next(reader, code);
-    if (result instanceof Promise) {
-      result.catch(() => {}); // 避免 Unhandled Promise Rejection
-    }
-    authOk = result;
-  });
 
   await new Promise<void>((resolve, reject) => {
+    const writer = new BufferWriter(new Uint8Array(8 * 1024), (data) => conn.write(data), reject);
+    parser.set(BackendMessageCode.Authentication, (data) => {
+      const reader = new BufferReader(data, data.byteLength);
+      const code = reader.readUInt32BE();
+      if (code === AuthCode.OK) return;
+      auth ??= getAuthParser(code, writer, options);
+      const result = auth.next(reader, code);
+      if (result instanceof Promise) {
+        result.catch(() => {}); // 避免 Unhandled Promise Rejection
+      }
+      authOk = result;
+    });
     let isDone = false;
     conn.listenOnError(reject);
     conn.startReadLoop(() => {
