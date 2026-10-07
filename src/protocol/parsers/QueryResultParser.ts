@@ -2,7 +2,6 @@ import type { ColumnDecoder, FieldInfo, TypedSqlStatementEncoder } from "@/inter
 import {
   decodeCommandComplete,
   decodeDataRow,
-  decodeError,
   decodeRowDescription,
   DescribeTarget,
   encodeBindMessage,
@@ -13,25 +12,25 @@ import {
   PgFieldDescription,
   PgFormat,
 } from "@/protocol.ts";
-import { PgDatabaseError } from "@/error.ts";
 import { decodeUTF16String } from "@/_utils/string.ts";
 import { StreamWriter } from "@/_utils/StreamWriter.ts";
 import { PgProtocolError } from "@/_utils/error.ts";
-import { QueryAction } from "./QueryTask.ts";
+import { ReceiverType } from "./QueryTask.ts";
+import { LinkList } from "@/_utils/LinkList.ts";
 
 export class QueryResultParser<T = unknown> {
-  type: QueryAction.ExtendedQuery = QueryAction.ExtendedQuery;
   constructor(
     readonly resolve: (resolver: QueryResultParser<T>) => void,
     readonly reject: (reason: unknown) => void,
     readonly decoder: TypedSqlStatementEncoder<unknown>,
+    readonly type: ReceiverType.ExtendedQuery | ReceiverType.SimpleQuery = ReceiverType.ExtendedQuery,
   ) {
   }
   descriptions?: PgFieldDescription[];
   fields?: Readonly<FieldInfo>[];
   rows: T[] = [];
   notices: string[] = [];
-  rowCount: number = 0;
+  rowCount?: number;
   dataRow(body: Uint8Array) {
     if (!this.descriptions) throw new PgProtocolError("Row description is missing");
     const values = decodeDataRow(body);
@@ -44,19 +43,22 @@ export class QueryResultParser<T = unknown> {
   }
   commandComplete(body: Uint8Array) {
     this.rowCount = decodeRowCount(decodeCommandComplete(body));
-    this.resolve(this);
   }
-  portalSuspended() {
-    this.resolve(this);
+}
+
+export class SampleQueryResultParser extends QueryResultParser {
+  constructor(
+    resolve: (resolver: QueryResultParser) => void,
+    reject: (reason: unknown) => void,
+    decoder: TypedSqlStatementEncoder<unknown>,
+  ) {
+    super(resolve, reject, decoder, ReceiverType.SimpleQuery);
   }
-  errorResponse(body: Uint8Array) {
-    const error = decodeError(body);
-    this.reject(new PgDatabaseError(error.fields));
-  }
-  noData() {
-  }
-  emptyQueryResponse() {
-    this.resolve(this);
+  #link = new LinkList<QueryResultParser>();
+  override commandComplete(body: Uint8Array): void {
+    super.commandComplete(body);
+    const current = this.#link.head;
+    if (current) this.#link.dequeue();
   }
 }
 
@@ -68,7 +70,7 @@ export function sendExecuteWithResult(session: StreamWriter, statement: TypedSql
   session.pushData(FRAME.SYNC);
 }
 
-function decodeRow<T>(
+export function decodeRow<T>(
   values: (Uint8Array | null)[],
   descriptions: PgFieldDescription[],
   statement: TypedSqlStatementEncoder<unknown>,
@@ -105,7 +107,7 @@ function decodeColumn<T>(value: Uint8Array, fieldInfo: PgFieldDescription, decod
     : decoder.decodeText(decodeUTF16String(value), fieldInfo);
 }
 
-function decodeRowCount(commandTag: string): number {
+export function decodeRowCount(commandTag: string): number {
   const match = / (\d+)\0?$/.exec(commandTag);
   return match ? Number(match[1]) : 0;
 }

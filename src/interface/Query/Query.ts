@@ -1,4 +1,4 @@
-import type { FieldInfo, QueryCompletion, QueryResult } from "./QueryResult.ts";
+import type { QueryCompletion, QueryResult } from "./QueryResult.ts";
 import type { SqlStatement, SqlStatements, TypedSqlStatement, TypedSqlStatementEncoder } from "./QueryStatement.ts";
 import type { QueryCommonOptions } from "./_internal.ts";
 
@@ -18,9 +18,9 @@ export type QueryOptions = QueryCommonOptions;
  */
 export type ExtendedQueryOperation = {
   /**
-  * 创建延迟执行的扩展查询。调用本方法不会立即向 PostgreSQL 发送请求；首次消费返回的 `QueryReader` 时才会执行查询。
-  * 池级查询入队后可与其他查询在同一连接上流水线执行；结果在对应的 `ReadyForQuery` 后返回。
-  * 事务内查询在命令完成时返回，事务结束或同步点之前连接不会归还连接池。
+   * 创建延迟执行的扩展查询。调用本方法不会立即向 PostgreSQL 发送请求；首次消费返回的 `QueryReader` 时才会执行查询。
+   * 池级查询入队后可与其他查询在同一连接上流水线执行；结果在对应的 `ReadyForQuery` 后返回。
+   * 事务内查询在命令完成时返回，事务结束或同步点之前连接不会归还连接池。
    *
    * @param queryable 单条 SQL 语句；`Uint8Array[]` 表示同一条语句的多个分片。
    * @returns 用于读取本次查询结果的单次消费对象。
@@ -53,9 +53,9 @@ export type SampleQueryOperation = {
   queryStream(options?: QueryOptions): ReadableWritablePair<SampleQueryReader, Uint8Array>;
 
   /**
-  * 执行简单查询，并按 PostgreSQL 返回的每个结果集依次产生读取器。
-  * 当前仅支持字符串 SQL；非字符串输入会抛出 `TypeError`。结果会在 `ReadyForQuery` 后提供。
-  * 若 SQL 将连接留在事务中，本库会回滚事务后抛出错误。
+   * 执行简单查询，并按 PostgreSQL 返回的每个结果集依次产生读取器。
+   * 当前仅支持字符串 SQL；非字符串输入会抛出 `TypeError`。结果会在 `ReadyForQuery` 后提供。
+   * 若 SQL 将连接留在事务中，本库会回滚事务后抛出错误。
    *
    * @param queryable 一条或多条 SQL 语句；`Uint8Array[]` 可以表示 SQL 字节分片。
    * @returns 按结果集顺序产生读取器的异步可迭代对象。
@@ -64,7 +64,7 @@ export type SampleQueryOperation = {
   simpleQuery(queryable: SqlStatements, options?: QueryOptions): AsyncIterable<SampleQueryReader>;
   /**
    * 从 SQL 字节流执行简单查询，并按 PostgreSQL 返回的每个结果集依次产生读取器。
-    * 当前版本不支持流输入，调用时抛出 `TypeError`。
+   * 当前版本不支持流输入，调用时抛出 `TypeError`。
    *
    * @param queryable 提供一条或多条 SQL 语句的字节流。
    * @returns 按结果集顺序产生读取器的异步可迭代对象。
@@ -154,36 +154,21 @@ export interface QueryReader<T> extends AsyncIterable<T> {
 }
 
 /**
- * 简单查询返回的单个结果集。
- *
- * `rowCount` 在结果集完成前为 `null`；字段、通知和行数据会随读取过程逐步可用。
+ * 简单查询返回的单个结果集的延迟读取器。
+ * @example
+ * ```ts
+ * const reader = conn.simpleQuery(myStatement);
+ * for await (const row of reader) {
+ *   console.log(row);
+ * }
+ * ```
  *
  * @public
  * @since 0.3.0
  */
-export interface SampleQueryReader<T = unknown> extends Iterable<T> {
-  /**
-   * 当前结果集的受影响行数；结果尚未完成时为 `null`。
-   *
-   * @since 0.3.0
-   */
-  rowCount: number | null;
-  /**
-   * 当前结果集的字段元数据。
-   *
-   * @since 0.3.0
-   */
-  get fields(): readonly Readonly<FieldInfo>[];
-  /**
-   * PostgreSQL 在处理当前结果集时发出的通知。
-   *
-   * @since 0.3.0
-   */
-  get notices(): string[];
-  /**
-   * 当前结果集已读取的行。
-   *
-   * @since 0.3.0
-   */
-  get rows(): T[];
+export interface SampleQueryReader<T extends any[] = unknown[]> extends Iterable<QueryResult<T[number]>> {
+  then(onfulfilled?: () => void, onrejected?: (reason: unknown) => void): Promise<void>;
+  last<R>(): R;
+  lastResult<T>(): QueryResult<T>;
+  all(): T[];
 }

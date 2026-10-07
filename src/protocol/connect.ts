@@ -44,7 +44,7 @@ export async function connectPgSession<T extends ConnectionSource>(
     );
     stream.pushData(startupMessage);
     const info = await startAuthentication(stream, options);
-    return new PgSession(stream, { maxMessageSize, authResult: info });
+    return new PgSession(stream, { maxMessageSize, authResult: info, meta: undefined });
   } catch (error) {
     stream.destroy();
     throw error;

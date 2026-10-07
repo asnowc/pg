@@ -1,87 +1,78 @@
-import { QueryResultQueue } from "./QueryQueue.ts";
+import { QueryReadQueue } from "./MessageReadQueue.ts";
+import { QueryWriteQueue } from "./MessageWriteQueue.ts";
 import { AuthenticationResult } from "./auth.ts";
 import { encodeTerminateMessage } from "./encode.ts";
-import { decodeNotice, decodeNotification, decodeParameterStatus } from "./decode.ts";
-import { BackendMessageCode } from "./const.ts";
-import { AsyncMessageType } from "@/interface/protocol.ts";
 import { MessageParsers } from "./parsers/MessageParser.ts";
 import { ConnectionStream } from "@/_utils/ConnectionStream.ts";
-import { StreamWriter } from "@/_utils/StreamWriter.ts";
 import type { TransactionMode, TypedSqlStatementEncoder } from "@/interface/Query.ts";
-import { PgTransactionStatus } from "./const.ts";
-import type { QueryResultParser } from "./parsers/QueryResultParser.ts";
+import type { QueryResultParser, SampleQueryResultParser } from "./parsers/QueryResultParser.ts";
+import { BufferShortWriter } from "@/_utils/StreamWriter.ts";
+import { EventEmitter, Listener } from "@/_utils/EventEmitter.ts";
 
 const DEFAULT_MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
 
-export class PgSession {
+export class PgSession<T = unknown> extends EventEmitter {
   constructor(
     private readonly stream: ConnectionStream,
-    private readonly config: { maxMessageSize?: number; authResult: AuthenticationResult },
+    config: {
+      maxMessageSize?: number;
+      authResult: AuthenticationResult;
+      meta: T;
+    },
   ) {
-    const { authResult, maxMessageSize = DEFAULT_MAX_MESSAGE_SIZE } = this.config;
+    super();
+    const { authResult, maxMessageSize = DEFAULT_MAX_MESSAGE_SIZE, meta } = config;
     this.stream = stream;
-    this.processId = authResult.backendKey?.processId ?? null;
-    this.secretKey = authResult.backendKey?.secretKey ?? null;
+    this.meta = meta;
+    const backendKey = authResult.backendKey;
+    this.processId = backendKey?.processId ?? null;
+    this.secretKey = backendKey?.secretKey ?? null;
 
     const parser = new MessageParsers(maxMessageSize);
-    parser.set(BackendMessageCode.ParameterStatus, (data) => {
-      const { name, value } = decodeParameterStatus(data);
-      this.parameters[name] = value;
-    });
-    parser.set(BackendMessageCode.NotificationResponse, (data) => {
-      const message = decodeNotification(data);
-      const asyncData = {
-        type: AsyncMessageType.Notification,
-        processId: message.processId,
-        channel: message.channel,
-        payload: message.payload,
-      };
-    });
-    parser.set(BackendMessageCode.NoticeResponse, (data) => {
-      const message = decodeNotice(data);
-      const asyncData = { type: AsyncMessageType.Notice, fields: message.fields, info: message.info };
-    });
-    this.queryQueue = new QueryResultQueue(parser, this.stream);
+    this.writer = new BufferShortWriter(this.stream.write.bind(this.stream), new Uint8Array(8 * 1024));
+    this.writeQueue = new QueryWriteQueue(this.writer, this.readQueue, () => this.emit("writeFree"));
+    this.readQueue.init(parser);
 
     stream.startReadLoop(() => parser.next(this.stream), () => {
-      this.queryQueue.fail(new Error("PostgreSQL connection closed"));
+      this.readQueue.fail(new Error("PostgreSQL connection closed"));
       if (!this.isCloseCalled) this.destroy();
+      this.emit("close");
     });
     stream.listenOnError((err) => {
-      this.queryQueue.fail(err);
+      this.readQueue.fail(err);
+      this.emit("close");
     });
   }
-  get writer(): StreamWriter {
-    return this.stream;
-  }
-
   readonly processId: number | null;
   readonly secretKey: number | null;
-  readonly parameters: Record<string, string> = {};
-  private readonly queryQueue: QueryResultQueue;
+
+  meta: T;
+
+  get parameters(): Record<string, string> {
+    return this.readQueue.parameters;
+  }
+  private readonly writeQueue: QueryWriteQueue;
+  private readonly readQueue = new QueryReadQueue();
+  private readonly writer: BufferShortWriter;
 
   get hasPending(): boolean {
-    return this.queryQueue.hasPending;
-  }
-  get isFailed(): boolean {
-    return this.queryQueue.isFailed;
-  }
-  setOnIdle(callback: () => void): void {
-    this.queryQueue.onIdle = callback;
-  }
-  simpleQuery(statement: TypedSqlStatementEncoder): Promise<QueryResultParser[]> {
-    return this.queryQueue.simpleQuery(statement);
-  }
-  extendedQuery<T>(statement: TypedSqlStatementEncoder, sync = true): Promise<QueryResultParser<T>> {
-    return this.queryQueue.extendedQuery<T>(statement, sync);
-  }
-  synchronize(): Promise<PgTransactionStatus> {
-    return this.queryQueue.synchronize();
-  }
-  beginTransaction(mode?: TransactionMode): Promise<void> {
-    return this.queryQueue.beginTransaction(mode);
+    return this.writeQueue.hasPending;
   }
 
+  simpleQuery(statement: TypedSqlStatementEncoder): Promise<SampleQueryResultParser> {
+    return this.writeQueue.simpleQuery(statement);
+  }
+  extendedQuery<T>(statement: TypedSqlStatementEncoder): Promise<QueryResultParser<T>> {
+    return this.writeQueue.extendedQuery<T>(statement);
+  }
+  beginTransaction(mode?: TransactionMode): void {
+    return this.writeQueue.beginTransaction(mode);
+  }
+  endTransaction(rollback?: boolean): void {
+    return this.writeQueue.endTransaction(rollback);
+  }
+
+  private closePromise?: Promise<void> | boolean;
   /** 如果为 true , 则不可再进行写入操作 */
   private get isCloseCalled() {
     return !!this.closePromise;
@@ -91,23 +82,36 @@ export class PgSession {
       await this.closePromise;
       return;
     }
-    const promise = this.#close().then(
-      () => this.closePromise = undefined,
-      () => this.closePromise = undefined,
+    return this.closePromise = this.#close().then(
+      () => void (this.closePromise = true),
+      () => void (this.closePromise = true),
     );
-    this.closePromise = promise;
-    return this.closePromise;
   }
-  private closePromise?: Promise<void> | boolean;
   async #close() {
-    if (this.isCloseCalled) return this.closePromise;
-    this.closePromise = true;
-    this.stream.pushData(encodeTerminateMessage());
+    if (this.hasPending) await new Promise((resolve) => this.on("close", resolve));
+    await this.writer.writeData(encodeTerminateMessage());
     return this.stream.closeWrite();
   }
   destroy(): void {
-    this.queryQueue.fail(new Error("PostgreSQL connection destroyed"));
+    this.readQueue.fail(new Error("PostgreSQL connection destroyed"));
     this.stream.destroy();
     this.closePromise = true;
   }
+}
+
+export interface PgSession {
+  on(event: "writeFree", callback: () => void): void;
+  on(event: "close", callback: () => void): void;
+  on(event: "release", callback: () => void): void;
+  on(event: string, callback: Listener): void;
+
+  off(event: "writeFree", callback: Listener): void;
+  off(event: "close", callback: Listener): void;
+  off(event: "release", callback: Listener): void;
+  off(event: string, callback: Listener): void;
+
+  emit(event: "writeFree"): boolean;
+  emit(event: "close"): boolean;
+  emit(event: "release"): boolean;
+  emit(event: string, ...args: unknown[]): boolean;
 }

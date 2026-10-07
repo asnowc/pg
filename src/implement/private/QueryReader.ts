@@ -7,13 +7,13 @@ import type {
 import { PgSession } from "@/protocol.ts";
 import { QueryResultParser } from "@/protocol/parsers/QueryResultParser.ts";
 
-export interface SessionHandle {
-  get: () => Promise<PgSession>;
-  release: (session: PgSession) => void;
+export interface SessionHandle<T extends PgSession = PgSession> {
+  get: () => Promise<T>;
+  release: (session: T) => void;
 }
 export default class QueryReader<T = unknown> implements IQueryReader<T> {
   constructor(
-    pool: SessionHandle,
+    pool: SessionHandle<PgSession>,
     statement: TypedSqlStatementEncoder,
     sync = true,
   ) {
@@ -32,11 +32,11 @@ export default class QueryReader<T = unknown> implements IQueryReader<T> {
   }
 
   async getRowCount(): Promise<number> {
-    return (await this.#consume()).rowCount;
+    return (await this.#consume()).rowCount ?? 0;
   }
   async getResults(): Promise<QueryResult<T>> {
     const result = await this.#consume<T>();
-    return { rows: result.rows, fields: result.fields ?? [], notices: result.notices, rowCount: result.rowCount };
+    return { rows: result.rows, fields: result.fields ?? [], notices: result.notices, rowCount: result.rowCount ?? 0 };
   }
   async getRows(): Promise<T[]> {
     const result = await this.#consume<T>();
@@ -64,11 +64,11 @@ export default class QueryReader<T = unknown> implements IQueryReader<T> {
   }
 
   async #consume<T>(): Promise<QueryResultParser<T>> {
-    const { pool, statement, sync } = this.#getSession();
+    const { pool, statement } = this.#getSession();
     const session = await pool.get();
     let result: Promise<QueryResultParser<T>>;
     try {
-      result = session.extendedQuery<T>(statement, sync);
+      result = session.extendedQuery<T>(statement);
     } finally {
       pool.release(session);
     }

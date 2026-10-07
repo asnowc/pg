@@ -76,7 +76,6 @@ export class TransactionImpl implements Transaction {
   async rollbackTo(name: string): Promise<void> {
     const quoted = quoteIdentifier(name);
     const session = await this.getSession();
-    await session.synchronize();
     await session.extendedQuery(createTypeSqlStatementEncoder(`ROLLBACK TO SAVEPOINT ${quoted}`), false);
   }
 

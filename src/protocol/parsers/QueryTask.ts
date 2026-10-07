@@ -1,16 +1,15 @@
-import type { TypedSqlStatementEncoder } from "@/interface/Query.ts";
-import { QueryResultParser } from "./QueryResultParser.ts";
+import type { TransactionMode, TypedSqlStatementEncoder } from "@/interface/Query.ts";
+import { QueryResultParser, SampleQueryResultParser } from "./QueryResultParser.ts";
 
 export type QueryTask =
   | BeginTransactionTask
-  | EndTransactionTask
   | ExtendedQueryTask
-  | SimpleQueryTask;
+  | SimpleQueryTask
+  | EmptyTask;
 
 export interface ExtendedQueryTask {
   type: QueryAction.ExtendedQuery;
   statement: TypedSqlStatementEncoder;
-  sync?: boolean;
   resolve: (result: QueryResultParser) => void;
   reject: (reason: unknown) => void;
 }
@@ -18,22 +17,23 @@ export interface ExtendedQueryTask {
 export interface SimpleQueryTask {
   type: QueryAction.SimpleQuery;
   statement: TypedSqlStatementEncoder;
-  resolve: (result: QueryResultParser[]) => void;
+  resolve: (result: SampleQueryResultParser) => void;
   reject: (reason: unknown) => void;
 }
 
 export interface BeginTransactionTask {
   type: QueryAction.Begin;
-}
-export interface EndTransactionTask {
-  type: QueryAction.Commit | QueryAction.Rollback;
+  mode?: TransactionMode;
 }
 
-export type ResultReceiver =
-  | QueryResultParser
-  | TaskResultType.StartTransaction
-  | TaskResultType.EndTransaction
-  | TaskResultType.Sync;
+type EmptyTask = {
+  type: QueryAction.Commit | QueryAction.Rollback;
+};
+
+type EmptyReceiver = {
+  type: ReceiverType.StartTransaction | ReceiverType.EndTransaction | ReceiverType.Sync;
+};
+export type ResultReceiver = QueryResultParser | EmptyReceiver;
 
 export interface ParseMessageEncoder {
   statement?: string;
@@ -55,15 +55,18 @@ export interface QueryMessageEncoder {
   encodeInto(buffer: Uint8Array, offset: number): number;
 }
 export enum QueryAction {
+  Close,
   ExtendedQuery,
   SimpleQuery,
 
   Begin,
-  Commit,
-  Rollback,
+  Commit = "COMMIT",
+  Rollback = "ROLLBACK",
 }
 
-export enum TaskResultType {
+export enum ReceiverType {
+  ExtendedQuery,
+  SimpleQuery,
   Sync,
   StartTransaction,
   EndTransaction,

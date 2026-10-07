@@ -1,40 +1,54 @@
-export class BfWriter {
-  constructor(
-    buffer: ArrayBuffer,
-    offset: number,
-    length: number,
-    private callWrite: (data: Uint8Array) => Promise<number>,
-  ) {
-    this.buffer = new Uint8Array(buffer, offset, length);
-    this.view = new DataView(buffer);
-    this.writeOffset = 0;
+export class BufferShortWriter {
+  constructor(private callWrite: (buffer: Uint8Array) => Promise<number>, bufferOrSize: Uint8Array | number) {
+    const buffer = typeof bufferOrSize === "number" ? new Uint8Array(bufferOrSize) : bufferOrSize;
+    this.buffer = buffer;
+    this.view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    this.flushThreshold = Math.floor(buffer.byteLength / 2);
   }
+  /**
+   * 调用 callWrite 的字节大小阈值。正整数
+   */
+  private readonly flushThreshold: number;
   readonly buffer: Uint8Array;
   readonly view: DataView;
-  writeOffset: number;
-  async write(): Promise<number> {
+  writeOffset: number = 0;
+
+  /** 可写入到 FixedBufferWriter 的字节长度 */
+  get writableLength(): number {
+    return this.buffer.byteLength - this.writeOffset;
+  }
+
+  /**
+   * 将缓冲区数据全部写入到底层, 直到缓冲区的数据量小于指定的阈值。至少调用一次 callWrite
+   * @param threshold 指定阈值。默认为 buffer 的一半
+   */
+  async flush(threshold = this.flushThreshold): Promise<void> {
+    const min = this.writeOffset - threshold;
+    let written = 0;
+    while (written < min) {
+      written += await this.callWrite(this.buffer.subarray(written, this.writeOffset));
+    }
+    this.writeOffset -= written;
+  }
+  /** 调用一次 callWrite 。缓冲区剩余未写入的数据将被移到到缓冲区的起始位置 */
+  private async writeOnce() {
     const written = await this.callWrite(this.buffer.subarray(0, this.writeOffset));
-    if (written < this.writeOffset) {
-      this.buffer.copyWithin(0, written, this.writeOffset);
-      this.writeOffset -= written;
-    } else {
-      this.writeOffset = 0;
-    }
-    return this.writeOffset;
+    this.buffer.copyWithin(0, written, this.writeOffset);
+    this.writeOffset -= written;
+    return written;
   }
-  private pendingWrite?: any;
-  nextWrite(): Promise<number> {
-    return new Promise<number>((resolve, reject) => {
-      this.pendingWrite = setTimeout(() => {
-        this.write().then(resolve, reject);
-      }, 0);
-    });
-  }
-  clearNextWrite(): void {
-    if (this.pendingWrite) {
-      clearTimeout(this.pendingWrite);
-      this.pendingWrite = undefined;
-    }
+  async writeData(data: Uint8Array) {
+    const buffer = this.buffer;
+    const bufferWriter = this;
+    let copied = 0;
+    do {
+      const toWrite = Math.min(bufferWriter.writableLength, data.byteLength - copied);
+      buffer.set(data.subarray(copied, copied + toWrite), bufferWriter.writeOffset);
+      bufferWriter.writeOffset += toWrite;
+      copied += toWrite;
+
+      if (bufferWriter.writableLength > bufferWriter.flushThreshold) await this.writeOnce();
+    } while (copied < data.byteLength);
   }
 }
 
