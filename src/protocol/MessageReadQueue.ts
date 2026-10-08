@@ -11,7 +11,6 @@ import { AsyncMessageType } from "@/interface/protocol.ts";
 export class QueryReadQueue extends LinkList<ResultReceiver> {
   private failure?: Error;
   private skippingError?: PgDatabaseError;
-  private readonly failureListeners = new Set<(error: Error) => void>();
   private readonly readyWaiters = new Map<ResultReceiver, PromiseWithResolvers<void>>();
   private readonly syncResults = new WeakMap<ResultReceiver, QueryResultParser>();
   private readonly pendingResults = new Map<QueryResultParser, boolean>();
@@ -20,10 +19,6 @@ export class QueryReadQueue extends LinkList<ResultReceiver> {
 
   get error(): Error | undefined {
     return this.failure;
-  }
-  onFailure(listener: (error: Error) => void): void {
-    if (this.failure) listener(this.failure);
-    else this.failureListeners.add(listener);
   }
   override enqueue(item: Link<ResultReceiver>): void {
     if (this.failure) {
@@ -177,8 +172,6 @@ export class QueryReadQueue extends LinkList<ResultReceiver> {
     this.pendingResults.clear();
     for (const waiter of this.readyWaiters.values()) waiter.reject(err);
     this.readyWaiters.clear();
-    for (const listener of this.failureListeners) listener(err);
-    this.failureListeners.clear();
   }
 
   initLifecycleMessageListener(parser: MessageParsers) {

@@ -61,7 +61,7 @@ export type SampleQueryOperation = {
    * @returns 按结果集顺序产生读取器的异步可迭代对象。
    * @since 0.3.0
    */
-  simpleQuery(queryable: SqlStatements, options?: QueryOptions): AsyncIterable<SampleQueryReader>;
+  simpleQuery(queryable: SqlStatements, options?: QueryOptions): SampleQueryReader;
   /**
    * 从 SQL 字节流执行简单查询，并按 PostgreSQL 返回的每个结果集依次产生读取器。
    * 当前版本不支持流输入，调用时抛出 `TypeError`。
@@ -70,7 +70,7 @@ export type SampleQueryOperation = {
    * @returns 按结果集顺序产生读取器的异步可迭代对象。
    * @since 0.3.0
    */
-  simpleQuery(queryable: ReadableStream<Uint8Array>, options?: QueryOptions): AsyncIterable<SampleQueryReader>;
+  simpleQuery(queryable: ReadableStream<Uint8Array>, options?: QueryOptions): SampleQueryReader;
 };
 
 /**
@@ -166,8 +166,8 @@ export interface QueryReader<T> extends AsyncIterable<T> {
  * @public
  * @since 0.3.0
  */
-export interface SampleQueryReader<T extends any[] = unknown[]> extends Iterable<QueryResult<T[number]>> {
-  then(onfulfilled?: () => void, onrejected?: (reason: unknown) => void): Promise<void>;
+export interface SampleQueryReader<T extends any[] = unknown[]> extends AsyncIterable<QueryResult<T[number]>> {
+  then(onfulfilled?: (data: undefined) => void, onrejected?: (reason: unknown) => void): Promise<void>;
   last<R>(): R;
   lastResult<T>(): QueryResult<T>;
   all(): T[];

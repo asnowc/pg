@@ -53,11 +53,10 @@ export class QueryOperation
   queryStream(options?: QueryOptions): ReadableWritablePair<SampleQueryReader, Uint8Array> {
     throw new Error("Not implemented");
   }
-  simpleQuery(queryable: SqlStatements, options?: QueryOptions): AsyncIterable<SampleQueryReader>;
-  simpleQuery(queryable: ReadableStream<Uint8Array>, options?: QueryOptions): AsyncIterable<SampleQueryReader>;
-  async *simpleQuery(queryable: unknown, _options?: unknown): AsyncIterable<SampleQueryReader<unknown>> {
+  simpleQuery(queryable: SqlStatements, options?: QueryOptions): SampleQueryReader<unknown[]>;
+  simpleQuery(queryable: ReadableStream<Uint8Array>, options?: QueryOptions): SampleQueryReader<unknown[]>;
+  simpleQuery(queryable: unknown, _options?: unknown): SampleQueryReader {
     if (typeof queryable !== "string") throw new TypeError("Only string simple queries are supported");
-    const session = await this.pool.get();
     throw new Error("Not implemented");
   }
 }

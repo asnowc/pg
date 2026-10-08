@@ -30,20 +30,20 @@ export class QueryWriteQueue {
     private readonly readQueue: QueryReadQueue,
     private readonly onWriteEmpty: () => void,
   ) {
-    readQueue.onFailure((error) => {
-      for (const item of this.writeQueue) {
-        if (item.type === QueryAction.ExtendedQuery || item.type === QueryAction.SimpleQuery) item.reject(error);
-      }
-      this.writeQueue.clear();
-    });
   }
-
+  fail(error: Error) {
+    for (const item of this.writeQueue) {
+      if (item.type === QueryAction.ExtendedQuery || item.type === QueryAction.SimpleQuery) item.reject(error);
+    }
+    this.writeQueue.clear();
+  }
   private writeQueue = new LinkList<QueryTask>();
 
-  private writing?: Promise<unknown>;
   private transactionQueued = false;
   private inTransaction = false;
   private unsyncedExtended = false;
+
+  private writing?: Promise<unknown>;
   /** 写队列是否有待处理的任务 */
   get hasPending(): boolean {
     return !!this.writing || !!this.writeQueue.head;
@@ -117,17 +117,19 @@ export class QueryWriteQueue {
   }
   private startWriting(): void {
     if (this.writing || !this.writeQueue.head || this.readQueue.error) return;
-    // Install the writing guard before any transport callback can enqueue another task.
-    this.writing = Promise.resolve().then(() => this.handleWrite()).then(() => {
-      this.writing = undefined;
-      if (this.readQueue.error) return;
-      if (this.writeQueue.head) this.startWriting();
-      else this.onWriteEmpty();
-    }).catch((cause) => {
-      const error = cause instanceof Error ? cause : new Error("PostgreSQL query write failed", { cause });
-      this.readQueue.fail(error);
-      this.writing = undefined;
-    });
+    this.writing = this.handleWrite().then(
+      () => {
+        this.writing = undefined;
+        if (this.readQueue.error) return;
+        if (this.writeQueue.head) this.startWriting();
+        else this.onWriteEmpty();
+      },
+      (cause) => {
+        const error = cause instanceof Error ? cause : new Error("PostgreSQL query write failed", { cause });
+        this.readQueue.fail(error);
+        this.writing = undefined;
+      },
+    );
   }
   private async handleWrite() {
     const { writeQueue } = this;
@@ -159,16 +161,17 @@ export class QueryWriteQueue {
     await this.flushWriter();
   }
   private async writeSimpleQueryTask(item: SimpleQueryTask): Promise<void> {
-    if (this.inTransaction) throw new PgProtocolError("Simple queries are not allowed inside a transaction");
+    if (this.inTransaction) throw new Error("Simple queries are not allowed inside a transaction");
     if (this.unsyncedExtended) await this.writeSync();
     const message = encodeQueryMessage({
       calculateByteLength: () => item.statement.calculateQueryByteLength(),
       encodeQueryInto: (buffer, offset) => item.statement.encodeQueryInto(buffer, offset),
     });
+
     const parser = new SampleQueryResultParser(() => item.resolve(parser), item.reject, item.statement);
     const ready = this.readQueue.enqueueSimpleQuery(parser);
     await Promise.all([
-      this.writeData(message).then(() => this.flushWriter()),
+      this.writer.writeData(message).then(() => this.flushWriter()),
       ready,
     ]);
   }
@@ -178,9 +181,9 @@ export class QueryWriteQueue {
     // Register the boundary before writing: responses may arrive during a transport write.
     if (!this.inTransaction) this.readQueue.enqueueSync(parser);
     await this.writeExtended(item.statement);
-    await this.writeData(FRAME.FLUSH);
+    await this.writer.writeData(FRAME.FLUSH);
     if (!this.inTransaction) {
-      await this.writeData(FRAME.SYNC);
+      await this.writer.writeData(FRAME.SYNC);
       this.unsyncedExtended = false;
     }
   }
@@ -195,27 +198,21 @@ export class QueryWriteQueue {
     this.readQueue.enqueue({ type: ReceiverType.EndTransaction });
     this.readQueue.enqueueSync();
     await this.writeExtended(statement);
-    await this.writeData(FRAME.SYNC);
+    await this.writer.writeData(FRAME.SYNC);
     this.inTransaction = false;
     this.unsyncedExtended = false;
   }
   private async writeSync(): Promise<void> {
     this.readQueue.enqueueSync();
-    await this.writeData(FRAME.SYNC);
+    await this.writer.writeData(FRAME.SYNC);
     this.unsyncedExtended = false;
   }
   private async writeExtended(statement: TypedSqlStatementEncoder): Promise<void> {
     this.unsyncedExtended = true;
-    await this.writeData(encodeParseMessage(statement));
-    await this.writeData(encodeBindMessage(statement));
-    await this.writeData(encodeDescribeMessage(DescribeTarget.Portal));
-    await this.writeData(encodeExecuteMessage(0));
-  }
-
-  private async writeData(data: Uint8Array): Promise<void> {
-    if (this.readQueue.error) throw this.readQueue.error;
-    await this.writer.writeData(data);
-    if (this.readQueue.error) throw this.readQueue.error;
+    await this.writer.writeData(encodeParseMessage(statement));
+    await this.writer.writeData(encodeBindMessage(statement));
+    await this.writer.writeData(encodeDescribeMessage(DescribeTarget.Portal));
+    await this.writer.writeData(encodeExecuteMessage(0));
   }
   private async flushWriter(): Promise<void> {
     if (this.readQueue.error) throw this.readQueue.error;

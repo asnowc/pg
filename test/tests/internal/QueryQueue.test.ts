@@ -18,10 +18,13 @@ async function drained(t: MessageTest) {
 }
 
 function observe<T>(promise: Promise<T>) {
-  const resolve = vi.fn();
-  const reject = vi.fn();
-  const settled = promise.then(resolve, reject);
-  return { promise, resolve, reject, settled };
+  const result = vi.fn();
+  promise.then(result, result);
+  return { promise, result };
+}
+function catchPromise<T>(promise: Promise<T>): Promise<T> {
+  promise.catch(() => {});
+  return promise;
 }
 
 test("事务外扩展查询分别带 Sync，不等待 ReadyForQuery 即全部发送", async () => {
@@ -112,7 +115,7 @@ test("简单查询仅由自身 ReadyForQuery 解除屏障，前序 Sync 和多�
   t.mockRead(B.ParameterStatus, "application_name\0queue-test\0");
   t.commandComplete(2);
   await Promise.resolve();
-  expect(simple.resolve).not.toHaveBeenCalled();
+  expect(simple.result).not.toHaveBeenCalled();
   expect(t.readQueue.parameters.application_name).toBe("queue-test");
   expect(t.messageTypes).toEqual(blocked);
   const free = t.onWriteFree();
@@ -130,7 +133,7 @@ test("连续简单查询逐个等待 ReadyForQuery，空简单查询同样保持
   await vi.waitFor(() => expect(t.messageTypes).toEqual([F.Query]));
   t.mockRead(B.EmptyQueryResponse);
   await Promise.resolve();
-  expect(first.resolve).not.toHaveBeenCalled();
+  expect(first.result).not.toHaveBeenCalled();
   expect(t.messageTypes).toEqual([F.Query]);
   t.readyForQuery();
   await first.promise;
@@ -220,7 +223,7 @@ test("独立同步段失败不会拒绝下一条已流水线发送的查询", as
   t.errorResponse();
   await expect(first.promise).rejects.toBeInstanceOf(PgDatabaseError);
   t.readyForQuery();
-  expect(next.reject).not.toHaveBeenCalled();
+  expect(next.result).not.toHaveBeenCalled();
   t.commandComplete(2);
   t.readyForQuery();
   expect((await next.promise).rowCount).toBe(2);
@@ -233,7 +236,7 @@ test("事务外查询完成后仍等待 Sync，隐式提交失败拒绝当前段
   expect(await t.onWriteFree()).toEqual([...extended, F.Sync, ...extended, F.Sync]);
   t.commandComplete();
   await Promise.resolve();
-  expect(first.resolve).not.toHaveBeenCalled();
+  expect(first.result).not.toHaveBeenCalled();
   t.errorResponse("deferred constraint failed");
   await expect(first.promise).rejects.toThrow("deferred constraint failed");
   t.readyForQuery();
@@ -257,7 +260,7 @@ test("事务段失败拒绝被跳过的查询与结束命令，不跨越 Sync �
   await expect(skipped.promise).rejects.toBeInstanceOf(PgDatabaseError);
   t.readyForQuery(Status.Failed);
   expect(t.readQueue.transactionStatus).toBe(Status.Failed);
-  expect(next.reject).not.toHaveBeenCalled();
+  expect(next.result).not.toHaveBeenCalled();
   t.errorResponse("current transaction is aborted");
   t.readyForQuery(Status.Failed);
   await expect(next.promise).rejects.toThrow("current transaction is aborted");
@@ -318,13 +321,13 @@ test("简单查询 ErrorResponse 不解除屏障，Idle ReadyForQuery 后才能�
 
 test.each([Status.Transaction, Status.Failed])("简单查询返回非 Idle 状态 %s 时停止队列且不自动回滚", async (status) => {
   const t = new MessageTest();
-  const simple = observe(t.writeQueue.simpleQuery(statement));
-  const next = observe(t.writeQueue.extendedQuery(statement));
+  const simple = catchPromise(t.writeQueue.simpleQuery(statement));
+  const next = catchPromise(t.writeQueue.extendedQuery(statement));
   await vi.waitFor(() => expect(t.messageTypes).toEqual([F.Query]));
   t.commandComplete();
   t.readyForQuery(status);
-  await expect(simple.promise).rejects.toBeInstanceOf(PgProtocolError);
-  await expect(next.promise).rejects.toBeInstanceOf(PgProtocolError);
+  await expect(simple).rejects.toBeInstanceOf(PgProtocolError);
+  await expect(next).rejects.toBeInstanceOf(PgProtocolError);
   await drained(t);
   await expect(t.writeQueue.extendedQuery(statement)).rejects.toBeInstanceOf(PgProtocolError);
   expect(() => t.writeQueue.beginTransaction()).toThrow(PgProtocolError);
@@ -340,6 +343,7 @@ test("连接失败拒绝简单查询等待者与尚未发送的任务", async ()
   await vi.waitFor(() => expect(t.messageTypes).toEqual([F.Query]));
   const error = new Error("connection closed");
   t.readQueue.fail(error);
+  t.writeQueue.fail(error);
   await expect(simple.promise).rejects.toBe(error);
   await expect(next.promise).rejects.toBe(error);
   await drained(t);
@@ -370,6 +374,7 @@ test("连接失败也拒绝已 CommandComplete 但尚未 ReadyForQuery 的查询
   t.commandComplete();
   const error = new Error("connection closed before commit");
   t.readQueue.fail(error);
+  t.writeQueue.fail(error);
   await expect(query.promise).rejects.toBe(error);
   expect(t.readQueue.head).toBeUndefined();
 });
@@ -428,9 +433,10 @@ test("错位 ReadyForQuery 的监听器异常交给上层处理，再由 fail �
   expect(await t.onWriteFree()).toEqual([...extended, F.Sync]);
   expect(() => t.readyForQuery()).toThrow(PgProtocolError);
   expect(t.readQueue.error).toBeUndefined();
-  expect(query.reject).not.toHaveBeenCalled();
+  expect(query.result).not.toHaveBeenCalled();
   const error = new PgProtocolError("connection parser failed");
   t.readQueue.fail(error);
+  t.writeQueue.fail(error);
   await expect(query.promise).rejects.toBe(error);
   expect(t.readQueue.head).toBeUndefined();
 });
@@ -442,6 +448,7 @@ test("fail 拒绝直接登记的结果接收器并清空继承链表", () => {
   t.readQueue.enqueue({ type: ReceiverType.Sync });
   const error = new Error("closed");
   t.readQueue.fail(error);
+  t.writeQueue.fail(error);
   expect(reject).toHaveBeenCalledWith(error);
   expect([...t.readQueue]).toEqual([]);
 });

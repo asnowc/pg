@@ -6,7 +6,9 @@ import { denoConnect } from "@test/utils/connect.ts";
 
 export interface BaseContext {
   emptyDbPool: DbQueryPool;
+  /** @deprecated 改用 conn */
   connect: PgConnection;
+  conn: PgConnection;
   pgPool: PgPool;
 }
 const VITEST_WORKER_ID = +process.env.VITEST_WORKER_ID!;
@@ -33,7 +35,10 @@ export const test = viTest.extend<BaseContext>({
       if (useCount !== 0) throw new Error("存在未释放的连接");
     }
   },
-  async connect({}, use) {
+  async connect({ conn }, use) {
+    await use(conn);
+  },
+  async conn({}, use) {
     await using connection = await denoConnect(PUBLIC_DB_CONNECT_INFO);
     await use(connection);
   },

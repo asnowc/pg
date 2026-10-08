@@ -34,12 +34,15 @@ export class PgSession<T = unknown> extends EventEmitter {
     this.readQueue.init(parser);
 
     stream.startReadLoop(() => parser.next(this.stream), () => {
-      this.readQueue.fail(new Error("PostgreSQL connection closed"));
+      const error = new Error("PostgreSQL connection closed");
+      this.readQueue.fail(error);
+      this.writeQueue.fail(error);
       if (!this.isCloseCalled) this.destroy();
       this.emit("close");
     });
     stream.listenOnError((err) => {
       this.readQueue.fail(err);
+      this.writeQueue.fail(err);
       this.emit("close");
     });
   }
