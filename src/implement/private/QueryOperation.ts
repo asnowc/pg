@@ -50,9 +50,6 @@ export class QueryOperation
     const encoder = sqlStatementToSqlEncoder(queryable, options);
     return new QueryReaderImpl<T>(this.pool, encoder);
   }
-  queryStream(options?: QueryOptions): ReadableWritablePair<SampleQueryReader, Uint8Array> {
-    throw new Error("Not implemented");
-  }
   simpleQuery(queryable: SqlStatements, options?: QueryOptions): SampleQueryReader<unknown[]>;
   simpleQuery(queryable: ReadableStream<Uint8Array>, options?: QueryOptions): SampleQueryReader<unknown[]>;
   simpleQuery(queryable: unknown, _options?: unknown): SampleQueryReader {

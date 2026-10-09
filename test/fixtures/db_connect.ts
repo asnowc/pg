@@ -9,7 +9,9 @@ export interface BaseContext {
   /** @deprecated 改用 conn */
   connect: PgConnection;
   conn: PgConnection;
+  /** @deprecated 改用 pool */
   pgPool: PgPool;
+  pool: PgPool;
 }
 const VITEST_WORKER_ID = +process.env.VITEST_WORKER_ID!;
 let databaseSequence = 0;
@@ -42,7 +44,7 @@ export const test = viTest.extend<BaseContext>({
     await using connection = await denoConnect(PUBLIC_DB_CONNECT_INFO);
     await use(connection);
   },
-  async pgPool({}, use) {
+  async pool({}, use) {
     await using dbPool = new PgPool({
       create: async () => {
         const stream = await Deno.connect({
@@ -60,6 +62,9 @@ export const test = viTest.extend<BaseContext>({
       },
     });
     await use(dbPool);
+  },
+  async pgPool({ pool }, use) {
+    await use(pool);
   },
 });
 
