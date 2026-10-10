@@ -54,12 +54,15 @@ test("事务非依赖查询", async ({ conn }) => {
 test("流水线查询", async ({ conn }) => {
   await conn.query("CREATE TEMP TABLE t1 (c INT)");
   await conn.query("CREATE TEMP TABLE t2 (c INT)");
-  await Promise.allSettled([
-    conn.query("INSERT INTO t1 (c) VALUES (1)"), //ok
-    conn.query("INSERT INTO t1 (c) VALUES (2)"), //ok
-    conn.query("SELECT 1/0"), //error
-    conn.query("INSERT INTO t1 (c) VALUES (3)"), //error
-  ]);
+
+  // pool 可以使用
+  const t1 = await conn
+    .query("INSERT INTO t1 (c) VALUES (1)").getRows()
+    .query("INSERT INTO t1 (c) VALUES (2)").getRows()
+    .query("SELECT 1/0").getRows() //error
+    .query("INSERT INTO t1 (c) VALUES (3)").getRows() //error
+    .getRows();
+
   const count = await conn.query<{ count: number }>("SELECT COUNT(*)::INT AS count FROM t1").getFirstRow();
   expect(count).toEqual({ count: 2 });
 
@@ -81,3 +84,9 @@ test("query 和 simpleQuery 每次执行结束后不能处于事务中", async (
   await conn.query("BEGIN"); // 导致下一个查询出现非预期状态
   await conn.simpleQuery("BEGIN"); // 导致下一个查询出现非预期状态
 });
+interface Dummy<D extends any[]> {
+  query<T>(): Dummy<[...D, T]>;
+  then(onfulfilled?: (data: D) => void, onrejected?: (reason: unknown) => void): Promise<void>;
+}
+declare const dummy: Dummy<[]>;
+const result = await dummy.query<number>().query<string>();

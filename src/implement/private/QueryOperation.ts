@@ -43,6 +43,7 @@ export class QueryOperation
   copyTo(queryable: SqlStatement<unknown>, options?: CopyToOptions): ReadableStream<Uint8Array> {
     throw new Error("Not implemented");
   }
+
   query<T>(
     queryable: SqlStatement<T> | TypedSqlStatementEncoder<T>,
     options?: QueryOptions & Pick<TypedSqlStatement, "typeDecoders" | "columnDecoders">,
