@@ -39,7 +39,7 @@ export class PgConnection extends DbQuery implements DbConnection, DbQueryBase {
     return (results[0] ?? { rows: [], rowCount: 0 }) as T;
   }
   override async execute(input: QueryInput | MultipleQueryInput): Promise<void> {
-    for await (const _result of this.#connection.simpleQuery(genSql(input))) {
+    for await (const _result of this.#connection.queryMultiple(genSql(input))) {
       // Drain the complete simple-query cycle before returning the connection.
     }
   }
@@ -53,7 +53,7 @@ export class PgConnection extends DbQuery implements DbConnection, DbQueryBase {
 
   async #multiple(sql: string): Promise<MultipleQueryResult> {
     const results: MultipleQueryResult = [];
-    for await (const result of this.#connection.simpleQuery(sql)) results.push(toLegacyResult(result));
+    for await (const result of this.#connection.queryMultiple(sql)) results.push(toLegacyResult(result));
     return results;
   }
 }

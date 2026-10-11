@@ -1,5 +1,5 @@
 import type { CursorQueryOperation } from "./Cursor.ts";
-import type { ExtendedQueryOperation } from "./Query.ts";
+import type { SingleQueryOperation } from "./Query.ts";
 
 /** @public */
 export interface TransactionQueryOperation {
@@ -40,7 +40,7 @@ export interface TransactionQueryOperation {
  * @public
  * @since 0.3.0
  */
-export interface Transaction extends ExtendedQueryOperation, CursorQueryOperation, AsyncDisposable {
+export interface Transaction extends SingleQueryOperation, CursorQueryOperation, AsyncDisposable {
   /** @since 0.3.0 */
   readonly mode: TransactionMode;
   /**

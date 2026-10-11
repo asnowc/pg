@@ -33,7 +33,7 @@ test("显式关闭游标会归还连接且重复关闭安全", async ({ pgPool }
   await cursor.close();
 
   expect(pgPool.idleCount).toBe(1);
-  await expect(pgPool.query<{ value: number }>("SELECT 4 AS value").getFirstRow()).resolves.toEqual({ value: 4 });
+  await expect(pgPool.query<{ value: number }>("SELECT 4 AS value").firstRow()).resolves.toEqual({ value: 4 });
   expect(pgPool.idleCount).toBe(1);
 });
 
@@ -53,6 +53,6 @@ test("打开游标失败后归还连接并可继续查询", async ({ pgPool }) =
   await expect(pgPool.open("SELECT * FROM missing_pool_open_table")).rejects.toThrow();
 
   expect(pgPool.idleCount).toBe(pgPool.totalCount);
-  await expect(pgPool.query<{ value: number }>("SELECT 1 AS value").getFirstRow()).resolves.toEqual({ value: 1 });
+  await expect(pgPool.query<{ value: number }>("SELECT 1 AS value").firstRow()).resolves.toEqual({ value: 1 });
   expect(pgPool.idleCount).toBe(pgPool.totalCount);
 });

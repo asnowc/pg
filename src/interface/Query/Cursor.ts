@@ -1,5 +1,5 @@
 import type { SqlStatement } from "./QueryStatement.ts";
-import type { FieldInfo, QueryCompletion } from "./QueryResult.ts";
+import type { FieldInfo, QueryCompletion } from "./QueryReader.ts";
 import type { QueryCommonOptions } from "./_internal.ts";
 /** @public */
 export type CursorOpenOptions = QueryCommonOptions & {

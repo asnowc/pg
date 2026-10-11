@@ -35,7 +35,7 @@ export class PgPool extends QueryOperation implements AsyncDisposable {
   constructor(options: CreatePoolOptions) {
     checkOptions(options);
 
-    super({ get: async () => this.#getSession(), release });
+    super({ get: async () => this.#getSession(), release }, false);
     this.#maxConnection = options.maxCount ?? 3;
     this.#idleTimeout = options.idleTimeout ?? 0;
     this.#createRetry = options.createRetry ?? 0;
@@ -134,10 +134,11 @@ export class PgPool extends QueryOperation implements AsyncDisposable {
   }
 
   /** 借用连接；必须 release() 或使用 using / await using 释放。 */
-  async connect(): Promise<IPgPoolConnection> {
+  async borrow(): Promise<IPgPoolConnection> {
     const session = await this.#getSession();
     return new PgPoolConnection(session, release);
   }
+
   #closed?: PromiseWithResolvers<void>;
   get closed(): boolean {
     return !!this.#closed;
@@ -210,7 +211,7 @@ class PgPoolConnection extends QueryOperation implements IPgPoolConnection {
     super({
       get: async () => this.#getSession(),
       release: (session) => this.#session = session,
-    });
+    }, true);
     this.#release = onRelease;
     this.#session = session;
   }
@@ -222,6 +223,9 @@ class PgPoolConnection extends QueryOperation implements IPgPoolConnection {
   }
   #session?: PgSession;
   #release?: (session: PgSession) => void;
+  close(): void {
+    throw new Error("Not implemented");
+  }
   release(): void {
     if (!this.#release) return;
     const session = this.#getSession();

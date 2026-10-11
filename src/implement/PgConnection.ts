@@ -13,7 +13,7 @@ export class PgConnection extends QueryOperation implements AsyncDisposable {
     super({
       get: async () => this.#session,
       release: () => {},
-    });
+    }, true);
     this.#session = session;
   }
   #session: PgSession;

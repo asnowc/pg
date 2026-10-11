@@ -37,7 +37,7 @@ test("并发查询在连接池限制内复用可流水线的连接", async ({ pg
 });
 
 test("SQL 错误后连接池仍可调度后续查询", async ({ pgPool }) => {
-  await expect(pgPool.query("SELECT * FROM missing_pg_pool_table").getRows()).rejects.toThrow();
+  await expect(pgPool.query("SELECT * FROM missing_pg_pool_table").rows()).rejects.toThrow();
 
   await pgPool.query("SELECT 1");
   expect(pgPool.idleCount).toBe(1);
@@ -52,25 +52,25 @@ test("事务内查询与保存点回滚后提交，连接回到池中", async ({
   await transaction.query("INSERT INTO queue_transaction_test VALUES (2)");
   await transaction.commit();
 
-  expect(await pgPool.query<{ value: number }>("SELECT value FROM queue_transaction_test").getRows())
+  expect(await pgPool.query<{ value: number }>("SELECT value FROM queue_transaction_test").rows())
     .toEqual([{ value: 2 }]);
   expect(pgPool.idleCount).toBe(1);
 });
 
 test("简单查询产生多个结果集并在 ReadyForQuery 后允许新查询", async ({ pgPool }) => {
   const results = [];
-  for await (const result of pgPool.simpleQuery("SELECT 1 AS value; SELECT 2 AS value")) {
+  for await (const result of pgPool.queryMultiple("SELECT 1 AS value; SELECT 2 AS value")) {
     results.push(result.rows);
   }
   expect(results).toEqual([[{ value: 1 }], [{ value: 2 }]]);
-  await expect(pgPool.query<{ value: number }>("SELECT 3 AS value").getFirstRow()).resolves.toEqual({ value: 3 });
+  await expect(pgPool.query<{ value: number }>("SELECT 3 AS value").firstRow()).resolves.toEqual({ value: 3 });
 });
 
 test("简单查询留下事务时自动回滚并拒绝复用该事务", async ({ pgPool }) => {
   await expect(async () => {
-    for await (const _result of pgPool.simpleQuery("BEGIN")) { /* drain */ }
+    for await (const _result of pgPool.queryMultiple("BEGIN")) { /* drain */ }
   }).rejects.toThrow("Simple query left the connection in a transaction");
-  await expect(pgPool.query<{ value: number }>("SELECT 4 AS value").getFirstRow()).resolves.toEqual({ value: 4 });
+  await expect(pgPool.query<{ value: number }>("SELECT 4 AS value").firstRow()).resolves.toEqual({ value: 4 });
 });
 
 test("事务查询出错后能回滚到保存点并继续执行", async ({ pgPool }) => {
@@ -78,7 +78,7 @@ test("事务查询出错后能回滚到保存点并继续执行", async ({ pgPoo
   await transaction.savePoint("before_error");
   await expect(transaction.query("SELECT 1 / 0")).rejects.toThrow();
   await transaction.rollbackTo("before_error");
-  await expect(transaction.query<{ value: number }>("SELECT 5 AS value").getFirstRow())
+  await expect(transaction.query<{ value: number }>("SELECT 5 AS value").firstRow())
     .resolves.toEqual({ value: 5 });
   await transaction.commit();
 });
@@ -93,7 +93,7 @@ test("默认禁用空闲超时，连接可供下一次查询复用", async ({ pg
 });
 
 test("close 会等待在途查询完成，并拒绝后续查询", async ({ pgPool }) => {
-  const running = pgPool.query("SELECT 1 FROM pg_sleep(0.02)").getRows();
+  const running = pgPool.query("SELECT 1 FROM pg_sleep(0.02)").rows();
   const closing = pgPool.close();
 
   await expect(pgPool.query("SELECT 1")).rejects.toThrow("Pool is closed");
@@ -101,7 +101,7 @@ test("close 会等待在途查询完成，并拒绝后续查询", async ({ pgPoo
   await expect(closing).resolves.toBeUndefined();
 });
 test("destroy 会立即销毁所有连接并释放资源", async function ({ pgPool }) {
-  const running = pgPool.query("SELECT 1 FROM pg_sleep(0.02)").getRows();
+  const running = pgPool.query("SELECT 1 FROM pg_sleep(0.02)").rows();
   pgPool.destroy();
 
   await expect(pgPool.query("SELECT 1")).rejects.toThrow("Pool is destroyed");

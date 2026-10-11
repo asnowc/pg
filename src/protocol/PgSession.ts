@@ -5,7 +5,7 @@ import { encodeTerminateMessage } from "./encode.ts";
 import { MessageParsers } from "./parsers/MessageParser.ts";
 import { ConnectionStream } from "@/_utils/ConnectionStream.ts";
 import type { TransactionMode, TypedSqlStatementEncoder } from "@/interface/Query.ts";
-import type { QueryResultParser, SampleQueryResultParser } from "./parsers/QueryResultParser.ts";
+import type { QueryResultParser } from "./parsers/QueryResultParser.ts";
 import { BufferShortWriter } from "@/_utils/StreamWriter.ts";
 import { EventEmitter, Listener } from "@/_utils/EventEmitter.ts";
 
@@ -62,17 +62,23 @@ export class PgSession<T = unknown> extends EventEmitter {
     return this.writeQueue.hasPending;
   }
 
-  simpleQuery(statement: TypedSqlStatementEncoder): Promise<SampleQueryResultParser> {
-    return this.writeQueue.simpleQuery(statement);
-  }
-  extendedQuery<T>(statement: TypedSqlStatementEncoder): Promise<QueryResultParser<T>> {
-    return this.writeQueue.extendedQuery<T>(statement);
+  checkWriteQueue(): void {
+    this.writeQueue.checkWriteQueue();
   }
   beginTransaction(mode?: TransactionMode): void {
     return this.writeQueue.beginTransaction(mode);
   }
-  endTransaction(rollback?: boolean): void {
-    return this.writeQueue.endTransaction(rollback);
+  commitTransaction(): void {
+    return this.writeQueue.commitTransaction();
+  }
+  rollbackTransaction(): void {
+    return this.writeQueue.rollbackTransaction();
+  }
+  extendedQuery<T>(statement: TypedSqlStatementEncoder): Promise<QueryResultParser<T>> {
+    return this.writeQueue.extendedQuery<T>(statement);
+  }
+  sync(): void {
+    this.writeQueue.sync();
   }
 
   private closePromise?: Promise<void> | boolean;

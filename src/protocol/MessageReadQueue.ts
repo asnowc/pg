@@ -135,6 +135,12 @@ export class QueryReadQueue extends LinkList<ResultReceiver> {
         }
       }
     });
+    parsers.set(BackendMessageCode.BindComplete, (body) => {
+    });
+    parsers.set(BackendMessageCode.CloseComplete, (body) => {
+    });
+    parsers.set(BackendMessageCode.ParseComplete, (body) => {
+    });
   }
   private complete(current: ResultReceiver): void {
     if (current.type === ReceiverType.SimpleQuery) return;

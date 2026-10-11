@@ -27,7 +27,7 @@ export interface BeginTransactionTask {
 }
 
 type EmptyTask = {
-  type: QueryAction.Commit | QueryAction.Rollback;
+  type: QueryAction.Commit | QueryAction.Rollback | QueryAction.Sync;
 };
 
 type EmptyReceiver = {
@@ -60,6 +60,7 @@ export enum QueryAction {
   SimpleQuery,
 
   Begin,
+  Sync,
   Commit = "COMMIT",
   Rollback = "ROLLBACK",
 }

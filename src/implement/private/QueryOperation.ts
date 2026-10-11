@@ -6,10 +6,10 @@ import type {
   Cursor,
   CursorOpenOptions,
   CursorQueryOperation,
-  ExtendedQueryOperation,
+  MultipleQueryOperation,
+  PipelineQueryOperation,
   QueryOptions,
   QueryReader,
-  SampleQueryOperation,
   SampleQueryReader,
   SqlStatement,
   SqlStatements,
@@ -25,12 +25,20 @@ import { TransactionImpl } from "./TransactionImpl.ts";
 
 export class QueryOperation
   implements
-    ExtendedQueryOperation,
-    SampleQueryOperation,
+    PipelineQueryOperation,
+    MultipleQueryOperation,
     CopyQueryOperation,
     CursorQueryOperation,
     TransactionQueryOperation {
-  constructor(private pool: SessionHandle) {}
+  constructor(private pool: SessionHandle, private canPipeline: boolean) {}
+  query<T>(
+    queryable: SqlStatement<T> | TypedSqlStatementEncoder<T>,
+    options?: QueryOptions & Pick<TypedSqlStatement, "typeDecoders" | "columnDecoders">,
+  ): QueryReader<T> {
+    const encoder = sqlStatementToSqlEncoder(queryable, options);
+    return new QueryReaderImpl<T>({ isolated: !this.canPipeline, pool: this.pool, statement: encoder });
+  }
+
   begin(mode?: TransactionMode): Transaction {
     return new TransactionImpl(this.pool, mode);
   }
@@ -44,16 +52,13 @@ export class QueryOperation
     throw new Error("Not implemented");
   }
 
-  query<T>(
-    queryable: SqlStatement<T> | TypedSqlStatementEncoder<T>,
-    options?: QueryOptions & Pick<TypedSqlStatement, "typeDecoders" | "columnDecoders">,
-  ): QueryReader<T> {
-    const encoder = sqlStatementToSqlEncoder(queryable, options);
-    return new QueryReaderImpl<T>(this.pool, encoder);
+  pipeline(queryable: unknown, options?: unknown): QueryReader<unknown> {
+    throw new Error("Not implemented");
   }
-  simpleQuery(queryable: SqlStatements, options?: QueryOptions): SampleQueryReader<unknown[]>;
-  simpleQuery(queryable: ReadableStream<Uint8Array>, options?: QueryOptions): SampleQueryReader<unknown[]>;
-  simpleQuery(queryable: unknown, _options?: unknown): SampleQueryReader {
+
+  queryMultiple(queryable: SqlStatements, options?: QueryOptions): SampleQueryReader<unknown[]>;
+  queryMultiple(queryable: ReadableStream<Uint8Array>, options?: QueryOptions): SampleQueryReader<unknown[]>;
+  queryMultiple(queryable: unknown, _options?: unknown): SampleQueryReader {
     if (typeof queryable !== "string") throw new TypeError("Only string simple queries are supported");
     throw new Error("Not implemented");
   }

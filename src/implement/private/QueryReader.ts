@@ -12,17 +12,13 @@ export interface SessionHandle<T extends PgSession = PgSession> {
   release: (session: T) => void;
 }
 export default class QueryReader<T = unknown> implements IQueryReader<T> {
-  constructor(
-    pool: SessionHandle<PgSession>,
-    statement: TypedSqlStatementEncoder,
-    sync = true,
-  ) {
-    this.#source = { pool, statement, sync };
+  constructor(source: { pool: SessionHandle; statement: TypedSqlStatementEncoder; isolated: boolean }) {
+    this.#source = source;
   }
   #source?: {
     pool: SessionHandle;
     statement: TypedSqlStatementEncoder;
-    sync: boolean;
+    isolated: boolean;
   };
   #getSession() {
     const source = this.#source;
@@ -31,22 +27,22 @@ export default class QueryReader<T = unknown> implements IQueryReader<T> {
     return source;
   }
 
-  async getRowCount(): Promise<number> {
+  async rowCount(): Promise<number> {
     return (await this.#consume()).rowCount ?? 0;
   }
-  async getResults(): Promise<QueryResult<T>> {
+  async results(): Promise<QueryResult<T>> {
     const result = await this.#consume<T>();
     return { rows: result.rows, fields: result.fields ?? [], notices: result.notices, rowCount: result.rowCount ?? 0 };
   }
-  async getRows(): Promise<T[]> {
+  async rows(): Promise<T[]> {
     const result = await this.#consume<T>();
     return result.rows;
   }
-  async getFirstRow(): Promise<T | null> {
+  async firstRow(): Promise<T | null> {
     return (await this.#consume<T>()).rows[0] ?? null;
   }
 
-  async getMap<K extends keyof T>(key: K): Promise<Map<T[K], T>> {
+  async map<K extends keyof T>(key: K): Promise<Map<T[K], T>> {
     const map = new Map<T[K], T>();
     for await (const item of this) {
       map.set(item[key], item);
@@ -54,7 +50,7 @@ export default class QueryReader<T = unknown> implements IQueryReader<T> {
     return map;
   }
   then(onfulfilled?: () => void, onrejected?: (reason: unknown) => void): Promise<void> {
-    return this.#consume<T>().then(() => onfulfilled?.(), onrejected);
+    return this.#consume<T>().then(onfulfilled, onrejected);
   }
 
   async *[Symbol.asyncIterator](): AsyncGenerator<T, QueryCompletion, void> {
@@ -64,14 +60,16 @@ export default class QueryReader<T = unknown> implements IQueryReader<T> {
   }
 
   async #consume<T>(): Promise<QueryResultParser<T>> {
-    const { pool, statement } = this.#getSession();
+    const { pool, statement, isolated: sync } = this.#getSession();
     const session = await pool.get();
     let result: Promise<QueryResultParser<T>>;
     try {
       result = session.extendedQuery<T>(statement);
+      if (sync) session.sync();
+      session.checkWriteQueue();
     } finally {
       pool.release(session);
     }
-    return await result;
+    return result;
   }
 }

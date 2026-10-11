@@ -17,7 +17,7 @@ test("模板字符串查询", async ({ connect }) => {
       ${""}::text AS empty,
       ${"123"}::int AS number`;
 
-  await expect(connect.query(statement).getFirstRow()).resolves.toEqual({
+  await expect(connect.query(statement).firstRow()).resolves.toEqual({
     value: 42,
     nullable: null,
     empty: "",
@@ -35,7 +35,7 @@ test("查询函数", async ({ connect }) => {
         ${input.number}::int AS number`;
   });
 
-  const row = await connect.query(getData({ value: "42", nullable: null, empty: "", number: "123" })).getFirstRow();
+  const row = await connect.query(getData({ value: "42", nullable: null, empty: "", number: "123" })).firstRow();
 
   expect(row).toEqual({ value: 42, nullable: null, empty: "", number: 123 });
 });

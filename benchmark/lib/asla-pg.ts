@@ -17,10 +17,10 @@ export const LIB_NAME = "@asla/pg";
 
 const queries: TestQueries<PgConnection | PgPool> = {
   select: async (client) => {
-    await client.query("select 1 as x").getRows();
+    await client.query("select 1 as x").rows();
   },
   selectArg: async (client) => {
-    await client.query(sql`select ${1} as x`).getRows();
+    await client.query(sql`select ${1} as x`).rows();
   },
   selectArgs: async (client) => {
     await client.query(sql`select
@@ -31,10 +31,10 @@ const queries: TestQueries<PgConnection | PgPool> = {
       ${false}::bool as boolean,
       ${Buffer.from("awesome")}::bytea as bytea,
       ${JSON.stringify([{ some: "json" }, { array: "object" }])}::jsonb as json
-    `).getRows();
+    `).rows();
   },
   selectWhere: async (client) => {
-    await client.query(sql`select * from pg_catalog.pg_type where typname = ${"bool"}`).getRows();
+    await client.query(sql`select * from pg_catalog.pg_type where typname = ${"bool"}`).rows();
   },
 };
 const connInfo: ConnectHandler<PgConnection> = {
