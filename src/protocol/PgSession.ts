@@ -43,6 +43,7 @@ export class PgSession<T = unknown> extends EventEmitter {
     stream.listenOnError((err) => {
       this.readQueue.fail(err);
       this.writeQueue.fail(err);
+      if (!this.isCloseCalled) this.destroy();
       this.emit("close");
     });
   }

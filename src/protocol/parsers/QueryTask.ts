@@ -27,7 +27,7 @@ export interface BeginTransactionTask {
 }
 
 type EmptyTask = {
-  type: QueryAction.Commit | QueryAction.Rollback | QueryAction.Sync;
+  type: QueryAction.Commit | QueryAction.Rollback | QueryAction.Sync | QueryAction.Close;
 };
 
 type EmptyReceiver = {

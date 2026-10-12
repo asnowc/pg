@@ -58,3 +58,18 @@ test("QueryReader 只能消费一次", async ({ conn }) => {
   await expect(r1).resolves.toEqual([{ value: 1 }]);
   await expect(r2).rejects.toThrow("QueryReader has already been consumed");
 });
+
+test("执行两条查询", async ({ conn }) => {
+  const result1 = await conn.query("SELECT 1 AS value").firstRow();
+  const result2 = await conn.query("SELECT 2 AS value").firstRow();
+  expect(result1).toEqual({ value: 1 });
+  expect(result2).toEqual({ value: 2 });
+});
+test("执行孤立的流水线查询", async ({ conn }) => {
+  const results = await Promise.all([
+    conn.query("SELECT 1 AS value").firstRow(),
+    conn.query("SELECT 2 AS value").firstRow(),
+  ]);
+  expect(results[0]).toEqual({ value: 1 });
+  expect(results[1]).toEqual({ value: 2 });
+});

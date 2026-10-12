@@ -71,24 +71,16 @@ export class QueryWriteQueue {
   }
 
   enqueueWrite(item: QueryTask) {
-    if (this.readQueue.error) {
-      if (item.type === QueryAction.ExtendedQuery || item.type === QueryAction.SimpleQuery) {
-        item.reject(this.readQueue.error);
-      }
-      return;
-    }
     this.writeQueue.enqueue(item);
   }
+
   checkWriteQueue(): void {
-    return this.startWriting();
-  }
-  private startWriting(): void {
     if (this.writing) return;
     if (!this.writeQueue.head) return;
     this.writing = this.handleWrite().then(
       () => {
         this.writing = undefined;
-        if (this.writeQueue.head) this.startWriting();
+        if (this.writeQueue.head) this.checkWriteQueue();
         else this.onWriteEmpty();
       },
       (cause) => {

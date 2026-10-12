@@ -124,6 +124,7 @@ export class PgPool extends QueryOperation implements AsyncDisposable {
   }
   #waitQueue = new LinkList<{ resolve(session: PoolPgSession): void; reject(reason: unknown): void }>();
   #getSession(): Promise<PoolPgSession> | PoolPgSession {
+    if (this.closed) throw new Error("Pool is closed");
     const session = dequeueSet(this.#free) ?? dequeueSet(this.#writeFree);
     if (session) return session as PoolPgSession;
 
@@ -144,16 +145,33 @@ export class PgPool extends QueryOperation implements AsyncDisposable {
     return !!this.#closed;
   }
   /** 关闭连接池。关闭后不再接受新的连接请求。Promise 在所有连接关闭后完成。 */
-  close(): Promise<void> {
+  async close(): Promise<void> {
     if (this.#closed) return this.#closed.promise;
     this.#closed = Promise.withResolvers();
+
+    const promises: Promise<void>[] = [];
+    for (const session of this.#free) {
+      this.#pool.delete(session);
+      promises.push(session.close());
+    }
+    this.#free.clear();
+    try {
+      await Promise.all(promises);
+    } catch (e) {
+      this.#closed.reject(e);
+    }
+
+    if (this.#writeFree.size + this.#connecting == 0) {
+      this.#closed.resolve();
+    }
     return this.#closed.promise;
   }
   /** 销毁连接池，立即关闭所有连接并释放资源。 */
   destroy(): void {
     this.#closed = Promise.withResolvers();
+    const error = new Error("Pool is destroyed");
     this.#closed.resolve();
-    this.#clearWaitQueue(new Error("Pool is destroyed"));
+    this.#clearWaitQueue(error);
     for (const session of this.#free) {
       closeByteStream(session);
     }
