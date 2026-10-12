@@ -19,7 +19,7 @@ export class BufferShortWriter {
   }
 
   /**
-   * 将缓冲区数据全部写入到底层, 直到缓冲区的数据量小于指定的阈值。至少调用一次 callWrite
+   * 将缓冲区数据到底层, 直到缓冲区的数据量小于指定的阈值。至少调用一次 callWrite
    * @param threshold 指定阈值。默认为 buffer 的一半
    */
   async flush(threshold = this.flushThreshold): Promise<void> {
@@ -28,6 +28,7 @@ export class BufferShortWriter {
     while (written < min) {
       written += await this.callWrite(this.buffer.subarray(written, this.writeOffset));
     }
+    if (written < this.writeOffset) await this.buffer.copyWithin(0, written, this.writeOffset);
     this.writeOffset -= written;
   }
   /** 调用一次 callWrite 。缓冲区剩余未写入的数据将被移到到缓冲区的起始位置 */
@@ -39,15 +40,14 @@ export class BufferShortWriter {
   }
   async writeData(data: Uint8Array) {
     const buffer = this.buffer;
-    const bufferWriter = this;
     let copied = 0;
     do {
-      const toWrite = Math.min(bufferWriter.writableLength, data.byteLength - copied);
-      buffer.set(data.subarray(copied, copied + toWrite), bufferWriter.writeOffset);
-      bufferWriter.writeOffset += toWrite;
+      const toWrite = Math.min(this.writableLength, data.byteLength - copied);
+      buffer.set(data.subarray(copied, copied + toWrite), this.writeOffset);
+      this.writeOffset += toWrite;
       copied += toWrite;
 
-      if (bufferWriter.writableLength > bufferWriter.flushThreshold) await this.writeOnce();
+      if (this.writableLength > this.flushThreshold) await this.writeOnce();
     } while (copied < data.byteLength);
   }
 }
