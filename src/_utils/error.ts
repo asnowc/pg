@@ -18,3 +18,16 @@ export class InternalError extends Error {
     super(`@asla/pg internal error: ${message}`, options);
   }
 }
+
+export class SessionClosedError extends Error {
+  constructor() {
+    super("The PostgreSQL session has been closed");
+    this.name = "SessionClosedError";
+  }
+}
+export class SessionDestroyedError extends Error {
+  constructor() {
+    super("The PostgreSQL session has been destroyed");
+    this.name = "SessionDestroyedError";
+  }
+}

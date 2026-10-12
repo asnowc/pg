@@ -24,7 +24,7 @@ export class PgConnection extends QueryOperation implements AsyncDisposable {
     return { ...this.#session.parameters };
   }
   get closed(): boolean {
-    return this.#session === undefined;
+    return this.#session.closed;
   }
   close(): Promise<void> {
     return this.#session.close();

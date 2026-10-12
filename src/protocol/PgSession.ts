@@ -1,13 +1,13 @@
 import { QueryReadQueue } from "./MessageReadQueue.ts";
 import { QueryWriteQueue } from "./MessageWriteQueue.ts";
 import { AuthenticationResult } from "./auth.ts";
-import { encodeTerminateMessage } from "./encode.ts";
 import { MessageParsers } from "./parsers/MessageParser.ts";
 import { ConnectionStream } from "@/_utils/ConnectionStream.ts";
 import type { TransactionMode, TypedSqlStatementEncoder } from "@/interface/Query.ts";
 import type { QueryResultParser } from "./parsers/QueryResultParser.ts";
 import { BufferShortWriter } from "@/_utils/StreamWriter.ts";
 import { EventEmitter, Listener } from "@/_utils/EventEmitter.ts";
+import { SessionClosedError, SessionDestroyedError, UnexpectedEOFError } from "@/_utils/error.ts";
 
 const DEFAULT_MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
 
@@ -30,20 +30,35 @@ export class PgSession<T = unknown> extends EventEmitter {
 
     const parser = new MessageParsers(maxMessageSize);
     this.writer = new BufferShortWriter(this.stream.write.bind(this.stream), new Uint8Array(8 * 1024));
-    this.writeQueue = new QueryWriteQueue(this.writer, this.readQueue, () => this.emit("writeFree"));
+    this.writeQueue = new QueryWriteQueue(
+      this.writer,
+      this.readQueue,
+      () => {
+        this.emit("writeFree");
+        if (this.closed) {
+          this.stream.closeWrite().then(
+            () => void this.writeQueue.setClosed(),
+            () => void this.destroy(),
+          );
+        }
+      },
+    );
     this.readQueue.init(parser);
 
     stream.startReadLoop(() => parser.next(this.stream), () => {
-      const error = new Error("PostgreSQL connection closed");
-      this.readQueue.fail(error);
-      this.writeQueue.fail(error);
-      if (!this.isCloseCalled) this.destroy();
+      if (this.readQueue.head) {
+        this.readQueue.fail(new UnexpectedEOFError());
+      }
       this.emit("close");
     });
     stream.listenOnError((err) => {
-      this.readQueue.fail(err);
-      this.writeQueue.fail(err);
-      if (!this.isCloseCalled) this.destroy();
+      //可能是 this.destroy() 被调用导致 write error
+      if (this.closed) {
+        this.readQueue.fail(err);
+        this.writeQueue.rejectQueue(err);
+      } else {
+        this.destroy();
+      }
       this.emit("close");
     });
   }
@@ -82,30 +97,18 @@ export class PgSession<T = unknown> extends EventEmitter {
     this.writeQueue.sync();
   }
 
-  private closePromise?: Promise<void> | boolean;
-  /** 如果为 true , 则不可再进行写入操作 */
-  private get isCloseCalled() {
-    return !!this.closePromise;
+  close(): Promise<void> {
+    return this.writeQueue.close();
   }
-  async close(): Promise<void> {
-    if (this.isCloseCalled) {
-      await this.closePromise;
-      return;
-    }
-    return this.closePromise = this.#close().then(
-      () => void (this.closePromise = true),
-      () => void (this.closePromise = true),
-    );
-  }
-  async #close() {
-    if (this.hasPending) await new Promise((resolve) => this.on("close", resolve));
-    await this.writer.writeData(encodeTerminateMessage());
-    return this.stream.closeWrite();
+  get closed(): boolean {
+    return this.writeQueue.closed;
   }
   destroy(): void {
-    this.readQueue.fail(new Error("PostgreSQL connection destroyed"));
+    this.writeQueue.setClosed();
+    const error = new SessionDestroyedError();
+    this.readQueue.fail(error);
+    this.writeQueue.rejectQueue(error);
     this.stream.destroy();
-    this.closePromise = true;
   }
 }
 

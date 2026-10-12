@@ -25,6 +25,7 @@ export class QueryReadQueue extends LinkList<ResultReceiver> {
   }
   private initQueryMessageListener(parsers: MessageParsers) {
     parsers.set(BackendMessageCode.DataRow, (body) => this.getResultReceiver().dataRow(body));
+
     parsers.set(BackendMessageCode.CommandComplete, (body) => {
       const current = this.getReceiver();
       if (isQueryReceiver(current)) current.commandComplete(body);
@@ -68,13 +69,10 @@ export class QueryReadQueue extends LinkList<ResultReceiver> {
     parsers.set(BackendMessageCode.ParseComplete, (body) => {
     });
   }
+  /** 每当一个查询完成时调用 */
   private complete(current: ResultReceiver): void {
-    if (current.type === ReceiverType.SimpleQuery) return;
     this.dequeue();
-    if (isQueryReceiver(current)) {
-      if (this.pendingResults.has(current)) this.pendingResults.set(current, true);
-      else current.resolve(current);
-    }
+    if (current.type === ReceiverType.SimpleQuery) return;
   }
   private getReceiver(): ResultReceiver {
     const query = this.head;

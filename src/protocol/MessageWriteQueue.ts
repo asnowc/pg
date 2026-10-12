@@ -16,11 +16,14 @@ import {
   encodeExecuteMessage,
   encodeParseMessage,
   encodeQueryMessage,
+  encodeTerminateMessage,
 } from "./encode.ts";
 import { BufferShortWriter } from "@/_utils/StreamWriter.ts";
 import { createTypeSqlStatementEncoder } from "@/sql/SqlStatementEncoder.ts";
 import { QueryReadQueue } from "./MessageReadQueue.ts";
 import { FRAME } from "./static_frame.ts";
+import { InternalError, SessionClosedError } from "@/_utils/error.ts";
+import console from "node:console";
 
 export class QueryWriteQueue {
   constructor(
@@ -29,13 +32,22 @@ export class QueryWriteQueue {
     private readonly onWriteEmpty: () => void,
   ) {
   }
-  fail(error: Error) {
+  rejectQueue(error: Error) {
     for (const item of this.writeQueue) {
       if (item.type === QueryAction.ExtendedQuery || item.type === QueryAction.SimpleQuery) item.reject(error);
     }
     this.writeQueue.clear();
   }
   private writeQueue = new LinkList<QueryTask>();
+
+  private closePromise?: PromiseWithResolvers<void>;
+  get closed(): boolean {
+    return !!this.closePromise;
+  }
+  setClosed() {
+    if (!this.closePromise) this.closePromise = Promise.withResolvers<void>();
+    this.closePromise.resolve();
+  }
 
   private writing?: Promise<unknown>;
   /** 写队列是否有待处理的任务 */
@@ -70,7 +82,22 @@ export class QueryWriteQueue {
     this.enqueueWrite({ type: QueryAction.Rollback });
   }
 
-  enqueueWrite(item: QueryTask) {
+  close(): Promise<void> {
+    if (!this.closePromise) {
+      this.closePromise = Promise.withResolvers<void>();
+    }
+    this.writeQueue.enqueue({ type: QueryAction.Close });
+    this.checkWriteQueue();
+    return this.closePromise.promise;
+  }
+
+  private enqueueWrite(item: QueryTask) {
+    if (this.closed) {
+      if (item.type === QueryAction.ExtendedQuery || item.type === QueryAction.SimpleQuery) {
+        item.reject(new SessionClosedError());
+      }
+      return;
+    }
     this.writeQueue.enqueue(item);
   }
 
@@ -80,8 +107,8 @@ export class QueryWriteQueue {
     this.writing = this.handleWrite().then(
       () => {
         this.writing = undefined;
-        if (this.writeQueue.head) this.checkWriteQueue();
-        else this.onWriteEmpty();
+        if (this.writeQueue.head) return this.checkWriteQueue();
+        this.onWriteEmpty();
       },
       (cause) => {
         const error = cause instanceof Error ? cause : new Error("PostgreSQL query write failed", { cause });
@@ -90,6 +117,7 @@ export class QueryWriteQueue {
         //TODO: 通知 PgSession 写入失败
       },
     );
+    // s;
   }
   private async handleWrite() {
     const { writeQueue } = this;
@@ -116,6 +144,16 @@ export class QueryWriteQueue {
         case QueryAction.Rollback:
           await this.writeEndTransactionTask(item.type);
           break;
+        case QueryAction.Close:
+          await this.writer.writeData(encodeTerminateMessage());
+          await this.writer.flush(0);
+          writeQueue.dequeue();
+
+          if (this.writeQueue.head) {
+            console.error(new InternalError("Write queue is not empty after sending terminate message"));
+            this.rejectQueue(new SessionClosedError());
+          }
+          return;
       }
       writeQueue.dequeue();
       item = writeQueue.head;

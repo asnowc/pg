@@ -80,3 +80,25 @@ async function clearDropDb(dbName: string) {
 function getManage() {
   return DbManage.connect(DB_CONNECT_INFO);
 }
+export function createPool() {
+  const dbPool = new PgPool({
+    create: async () => {
+      const stream = await Deno.connect({
+        hostname: PUBLIC_DB_CONNECT_INFO.hostname,
+        port: PUBLIC_DB_CONNECT_INFO.port,
+      });
+      return {
+        stream: stream,
+        connectOptions: {
+          user: PUBLIC_DB_CONNECT_INFO.user,
+          database: PUBLIC_DB_CONNECT_INFO.database,
+          password: PUBLIC_DB_CONNECT_INFO.password,
+        },
+      };
+    },
+  });
+  return dbPool;
+}
+export function createConn() {
+  return denoConnect(PUBLIC_DB_CONNECT_INFO);
+}

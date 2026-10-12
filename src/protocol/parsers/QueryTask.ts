@@ -34,7 +34,6 @@ type EmptyReceiver = {
   type: ReceiverType.StartTransaction | ReceiverType.EndTransaction | ReceiverType.Sync;
 };
 export type ResultReceiver = QueryResultParser | EmptyReceiver;
-
 export interface ParseMessageEncoder {
   statement?: string;
   done: boolean;
