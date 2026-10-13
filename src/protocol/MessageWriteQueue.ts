@@ -86,8 +86,12 @@ export class QueryWriteQueue {
     if (!this.closePromise) {
       this.closePromise = Promise.withResolvers<void>();
     }
-    this.writeQueue.enqueue({ type: QueryAction.Close });
-    this.checkWriteQueue();
+    if (this.hasPending) {
+      this.writeQueue.enqueue({ type: QueryAction.Close });
+    } else {
+      this.writeQueue.enqueue({ type: QueryAction.Close });
+      this.startWrite();
+    }
     return this.closePromise.promise;
   }
 
@@ -104,6 +108,9 @@ export class QueryWriteQueue {
   checkWriteQueue(): void {
     if (this.writing) return;
     if (!this.writeQueue.head) return;
+    this.startWrite();
+  }
+  private startWrite() {
     this.writing = this.handleWrite().then(
       () => {
         this.writing = undefined;
@@ -117,8 +124,8 @@ export class QueryWriteQueue {
         //TODO: 通知 PgSession 写入失败
       },
     );
-    // s;
   }
+
   private async handleWrite() {
     const { writeQueue } = this;
     let item = writeQueue.head;

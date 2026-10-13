@@ -1,15 +1,9 @@
 import { QueryOperation } from "./private/QueryOperation.ts";
 import type { PgSession } from "@/protocol.ts";
-import type { ConnectionSource, PgConnectOptions } from "@/interface/Connection.ts";
-import { connectPgSession } from "@/protocol/connect.ts";
+import { PgConnection as IPgConnection, PgPoolConnection as IPgPoolConnection } from "@/interface/Connection.ts";
 
-/** @public */
-export class PgConnection extends QueryOperation implements AsyncDisposable {
-  static async connect<T extends ConnectionSource>(source: T, options: PgConnectOptions<T>): Promise<PgConnection> {
-    const session = await connectPgSession(source, options);
-    return new PgConnection(session);
-  }
-  private constructor(session: PgSession) {
+export class PgConnection extends QueryOperation implements IPgConnection {
+  constructor(session: PgSession) {
     super({
       get: async () => this.#session,
       release: () => {},
@@ -26,6 +20,15 @@ export class PgConnection extends QueryOperation implements AsyncDisposable {
   get closed(): boolean {
     return this.#session.closed;
   }
+  #finished?: Promise<void>;
+  get finished(): Promise<void> {
+    if (!this.#finished) {
+      this.#finished = new Promise<void>((resolve) => {
+        this.#session.on("close", resolve);
+      });
+    }
+    return this.#finished;
+  }
   close(): Promise<void> {
     return this.#session.close();
   }
@@ -34,5 +37,53 @@ export class PgConnection extends QueryOperation implements AsyncDisposable {
   }
   destroy(): void {
     return this.#session.destroy();
+  }
+}
+
+export class PgPoolConnection extends QueryOperation implements IPgPoolConnection {
+  constructor(session: PgSession, onRelease: (session: PgSession) => void) {
+    super({
+      get: async () => this.#getSession(),
+      release: (session) => this.#session = session,
+    }, true);
+    this.#release = onRelease;
+    this.#session = session;
+
+    this.processId = session.processId;
+  }
+  #getSession() {
+    if (!this.#session) throw new Error("PoolConnection is already released");
+    const session = this.#session;
+    this.#session = undefined;
+    return session;
+  }
+  #session?: PgSession;
+  #release?: (session: PgSession) => void;
+
+  readonly processId: number | null;
+
+  release(): void {
+    if (!this.#release) return;
+    const session = this.#getSession();
+    const release = this.#release;
+    this.#release = undefined;
+    release(session);
+  }
+  get released(): boolean {
+    return !this.#release;
+  }
+  get closed(): boolean {
+    return !this.#session || this.#session.closed;
+  }
+
+  close(): Promise<void> {
+    return this.#getSession().close();
+  }
+  destroy(): void {
+    return this.#getSession().destroy();
+  }
+
+  [Symbol.dispose]() {
+    return this.release();
   }
 }

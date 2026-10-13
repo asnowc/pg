@@ -1,9 +1,13 @@
 import { PgSession } from "@/protocol.ts";
-import type { PgPoolConnection as IPgPoolConnection } from "./PgPoolConnection.ts";
 import { QueryOperation } from "./private/QueryOperation.ts";
 import { connectPgSession } from "@/protocol/connect.ts";
-import type { ConnectionSource, PgConnectOptions } from "@/interface/Connection.ts";
+import type {
+  ConnectionSource,
+  PgConnectOptions,
+  PgPoolConnection as IPgPoolConnection,
+} from "@/interface/Connection.ts";
 import { LinkList } from "@/_utils/LinkList.ts";
+import { PgPoolConnection } from "./PgConnection.ts";
 /**
  * 原生连接池配置。建连和认证由调用方注入 。
  *  @public
@@ -222,39 +226,4 @@ function dequeueSet<T>(set: Set<T>) {
 }
 function release(session: PgSession) {
   session.emit("release");
-}
-
-class PgPoolConnection extends QueryOperation implements IPgPoolConnection {
-  constructor(session: PgSession, onRelease: (session: PgSession) => void) {
-    super({
-      get: async () => this.#getSession(),
-      release: (session) => this.#session = session,
-    }, true);
-    this.#release = onRelease;
-    this.#session = session;
-  }
-  #getSession() {
-    if (!this.#session) throw new Error("PoolConnection is already released");
-    const session = this.#session;
-    this.#session = undefined;
-    return session;
-  }
-  #session?: PgSession;
-  #release?: (session: PgSession) => void;
-  close(): void {
-    throw new Error("Not implemented");
-  }
-  release(): void {
-    if (!this.#release) return;
-    const session = this.#getSession();
-    const release = this.#release;
-    this.#release = undefined;
-    release(session);
-  }
-  get released(): boolean {
-    return !this.#release;
-  }
-  [Symbol.dispose]() {
-    return this.release();
-  }
 }

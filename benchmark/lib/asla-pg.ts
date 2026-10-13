@@ -1,4 +1,4 @@
-import { createSqlBuilder, JS_DATA_ENCODER_V1, PgConnection, PgPool } from "@asla/pg";
+import { connect as connectSession, createSqlBuilder, JS_DATA_ENCODER_V1, PgConnection, PgPool } from "@asla/pg";
 import { DB_CONNECT_INFO } from "../utils/db.ts";
 import { ConnectHandler, PoolInfo, PoolQueryTest, QueryTest, TestQueries } from "../utils/common.ts";
 const sql = createSqlBuilder(JS_DATA_ENCODER_V1);
@@ -6,7 +6,7 @@ const sql = createSqlBuilder(JS_DATA_ENCODER_V1);
 async function connect() {
   const tcp = await Deno.connect({ hostname: DB_CONNECT_INFO.host, port: DB_CONNECT_INFO.port });
   tcp.setNoDelay(true);
-  return PgConnection.connect(tcp, {
+  return connectSession(tcp, {
     user: DB_CONNECT_INFO.user,
     database: DB_CONNECT_INFO.database,
     password: DB_CONNECT_INFO.password,

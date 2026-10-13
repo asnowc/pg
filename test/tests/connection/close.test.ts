@@ -18,17 +18,17 @@ test("重复关闭已关闭的连接会被忽略", async () => {
 test("关闭连接会等待查询响应完毕后再关闭，关闭后再执行查询会报错", async () => {
   await using conn = await createConn();
 
-  const count = conn.query("SELECT pg_sleep(1)").rowCount();
   const r1 = conn.query("SELECT 1 AS v").firstRow();
+  const count = conn.query("SELECT pg_sleep(1)").rowCount();
   const r2 = conn.query("SELECT 2 AS v").firstRow();
   const close = conn.close();
   const r3 = conn.query("SELECT 3 AS v").firstRow().catch((e) => e);
   Promise.allSettled([count, r1, r2, close, r3]); // 防止 unhandled promise rejection
 
-  await expect(count).resolves.toBe(1);
-  expect(conn.closed).toBe(true);
-
   await expect(r1).resolves.toEqual({ v: 1 });
+  expect(conn.closed).toBe(true);
+  await expect(count).resolves.toBe(1);
+
   await expect(r2).resolves.toEqual({ v: 2 });
   await expect(r3, "关闭连接后再执行查询会报错").rejects.toThrow(CLOSE_MESSAGE);
 

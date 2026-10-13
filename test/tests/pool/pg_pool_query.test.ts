@@ -54,17 +54,15 @@ test("事务内查询与保存点回滚后提交，连接回到池中", async ({
 });
 
 test("简单查询产生多个结果集并在 ReadyForQuery 后允许新查询", async ({ pgPool }) => {
-  const results = [];
-  for await (const result of pgPool.queryMultiple("SELECT 1 AS value; SELECT 2 AS value")) {
-    results.push(result.rows);
-  }
+  const results = await pgPool.queryMultiple("SELECT 1 AS value; SELECT 2 AS value").all();
+
   expect(results).toEqual([[{ value: 1 }], [{ value: 2 }]]);
   await expect(pgPool.query<{ value: number }>("SELECT 3 AS value").firstRow()).resolves.toEqual({ value: 3 });
 });
 
 test("简单查询留下事务时自动回滚并拒绝复用该事务", async ({ pgPool }) => {
   await expect(async () => {
-    for await (const _result of pgPool.queryMultiple("BEGIN")) { /* drain */ }
+    await pgPool.queryMultiple("BEGIN").all();
   }).rejects.toThrow("Simple query left the connection in a transaction");
   await expect(pgPool.query<{ value: number }>("SELECT 4 AS value").firstRow()).resolves.toEqual({ value: 4 });
 });

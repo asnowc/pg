@@ -12,17 +12,17 @@ import type {
 } from "#abstract";
 import { createPgClient } from "./_pg_client.ts";
 import { ResourcePool } from "@/_utils/ResourcePool.ts";
-import { PgConnection } from "./_PgConnection.ts";
+import { PgConnection as LegacyPgConnection } from "./_PgConnection.ts";
 import { parserDbConnectUrl } from "./connect.ts";
 import type { DbConnectOption } from "./connect.ts";
 import type { TransactionMode } from "@/interface/Query.ts";
-import { PgConnection as Client } from "@/implement.ts";
+import type { PgConnection } from "@/interface/Connection.ts";
 /**
  * @public
  * @deprecated 请直接使用 `PgConnection`，或在应用层管理原生连接池。
  */
 export class PgDbQueryPool extends DbQueryPool implements AsyncDisposable {
-  #pool: ResourcePool<Client>;
+  #pool: ResourcePool<PgConnection>;
   constructor(url: URL | string | DbConnectOption | (() => URL | string | DbConnectOption)) {
     super();
     if (typeof url === "function") {
@@ -35,7 +35,7 @@ export class PgDbQueryPool extends DbQueryPool implements AsyncDisposable {
     this.#pool = this.#createPool();
   }
   #createPool() {
-    return new ResourcePool<Client>({
+    return new ResourcePool<PgConnection>({
       create: async () => {
         const pool = this.#pool;
         const conn = await createPgClient(this.connectOption);
@@ -67,7 +67,7 @@ export class PgDbQueryPool extends DbQueryPool implements AsyncDisposable {
   async connect(): Promise<DbPoolConnection> {
     const conn = await this.#pool.get();
     return createDbPoolConnection(
-      new PgConnection(conn),
+      new LegacyPgConnection(conn),
       () => this.#pool.release(conn),
       () => {
         conn.destroy();
@@ -111,7 +111,7 @@ export class PgDbQueryPool extends DbQueryPool implements AsyncDisposable {
     const conn = await this.#pool.get();
     const cursor = await conn.open<T>(sqlLikeToString(sql), { fetchSize: option?.defaultSize });
     const poolConn = createDbPoolConnection(
-      new PgConnection(conn),
+      new LegacyPgConnection(conn),
       () => this.#pool.release(conn),
       () => conn.destroy(),
     );

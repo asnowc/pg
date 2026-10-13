@@ -10,8 +10,7 @@ import {
   SqlLike,
   sqlLikeToString,
 } from "#abstract";
-import type { PgConnection as Connection } from "@/implement.ts";
-import type { SampleQueryReader } from "@/interface/Query.ts";
+import type { PgConnection as Connection } from "@/interface/Connection.ts";
 
 export class PgConnection extends DbQuery implements DbConnection, DbQueryBase {
   constructor(connection: Connection) {
@@ -19,7 +18,7 @@ export class PgConnection extends DbQuery implements DbConnection, DbQueryBase {
     this.#connection = connection;
   }
   close(): Promise<void> {
-    return this.#connection[Symbol.asyncDispose]();
+    return this.#connection.close();
   }
 
   #connection: Connection;
@@ -39,9 +38,7 @@ export class PgConnection extends DbQuery implements DbConnection, DbQueryBase {
     return (results[0] ?? { rows: [], rowCount: 0 }) as T;
   }
   override async execute(input: QueryInput | MultipleQueryInput): Promise<void> {
-    for await (const _result of this.#connection.queryMultiple(genSql(input))) {
-      // Drain the complete simple-query cycle before returning the connection.
-    }
+    return this.#connection.queryMultiple(genSql(input)).then(() => {});
   }
   override async multipleQuery<T extends MultipleQueryResult>(sql: SqlLike | SqlLike[]): Promise<T> {
     const text = sql instanceof Array ? sql.map(sqlLikeToString).join(";\n") : sqlLikeToString(sql);
@@ -52,14 +49,12 @@ export class PgConnection extends DbQuery implements DbConnection, DbQueryBase {
   }
 
   async #multiple(sql: string): Promise<MultipleQueryResult> {
-    const results: MultipleQueryResult = [];
-    for await (const result of this.#connection.queryMultiple(sql)) results.push(toLegacyResult(result));
-    return results;
+    const allResults = await this.#connection.queryMultiple(sql).allResults();
+    return allResults.map((res) => ({
+      rowCount: res.rowCount ?? 0,
+      rows: res.rows,
+    }));
   }
-}
-
-function toLegacyResult(result: SampleQueryReader): QueryRowsResult {
-  return { rows: result.rows, rowCount: result.rowCount ?? 0 };
 }
 
 function genSql(input: QueryInput | MultipleQueryInput): string {

@@ -1,5 +1,50 @@
-import type { PgAsyncMessage } from "@/interface/protocol.ts";
+import type { PgAsyncMessage } from "./protocol.ts";
 import type { Duplex } from "node:stream";
+import {
+  CopyQueryOperation,
+  CursorQueryOperation,
+  MultipleQueryOperation,
+  PipelineQueryOperation,
+  SingleQueryOperation,
+  TransactionQueryOperation,
+} from "./Query.ts";
+
+/** @public */
+export interface PgConnection
+  extends
+    PipelineQueryOperation,
+    MultipleQueryOperation,
+    CopyQueryOperation,
+    SingleQueryOperation,
+    CursorQueryOperation,
+    TransactionQueryOperation,
+    AsyncDisposable {
+  readonly processId: number | null;
+  readonly parameters: Record<string, string>;
+  readonly closed: boolean;
+  get finished(): Promise<void>;
+  close(): Promise<void>;
+  destroy(): void;
+}
+
+/** @public */
+export interface PgPoolConnection
+  extends
+    PipelineQueryOperation,
+    MultipleQueryOperation,
+    CopyQueryOperation,
+    SingleQueryOperation,
+    CursorQueryOperation,
+    TransactionQueryOperation,
+    Disposable {
+  get released(): boolean;
+  readonly closed: boolean;
+  readonly processId: number | null;
+  /** 幂等释放。现有操作结束后才实际归还连接；此后不再接受新操作。 */
+  release(): void;
+  close(): Promise<void>;
+  destroy(): void;
+}
 
 /** @public */
 export interface PgSaslExchange {
