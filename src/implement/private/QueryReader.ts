@@ -8,7 +8,7 @@ import { PgSession } from "@/protocol.ts";
 import { QueryResultParser } from "@/protocol/parsers/QueryResultParser.ts";
 
 export interface SessionHandle<T extends PgSession = PgSession> {
-  get: () => Promise<T>;
+  get: () => Promise<T> | T;
   release: (session: T) => void;
 }
 export default class QueryReader<T = unknown> implements IQueryReader<T> {
@@ -39,7 +39,8 @@ export default class QueryReader<T = unknown> implements IQueryReader<T> {
     return result.rows;
   }
   async firstRow(): Promise<T | null> {
-    return (await this.#consume<T>()).rows[0] ?? null;
+    const result = await this.#consume<T>();
+    return result.rows[0] ?? null;
   }
 
   async map<K extends keyof T>(key: K): Promise<Map<T[K], T>> {
@@ -59,17 +60,31 @@ export default class QueryReader<T = unknown> implements IQueryReader<T> {
     return { rowCount: result.rowCount, notices: result.notices };
   }
 
-  async #consume<T>(): Promise<QueryResultParser<T>> {
+  #consume<T>(): Promise<QueryResultParser<T>> {
     const { pool, statement, isolated: sync } = this.#getSession();
-    const session = await pool.get();
-    let result: Promise<QueryResultParser<T>>;
-    try {
-      result = session.extendedQuery<T>(statement);
-      if (sync) session.sync();
-      session.checkWriteQueue();
-    } finally {
-      pool.release(session);
-    }
-    return result;
+
+    return new Promise<QueryResultParser<T>>((resolve, reject) => {
+      getMaybePromise(pool.get(), (session) => {
+        session.extendedQuery<T>(statement).then(resolve, reject);
+        if (sync) session.sync();
+        session.checkWriteQueue();
+        pool.release(session);
+      }, reject);
+    });
+  }
+}
+function getMaybePromise<T>(
+  maybePromise: Promise<T> | T,
+  onOk: (value: T) => void,
+  onError: (reason: unknown) => void,
+) {
+  if ((maybePromise instanceof Promise)) {
+    maybePromise.then(onOk, onError);
+    return;
+  }
+  try {
+    onOk(maybePromise);
+  } catch (error) {
+    onError(error);
   }
 }

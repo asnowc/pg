@@ -93,8 +93,14 @@ export function decodeRow<T>(
     columnDecoder = typeof columnDecoders === "function"
       ? columnDecoders(description, index)
       : columnDecoders?.get(index);
-    if (!columnDecoder) columnDecoder = typeDecoders!.get(description.typeOID);
-    if (!columnDecoder) throw new Error(`No decoder found for column ${description.name} at index ${index}`);
+    if (!columnDecoder) {
+      columnDecoder = typeDecoders!.get(description.typeOID);
+      if (!columnDecoder) {
+        throw new Error(
+          `No decoder found for column ${description.name} at index ${index}. OID=${description.typeOID}`,
+        );
+      }
+    }
 
     row[key] = decodeColumn(value, description, columnDecoder);
   }

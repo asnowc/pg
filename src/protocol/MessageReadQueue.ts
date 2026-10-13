@@ -72,7 +72,11 @@ export class QueryReadQueue extends LinkList<ResultReceiver> {
   /** 每当一个查询完成时调用 */
   private complete(current: ResultReceiver): void {
     this.dequeue();
-    if (current.type === ReceiverType.SimpleQuery) return;
+    if (current.type === ReceiverType.SimpleQuery) {
+      current.resolve(current);
+    } else if (current.type === ReceiverType.ExtendedQuery) {
+      current.resolve(current);
+    }
   }
   private getReceiver(): ResultReceiver {
     const query = this.head;

@@ -5,7 +5,7 @@ import { PgConnection as IPgConnection, PgPoolConnection as IPgPoolConnection } 
 export class PgConnection extends QueryOperation implements IPgConnection {
   constructor(session: PgSession) {
     super({
-      get: async () => this.#session,
+      get: () => this.#session,
       release: () => {},
     }, true);
     this.#session = session;
@@ -43,7 +43,7 @@ export class PgConnection extends QueryOperation implements IPgConnection {
 export class PgPoolConnection extends QueryOperation implements IPgPoolConnection {
   constructor(session: PgSession, onRelease: (session: PgSession) => void) {
     super({
-      get: async () => this.#getSession(),
+      get: () => this.#getSession(),
       release: (session) => this.#session = session,
     }, true);
     this.#release = onRelease;
