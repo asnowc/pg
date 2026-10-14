@@ -5,7 +5,10 @@ import { bigint, boolean, float, numeric, signedInteger, unsignedBigint, unsigne
 import { date, time, timestamp, timestamptz, timetz } from "./decoder/datetime.ts";
 import { bit, bytea, text, uuid } from "./decoder/text.ts";
 import type { PgDataDecoder, PgDataDecoderMap } from "@/interface/pg_data_decoder.ts";
-
+const voidDecoder: PgDataDecoder = {
+  decodeText: (value: string) => undefined,
+  decodeBinary: (value: Uint8Array) => undefined,
+};
 /** @public */
 export const PG_DATA_DECODER_V1: PgDataDecoderMap = createDataDecoderV1();
 
@@ -44,6 +47,7 @@ function createDataDecoderV1(): PgDataDecoderMap {
   map.set(PgOid.INET, inet);
   map.set(PgOid.MACADDR, macaddr);
   map.set(PgOid.MACADDR8, macaddr);
+  map.set(PgOid.VOID, voidDecoder);
   map.set(PgOid.UNKNOWN, text);
   return map;
 }

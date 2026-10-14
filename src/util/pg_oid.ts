@@ -4,6 +4,7 @@
  * @public
  */
 export enum PgOid {
+  VOID = 2278,
   BOOL = 16,
   BYTEA = 17,
   CHAR = 18,

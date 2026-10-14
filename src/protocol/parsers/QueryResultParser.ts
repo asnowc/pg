@@ -14,7 +14,7 @@ import {
 } from "@/protocol.ts";
 import { decodeUTF16String } from "@/_utils/string.ts";
 import { StreamWriter } from "@/_utils/StreamWriter.ts";
-import { PgProtocolError } from "@/_utils/error.ts";
+import { NoDecoderError, PgProtocolError } from "@/_utils/error.ts";
 import { ReceiverType } from "./QueryTask.ts";
 import { LinkList } from "@/_utils/LinkList.ts";
 
@@ -32,10 +32,17 @@ export class QueryResultParser<T = unknown> {
   notices: string[] = [];
   rowCount?: number;
   dataRow(body: Uint8Array) {
-    if (!this.descriptions) throw new PgProtocolError("Row description is missing");
-    const values = decodeDataRow(body);
-    const data = decodeRow(values, this.descriptions, this.decoder);
-    this.rows.push(data as T);
+    if (!this.descriptions) {
+      this.reject(new PgProtocolError("Row description is missing"));
+      return;
+    }
+    try {
+      const values = decodeDataRow(body);
+      const data = decodeRow(values, this.descriptions, this.decoder);
+      this.rows.push(data as T);
+    } catch (error) {
+      this.reject(error);
+    }
   }
   rowDescription(body: Uint8Array) {
     this.descriptions = decodeRowDescription(body);
@@ -96,9 +103,7 @@ export function decodeRow<T>(
     if (!columnDecoder) {
       columnDecoder = typeDecoders!.get(description.typeOID);
       if (!columnDecoder) {
-        throw new Error(
-          `No decoder found for column ${description.name} at index ${index}. OID=${description.typeOID}`,
-        );
+        throw new NoDecoderError(description.typeOID, description.name, index);
       }
     }
 

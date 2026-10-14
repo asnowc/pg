@@ -1,4 +1,5 @@
 import type { TransactionMode, TypedSqlStatementEncoder } from "@/interface/Query.ts";
+import { rewriteErrorStackTrace, throwRewrittenError } from "@/_utils/error.ts";
 import { LinkList } from "@/_utils/LinkList.ts";
 import {
   BeginTransactionTask,
@@ -54,7 +55,7 @@ export class QueryWriteQueue {
   get hasPending(): boolean {
     return !!this.writing || !!this.writeQueue.head;
   }
-  extendedQuery<T>(statement: TypedSqlStatementEncoder): Promise<QueryResultParser<T>> {
+  async extendedQuery<T>(statement: TypedSqlStatementEncoder): Promise<QueryResultParser<T>> {
     return new Promise<QueryResultParser<T>>((resolve, reject) => {
       this.enqueueWrite({
         type: QueryAction.ExtendedQuery,
@@ -62,7 +63,7 @@ export class QueryWriteQueue {
         resolve: resolve as (value: QueryResultParser) => void,
         reject,
       });
-    });
+    }).catch((e) => throwRewrittenError(e));
   }
   sync(): void {
     this.enqueueWrite({ type: QueryAction.Sync });

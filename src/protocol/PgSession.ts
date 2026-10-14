@@ -7,7 +7,7 @@ import type { TransactionMode, TypedSqlStatementEncoder } from "@/interface/Quer
 import type { QueryResultParser } from "./parsers/QueryResultParser.ts";
 import { BufferShortWriter } from "@/_utils/StreamWriter.ts";
 import { EventEmitter, Listener } from "@/_utils/EventEmitter.ts";
-import { SessionClosedError, SessionDestroyedError, UnexpectedEOFError } from "@/_utils/error.ts";
+import { SessionDestroyedError, UnexpectedEOFError } from "@/_utils/error.ts";
 
 const DEFAULT_MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
 

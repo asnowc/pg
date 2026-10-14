@@ -11,6 +11,7 @@ import type {
   QueryOptions,
   QueryReader,
   SampleQueryReader,
+  SingleQueryOperation,
   SqlStatement,
   SqlStatements,
   Transaction,
@@ -27,6 +28,7 @@ export class QueryOperation
   implements
     PipelineQueryOperation,
     MultipleQueryOperation,
+    SingleQueryOperation,
     CopyQueryOperation,
     CursorQueryOperation,
     TransactionQueryOperation {

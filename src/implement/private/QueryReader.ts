@@ -60,31 +60,20 @@ export default class QueryReader<T = unknown> implements IQueryReader<T> {
     return { rowCount: result.rowCount, notices: result.notices };
   }
 
-  #consume<T>(): Promise<QueryResultParser<T>> {
+  async #consume<T>(): Promise<QueryResultParser<T>> {
     const { pool, statement, isolated: sync } = this.#getSession();
-
-    return new Promise<QueryResultParser<T>>((resolve, reject) => {
-      getMaybePromise(pool.get(), (session) => {
-        session.extendedQuery<T>(statement).then(resolve, reject);
-        if (sync) session.sync();
-        session.checkWriteQueue();
-        pool.release(session);
-      }, reject);
+    return getMaybePromise(pool.get(), (session) => {
+      const promise = session.extendedQuery<T>(statement);
+      if (sync) session.sync();
+      session.checkWriteQueue();
+      pool.release(session);
+      return promise;
     });
   }
 }
-function getMaybePromise<T>(
-  maybePromise: Promise<T> | T,
-  onOk: (value: T) => void,
-  onError: (reason: unknown) => void,
-) {
+function getMaybePromise<T, R>(maybePromise: Promise<T> | T, onOk: (value: T) => R): R | Promise<R> {
   if ((maybePromise instanceof Promise)) {
-    maybePromise.then(onOk, onError);
-    return;
+    return maybePromise.then(onOk);
   }
-  try {
-    onOk(maybePromise);
-  } catch (error) {
-    onError(error);
-  }
+  return onOk(maybePromise);
 }

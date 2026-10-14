@@ -69,7 +69,9 @@ test("执行孤立的流水线查询", async ({ conn }) => {
   const results = await Promise.all([
     conn.query("SELECT 1 AS value").firstRow(),
     conn.query("SELECT 2 AS value").firstRow(),
+    conn.query("SELECT 3 AS value").firstRow(),
   ]);
   expect(results[0]).toEqual({ value: 1 });
   expect(results[1]).toEqual({ value: 2 });
+  expect(results[2]).toEqual({ value: 3 });
 });
