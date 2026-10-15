@@ -25,3 +25,9 @@ export class PgDatabaseError extends Error {
     this.info = fields;
   }
 }
+export class PreviousQueryError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("Previous query error", options);
+    this.name = "PreviousQueryError";
+  }
+}

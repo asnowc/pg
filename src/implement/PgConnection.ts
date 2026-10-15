@@ -9,6 +9,10 @@ export class PgConnection extends QueryOperation implements IPgConnection {
       release: () => {},
     }, true);
     this.#session = session;
+    this.finished = new Promise<void>((resolve, reject) => {
+      this.#session.on("close", resolve);
+      this.#session.on("error", reject);
+    });
   }
   #session: PgSession;
   get processId(): number | null {
@@ -20,15 +24,7 @@ export class PgConnection extends QueryOperation implements IPgConnection {
   get closed(): boolean {
     return this.#session.closed;
   }
-  #finished?: Promise<void>;
-  get finished(): Promise<void> {
-    if (!this.#finished) {
-      this.#finished = new Promise<void>((resolve) => {
-        this.#session.on("close", resolve);
-      });
-    }
-    return this.#finished;
-  }
+  readonly finished: Promise<void>;
   close(): Promise<void> {
     return this.#session.close();
   }

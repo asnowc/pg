@@ -55,7 +55,7 @@ export class QueryWriteQueue {
   get hasPending(): boolean {
     return !!this.writing || !!this.writeQueue.head;
   }
-  async extendedQuery<T>(statement: TypedSqlStatementEncoder): Promise<QueryResultParser<T>> {
+  extendedQuery<T>(statement: TypedSqlStatementEncoder): Promise<QueryResultParser<T>> {
     return new Promise<QueryResultParser<T>>((resolve, reject) => {
       this.enqueueWrite({
         type: QueryAction.ExtendedQuery,
@@ -67,7 +67,14 @@ export class QueryWriteQueue {
   }
   sync(): void {
     this.enqueueWrite({ type: QueryAction.Sync });
+    this.readQueue.enqueue({ type: ReceiverType.Sync });
   }
+  clearWriteQueueForSync(): void {
+    this.writeQueue.clear();
+    this.sync();
+    this.checkWriteQueue();
+  }
+
   simpleQuery(statement: TypedSqlStatementEncoder): Promise<SampleQueryResultParser> {
     return new Promise((resolve, reject) => {
       this.enqueueWrite({ type: QueryAction.SimpleQuery, statement, resolve, reject });

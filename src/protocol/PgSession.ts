@@ -38,26 +38,29 @@ export class PgSession<T = unknown> extends EventEmitter {
         if (this.closed) {
           this.stream.closeWrite().then(
             () => void this.writeQueue.setClosed(),
-            () => void this.destroy(),
+            (e) => void this.destroy(e),
           );
         }
       },
     );
-    this.readQueue.init(parser);
+    this.readQueue.init(parser, this.writeQueue);
 
     stream.startReadLoop(() => parser.next(this.stream), () => {
       if (this.readQueue.head) {
         this.readQueue.fail(new UnexpectedEOFError());
       }
+      if (!this.closed) {
+        this.destroy(new UnexpectedEOFError());
+      }
       this.emit("close");
     });
     stream.listenOnError((err) => {
-      //可能是 this.destroy() 被调用导致 write error
       if (this.closed) {
+        //这里可能是 this.destroy() 被调用导致 write error
         this.readQueue.fail(err);
         this.writeQueue.rejectQueue(err);
       } else {
-        this.destroy();
+        this.destroy(err);
       }
       this.emit("close");
     });
@@ -100,12 +103,17 @@ export class PgSession<T = unknown> extends EventEmitter {
   close(): Promise<void> {
     return this.writeQueue.close();
   }
+  /** 释放已调用 close() */
   get closed(): boolean {
     return this.writeQueue.closed;
   }
-  destroy(): void {
+  destroy(error?: Error): void {
     this.writeQueue.setClosed();
-    const error = new SessionDestroyedError();
+    if (error) {
+      this.emit("error", error);
+    } else {
+      error = new SessionDestroyedError();
+    }
     this.readQueue.fail(error);
     this.writeQueue.rejectQueue(error);
     this.stream.destroy();
@@ -114,15 +122,18 @@ export class PgSession<T = unknown> extends EventEmitter {
 
 export interface PgSession {
   on(event: "writeFree", callback: () => void): void;
+  on(event: "error", callback: () => void): void;
   on(event: "close", callback: () => void): void;
   on(event: "release", callback: () => void): void;
   on(event: string, callback: Listener): void;
 
+  off(event: "error", callback: Listener): void;
   off(event: "writeFree", callback: Listener): void;
   off(event: "close", callback: Listener): void;
   off(event: "release", callback: Listener): void;
   off(event: string, callback: Listener): void;
 
+  emit(event: "error", error: unknown): boolean;
   emit(event: "writeFree"): boolean;
   emit(event: "close"): boolean;
   emit(event: "release"): boolean;

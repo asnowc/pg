@@ -1,12 +1,13 @@
 import { MessageParsers } from "./parsers/MessageParser.ts";
 import { BackendMessageCode, PgTransactionStatus } from "./const.ts";
 import { LinkList } from "@/_utils/LinkList.ts";
-import { PgProtocolError } from "@/_utils/error.ts";
+import { InternalError } from "@/_utils/error.ts";
 import { ReceiverType, ResultReceiver } from "./parsers/QueryTask.ts";
 import { QueryResultParser } from "./parsers/QueryResultParser.ts";
 import { decodeError, decodeNotice, decodeNotification, decodeParameterStatus, decodeReadyForQuery } from "./decode.ts";
-import { PgDatabaseError } from "@/error.ts";
+import { PgDatabaseError, PreviousQueryError } from "@/error.ts";
 import { AsyncMessageType } from "@/interface/protocol.ts";
+import type { QueryWriteQueue } from "./MessageWriteQueue.ts";
 
 export class QueryReadQueue extends LinkList<ResultReceiver> {
   transactionStatus = PgTransactionStatus.Idle;
@@ -19,11 +20,11 @@ export class QueryReadQueue extends LinkList<ResultReceiver> {
     this.enqueue(result);
     return waiter.promise;
   }
-  init(parsers: MessageParsers) {
+  init(parsers: MessageParsers, queryWrite: QueryWriteQueue) {
     this.initLifecycleMessageListener(parsers);
-    this.initQueryMessageListener(parsers);
+    this.initQueryMessageListener(parsers, queryWrite);
   }
-  private initQueryMessageListener(parsers: MessageParsers) {
+  private initQueryMessageListener(parsers: MessageParsers, queryWrite: QueryWriteQueue) {
     parsers.set(BackendMessageCode.DataRow, (body) => this.getResultReceiver().dataRow(body));
 
     parsers.set(BackendMessageCode.CommandComplete, (body) => {
@@ -34,20 +35,32 @@ export class QueryReadQueue extends LinkList<ResultReceiver> {
     parsers.set(BackendMessageCode.PortalSuspended, () => {
       const current = this.getResultReceiver();
       if (current.type !== ReceiverType.ExtendedQuery) {
-        throw new PgProtocolError("Unexpected PortalSuspended for a simple query");
+        throw new InternalError("Unexpected PortalSuspended for a simple query");
       }
       this.complete(current);
     });
     parsers.set(BackendMessageCode.ErrorResponse, (body) => {
-      if (!this.head) throw new PgProtocolError("Unexpected ErrorResponse: no query available");
+      const next = this.dequeue();
+      if (!next) throw new InternalError("Unexpected ErrorResponse: no query available");
       const info = decodeError(body);
       const error = new PgDatabaseError(info.fields);
+      if (isQueryReceiver(next)) next.reject(error);
+
+      const afterError = new PreviousQueryError({ cause: error });
       // PostgreSQL drops the rest of this extended segment, including transaction control.
-      while (this.head && this.head.type !== ReceiverType.Sync) {
+      while (this.head) {
+        if (this.head.type === ReceiverType.Sync) {
+          this.dequeue();
+          break;
+        }
         if (isQueryReceiver(this.head)) {
-          this.head.reject(error);
+          this.head.reject(afterError);
           this.dequeue();
         }
+      }
+      const isNoSyncInQueue = !this.head;
+      if (isNoSyncInQueue) {
+        queryWrite.clearWriteQueueForSync(); // queue has no SYNC, so we need to clear the write queue and send a SYNC immediately
       }
     });
     parsers.set(BackendMessageCode.EmptyQueryResponse, () => this.complete(this.getResultReceiver()));
@@ -60,7 +73,12 @@ export class QueryReadQueue extends LinkList<ResultReceiver> {
     });
     parsers.set(BackendMessageCode.ReadyForQuery, (body) => {
       const current = this.head;
+      if (!current || current.type !== ReceiverType.Sync) {
+        throw new InternalError("ReadyForQuery message  not matched with SYNC");
+      }
+      this.dequeue();
       const status = decodeReadyForQuery(body);
+
     });
     parsers.set(BackendMessageCode.BindComplete, (body) => {
     });
@@ -80,16 +98,16 @@ export class QueryReadQueue extends LinkList<ResultReceiver> {
   }
   private getReceiver(): ResultReceiver {
     const query = this.head;
-    if (!query) throw new PgProtocolError("Unexpected message: no query available");
+    if (!query) throw new InternalError("Unexpected message: no query available");
     if (query.type === ReceiverType.Sync) {
-      throw new PgProtocolError("Unexpected query message at a synchronization boundary");
+      throw new InternalError("Unexpected query message at a synchronization boundary");
     }
     return query;
   }
   private getResultReceiver(): QueryResultParser<unknown> {
     const query = this.getReceiver();
     if (!isQueryReceiver(query)) {
-      throw new PgProtocolError("Unexpected message: current query is not a query result receiver");
+      throw new InternalError("Unexpected message: current query is not a query result receiver");
     }
     return query;
   }

@@ -3,6 +3,8 @@ import { getJsDataEncoder } from "@/codec/js_data_encoder.ts";
 import type { JsDataEncoderMap } from "@/interface/js_data_encoder.ts";
 import { calcUTF16ByteLength, encodeUTF16StringInto } from "@/_utils/string.ts";
 import { encodeInt16BE, encodeInt32BE } from "@/_utils/number.ts";
+import { PgDataDecoderMap } from "../interface/pg_data_decoder.ts";
+import { PG_DATA_DECODER_V1 } from "@/codec/pg_data_decoder.ts";
 /** @public */
 export function createTypeSqlStatementEncoder<T = unknown>(
   sqlStatement: string | Uint8Array,
@@ -33,7 +35,9 @@ export class TemplateSqlStatementEncoder implements TypedSqlStatementEncoder {
     this.#chunks = chunks;
     this.#args = args;
     this.#encoderMap = encoderMap ?? new Map();
+    this.typeDecoders = PG_DATA_DECODER_V1;
   }
+  typeDecoders?: PgDataDecoderMap | undefined;
   #encoderMap: JsDataEncoderMap;
   #args: unknown[];
   #chunks: ReadonlyArray<string>;
