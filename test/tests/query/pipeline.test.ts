@@ -10,8 +10,8 @@ test("孤立语句查询", async ({ conn }) => {
   await expect(conn.query("SELECT 1/0").rowCount()).rejects.toThrow(PgDatabaseError); // error
   await conn.query("INSERT INTO t(c) VALUES ('s2')"); // ok
 
-  await expect(conn.query("SELECT * FROM tWHERE c = 's1'").rowCount()).resolves.toBe(1);
-  await expect(conn.query("SELECT * FROM tWHERE c = 's2'").rowCount()).resolves.toBe(1);
+  await expect(conn.query("SELECT * FROM t WHERE c = 's1'").rowCount()).resolves.toBe(1);
+  await expect(conn.query("SELECT * FROM t WHERE c = 's2'").rowCount()).resolves.toBe(1);
 });
 
 test("孤立语句流水线查询", async ({ conn }) => {
@@ -22,8 +22,8 @@ test("孤立语句流水线查询", async ({ conn }) => {
     reversePromise(conn.query("SELECT 1/0")), // error
     conn.query("INSERT INTO t(c) VALUES ('p2')"), // ok
   ]);
-  await expect(conn.query("SELECT * FROM tWHERE c = 'p1'").rowCount()).resolves.toBe(1);
-  await expect(conn.query("SELECT * FROM tWHERE c = 'p2'").rowCount()).resolves.toBe(1);
+  await expect(conn.query("SELECT * FROM  t WHERE c = 'p1'").rowCount()).resolves.toBe(1);
+  await expect(conn.query("SELECT * FROM t WHERE c = 'p2'").rowCount()).resolves.toBe(1);
 });
 test("依赖语句型流水线查询", async ({ conn }) => {
   // 查询语句要求前面的语句成功执行，否则会导致后续语句失败
@@ -35,8 +35,8 @@ test("依赖语句型流水线查询", async ({ conn }) => {
     conn.pipeline("SELECT 1/0"),
     conn.pipeline("INSERT INTO t(c) VALUES ('p2')"),
   ]);
-  await expect(conn.query("SELECT * FROM tWHERE c = 'p1'").rowCount()).resolves.toBe(1);
-  await expect(conn.query("SELECT * FROM tWHERE c = 'p2'").rowCount()).resolves.toBe(0);
+  await expect(conn.query("SELECT * FROM t WHERE c = 'p1'").rowCount()).resolves.toBe(1);
+  await expect(conn.query("SELECT * FROM t WHERE c = 'p2'").rowCount()).resolves.toBe(0);
 
   // 与 PostgreSQL 的简单查询类似，但由于简单查询存在隐式事务，最终没有插入任何数据。但实际第一条语句能够成功返回
   await conn.queryMultiple(`
@@ -44,8 +44,8 @@ test("依赖语句型流水线查询", async ({ conn }) => {
     SELECT 1/0;
     INSERT INTO t(c) VALUES ('s2') RETURNING *;
   `);
-  await expect(conn.query("SELECT * FROM tWHERE c = 's1'").rowCount()).resolves.toBe(0);
-  await expect(conn.query("SELECT * FROM tWHERE c = 's2'").rowCount()).resolves.toBe(0);
+  await expect(conn.query("SELECT * FROM t WHERE c = 's1'").rowCount()).resolves.toBe(0);
+  await expect(conn.query("SELECT * FROM t WHERE c = 's2'").rowCount()).resolves.toBe(0);
 });
 
 test("孤立语句事务查询", async ({ conn }) => {
@@ -131,9 +131,14 @@ test("query 和 simpleQuery 每次执行结束后不能处于事务中", async (
   await conn.queryMultiple("BEGIN"); // 导致下一个查询出现非预期状态
 });
 function reversePromise(
-  promise: { then(res?: (value: any) => Promise<any>, reject?: (e: any) => void): Promise<unknown> },
+  promise: {
+    then(res?: (value?: undefined) => Promise<any>, reject?: (e: any) => void): Promise<void>;
+  },
 ): Promise<void> {
-  return promise.then((): never => {
-    throw new Error("Promise was expected to be rejected");
-  }, () => {});
+  return promise.then(
+    (): never => {
+      throw new Error("Promise was expected to be rejected");
+    },
+    () => {},
+  );
 }

@@ -1,17 +1,15 @@
 export class LinkList<T extends {} = {}> {
   head?: Link<T>;
   private tail?: Link<T>;
-  private total: number = 0;
   enqueue(item: Link<T>) {
-    if (!this.head) {
-      this.head = item;
+    if (this.tail) {
+      item.prev = this.tail;
+      this.tail.next = item;
       this.tail = item;
     } else {
-      item.prev = this.tail;
-      if (this.tail) this.tail.next = item;
+      this.head = item;
       this.tail = item;
     }
-    this.total++;
   }
   dequeue(): Link<T> | undefined {
     if (!this.head) return undefined;
@@ -19,8 +17,7 @@ export class LinkList<T extends {} = {}> {
     this.head = item.next;
 
     if (this.head) this.head.prev = undefined;
-    if (item === this.tail) this.tail = undefined;
-    this.total--;
+    if (!item.next) this.tail = undefined;
     return item;
   }
   *[Symbol.iterator](): Iterator<Readonly<Link<{}> & T>> {
@@ -30,14 +27,25 @@ export class LinkList<T extends {} = {}> {
       current = current.next;
     }
   }
+  setLink(item: Link<T>) {
+    this.head = item;
+  }
   clear() {
     this.head = undefined;
     this.tail = undefined;
-    this.total = 0;
+  }
+  getLength() {
+    let count = 0;
+    let current = this.head;
+    while (current) {
+      count++;
+      current = current.next;
+    }
+    return count;
   }
 }
 
-export type Link<T extends {} = {}> = T & {
+type Link<T extends {} = {}> = T & {
   prev?: Link<T>;
   next?: Link<T>;
 };

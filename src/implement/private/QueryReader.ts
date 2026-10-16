@@ -64,7 +64,7 @@ export default class QueryReader<T = unknown> implements IQueryReader<T> {
     const { pool, statement, isolated: sync } = this.#getSession();
     return getMaybePromise(pool.get(), (session) => {
       const promise = session.extendedQuery<T>(statement);
-      if (sync) session.sync();
+      session.sync();
       session.checkWriteQueue();
       pool.release(session);
       return promise;

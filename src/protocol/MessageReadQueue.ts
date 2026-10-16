@@ -26,18 +26,24 @@ export class QueryReadQueue extends LinkList<ResultReceiver> {
   }
   private initQueryMessageListener(parsers: MessageParsers, queryWrite: QueryWriteQueue) {
     parsers.set(BackendMessageCode.DataRow, (body) => this.getResultReceiver().dataRow(body));
+    parsers.set(BackendMessageCode.EmptyQueryResponse, () => {
+      this.getResultReceiver(); // 确保有一个当前的结果接收器
+    });
+    parsers.set(BackendMessageCode.NoData, () => {
+      this.getResultReceiver(); // 确保有一个当前的结果接收器
+    });
 
     parsers.set(BackendMessageCode.CommandComplete, (body) => {
-      const current = this.getReceiver();
-      if (isQueryReceiver(current)) current.commandComplete(body);
-      this.complete(current);
+      const current = this.popResultReceiver();
+      current.commandComplete(body);
+      current.resolve(current);
     });
     parsers.set(BackendMessageCode.PortalSuspended, () => {
-      const current = this.getResultReceiver();
+      const current = this.popResultReceiver();
       if (current.type !== ReceiverType.ExtendedQuery) {
         throw new InternalError("Unexpected PortalSuspended for a simple query");
       }
-      this.complete(current);
+      current.resolve(current);
     });
     parsers.set(BackendMessageCode.ErrorResponse, (body) => {
       const next = this.dequeue();
@@ -48,29 +54,27 @@ export class QueryReadQueue extends LinkList<ResultReceiver> {
 
       const afterError = new PreviousQueryError({ cause: error });
       // PostgreSQL drops the rest of this extended segment, including transaction control.
+
       while (this.head) {
         if (this.head.type === ReceiverType.Sync) {
-          this.dequeue();
-          break;
+          return;
         }
         if (isQueryReceiver(this.head)) {
           this.head.reject(afterError);
-          this.dequeue();
         }
+        this.dequeue();
       }
-      const isNoSyncInQueue = !this.head;
-      if (isNoSyncInQueue) {
+      const isNoSyncInReadQueue = !this.head;
+      if (isNoSyncInReadQueue) {
         queryWrite.clearWriteQueueForSync(); // queue has no SYNC, so we need to clear the write queue and send a SYNC immediately
       }
-    });
-    parsers.set(BackendMessageCode.EmptyQueryResponse, () => this.complete(this.getResultReceiver()));
-    parsers.set(BackendMessageCode.NoData, () => {
-      this.getReceiver();
     });
 
     parsers.set(BackendMessageCode.RowDescription, (body) => {
       this.getResultReceiver().rowDescription(body);
     });
+
+    // 匹配 SYNC
     parsers.set(BackendMessageCode.ReadyForQuery, (body) => {
       const current = this.head;
       if (!current || current.type !== ReceiverType.Sync) {
@@ -78,7 +82,6 @@ export class QueryReadQueue extends LinkList<ResultReceiver> {
       }
       this.dequeue();
       const status = decodeReadyForQuery(body);
-
     });
     parsers.set(BackendMessageCode.BindComplete, (body) => {
     });
@@ -87,26 +90,23 @@ export class QueryReadQueue extends LinkList<ResultReceiver> {
     parsers.set(BackendMessageCode.ParseComplete, (body) => {
     });
   }
-  /** 每当一个查询完成时调用 */
-  private complete(current: ResultReceiver): void {
-    this.dequeue();
-    if (current.type === ReceiverType.SimpleQuery) {
-      current.resolve(current);
-    } else if (current.type === ReceiverType.ExtendedQuery) {
-      current.resolve(current);
-    }
+
+  private popReceiver(): ResultReceiver {
+    const receiver = this.dequeue();
+    if (!receiver) throw new InternalError("No receiver available to pop");
+    return receiver;
   }
-  private getReceiver(): ResultReceiver {
-    const query = this.head;
-    if (!query) throw new InternalError("Unexpected message: no query available");
-    if (query.type === ReceiverType.Sync) {
-      throw new InternalError("Unexpected query message at a synchronization boundary");
+  private popResultReceiver(): QueryResultParser<unknown> {
+    const receiver = this.popReceiver();
+    if (!isQueryReceiver(receiver)) {
+      throw new InternalError("No query result receiver available to pop");
     }
-    return query;
+    return receiver;
   }
+
   private getResultReceiver(): QueryResultParser<unknown> {
-    const query = this.getReceiver();
-    if (!isQueryReceiver(query)) {
+    const query = this.head;
+    if (!query || !isQueryReceiver(query)) {
       throw new InternalError("Unexpected message: current query is not a query result receiver");
     }
     return query;

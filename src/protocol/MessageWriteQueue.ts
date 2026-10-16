@@ -67,10 +67,15 @@ export class QueryWriteQueue {
   }
   sync(): void {
     this.enqueueWrite({ type: QueryAction.Sync });
-    this.readQueue.enqueue({ type: ReceiverType.Sync });
   }
   clearWriteQueueForSync(): void {
-    this.writeQueue.clear();
+    let item = this.writeQueue.dequeue();
+    while (item) {
+      if (item.type === QueryAction.Sync) {
+        return;
+      }
+      item = this.writeQueue.dequeue();
+    }
     this.sync();
     this.checkWriteQueue();
   }
@@ -136,7 +141,7 @@ export class QueryWriteQueue {
 
   private async handleWrite() {
     const { writeQueue } = this;
-    let item = writeQueue.head;
+    let item = writeQueue.dequeue();
     while (item) {
       switch (item.type) {
         case QueryAction.ExtendedQuery: {
@@ -144,7 +149,8 @@ export class QueryWriteQueue {
           break;
         }
         case QueryAction.Sync:
-          await this.writeSync();
+          this.readQueue.enqueueSync();
+          await this.writer.writeData(FRAME.SYNC);
           break;
         case QueryAction.SimpleQuery: {
           await this.writeSimpleQueryTask(item);
@@ -162,7 +168,6 @@ export class QueryWriteQueue {
         case QueryAction.Close:
           await this.writer.writeData(encodeTerminateMessage());
           await this.writer.flush(0);
-          writeQueue.dequeue();
 
           if (this.writeQueue.head) {
             console.error(new InternalError("Write queue is not empty after sending terminate message"));
@@ -170,8 +175,8 @@ export class QueryWriteQueue {
           }
           return;
       }
-      writeQueue.dequeue();
-      item = writeQueue.head;
+
+      item = writeQueue.dequeue();
     }
     await this.writer.flush(0);
   }
@@ -180,10 +185,6 @@ export class QueryWriteQueue {
     this.readQueue.enqueue(parser);
     await this.writeExtended(item.statement);
     await this.writer.writeData(FRAME.FLUSH);
-  }
-  private async writeSync(): Promise<void> {
-    this.readQueue.enqueueSync();
-    await this.writer.writeData(FRAME.SYNC);
   }
   private async writeSimpleQueryTask(item: SimpleQueryTask): Promise<void> {
     const message = encodeQueryMessage({

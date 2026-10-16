@@ -42,6 +42,9 @@ export const test = viTest.extend<BaseContext>({
   },
   async conn({}, use) {
     await using connection = await denoConnect(PUBLIC_DB_CONNECT_INFO);
+    connection.finished.catch((err) => {
+      console.error(err);
+    });
     await use(connection);
   },
   async pool({}, use) {

@@ -61,7 +61,7 @@ export interface QueryReader<T> extends AsyncIterable<T> {
    * @returns 查询完成后兑现的 Promise。
    * @since 0.3.0
    */
-  then(onfulfilled?: () => void, onrejected?: (reason: unknown) => void): Promise<void>;
+  then(onfulfilled?: (data?: undefined) => void, onrejected?: (reason: unknown) => void): Promise<void>;
 
   /**
    * 返回按行读取结果的异步迭代器。
