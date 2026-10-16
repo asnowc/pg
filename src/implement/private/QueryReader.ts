@@ -12,13 +12,12 @@ export interface SessionHandle<T extends PgSession = PgSession> {
   release: (session: T) => void;
 }
 export default class QueryReader<T = unknown> implements IQueryReader<T> {
-  constructor(source: { pool: SessionHandle; statement: TypedSqlStatementEncoder; isolated: boolean }) {
+  constructor(source: { pool: SessionHandle; statement: TypedSqlStatementEncoder }) {
     this.#source = source;
   }
   #source?: {
     pool: SessionHandle;
     statement: TypedSqlStatementEncoder;
-    isolated: boolean;
   };
   #getSession() {
     const source = this.#source;
@@ -61,7 +60,7 @@ export default class QueryReader<T = unknown> implements IQueryReader<T> {
   }
 
   async #consume<T>(): Promise<QueryResultParser<T>> {
-    const { pool, statement, isolated: sync } = this.#getSession();
+    const { pool, statement } = this.#getSession();
     return getMaybePromise(pool.get(), (session) => {
       const promise = session.extendedQuery<T>(statement);
       session.sync();

@@ -32,13 +32,13 @@ export class QueryOperation
     CopyQueryOperation,
     CursorQueryOperation,
     TransactionQueryOperation {
-  constructor(private pool: SessionHandle, private canPipeline: boolean) {}
+  constructor(private pool: SessionHandle) {}
   query<T>(
     queryable: SqlStatement<T> | TypedSqlStatementEncoder<T>,
     options?: QueryOptions & Pick<TypedSqlStatement, "typeDecoders" | "columnDecoders">,
   ): QueryReader<T> {
     const encoder = sqlStatementToSqlEncoder(queryable, options);
-    return new QueryReaderImpl<T>({ isolated: !this.canPipeline, pool: this.pool, statement: encoder });
+    return new QueryReaderImpl<T>({ pool: this.pool, statement: encoder });
   }
 
   begin(mode?: TransactionMode): Transaction {

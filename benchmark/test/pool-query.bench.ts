@@ -7,8 +7,8 @@ await run();
 async function run() {
   const libs = await Promise.all([
     import("../lib/asla-pg.ts"),
-    import("../lib/pg.ts"),
-    import("../lib/pgPromise.ts"),
+    // import("../lib/pg.ts"),
+    // import("../lib/pgPromise.ts"),
     import("../lib/postgres.ts"),
     // import("../lib/slonik.ts"),
   ]);

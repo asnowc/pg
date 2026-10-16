@@ -39,7 +39,7 @@ export class PgPool extends QueryOperation implements AsyncDisposable {
   constructor(options: CreatePoolOptions) {
     checkOptions(options);
 
-    super({ get: async () => this.#getSession(), release }, false);
+    super({ get: async () => this.#getSession(), release });
     this.#maxConnection = options.maxCount ?? 3;
     this.#idleTimeout = options.idleTimeout ?? 0;
     this.#createRetry = options.createRetry ?? 0;

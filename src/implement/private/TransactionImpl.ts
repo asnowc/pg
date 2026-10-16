@@ -9,7 +9,8 @@ import type {
   TypedSqlStatement,
   TypedSqlStatementEncoder,
 } from "@/interface/Query.ts";
-import { SessionHandle } from "./QueryReader.ts";
+import QueryReaderImpl, { SessionHandle } from "./QueryReader.ts";
+import { sqlStatementToSqlEncoder } from "./sql_statement.ts";
 
 export class TransactionImpl implements Transaction {
   private ended = false;
@@ -25,7 +26,8 @@ export class TransactionImpl implements Transaction {
     queryable: SqlStatement<T> | TypedSqlStatementEncoder<T>,
     options?: QueryOptions & Pick<TypedSqlStatement, "typeDecoders" | "columnDecoders">,
   ): IQueryReader<T> {
-    throw new Error("Not implemented");
+    const encoder = sqlStatementToSqlEncoder(queryable, options);
+    return new QueryReaderImpl<T>({ pool: this.pool, statement: encoder });
   }
 
   open<T>(_queryable: SqlStatement<T>, _options?: CursorOpenOptions): Promise<Cursor<T>> {
@@ -33,19 +35,19 @@ export class TransactionImpl implements Transaction {
   }
 
   async savePoint(name: string): Promise<void> {
-    throw new Error("Not implemented");
+    await this.query(`SAVEPOINT ${name}`);
   }
 
   async rollbackTo(name: string): Promise<void> {
-    throw new Error("Not implemented");
+    await this.query(`ROLLBACK TO SAVEPOINT ${name}`);
   }
 
-  commit(): Promise<void> {
-    throw new Error("Not implemented");
+  async commit(): Promise<void> {
+    await this.query("COMMIT");
   }
 
-  rollback(): Promise<void> {
-    throw new Error("Not implemented");
+  async rollback(): Promise<void> {
+    await this.query("ROLLBACK");
   }
 
   [Symbol.asyncDispose](): Promise<void> {
