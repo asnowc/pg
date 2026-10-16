@@ -1,5 +1,5 @@
 import type { TransactionMode, TypedSqlStatementEncoder } from "@/interface/Query.ts";
-import { rewriteErrorStackTrace, throwRewrittenError } from "@/_utils/error.ts";
+import { throwRewrittenError } from "@/_utils/error.ts";
 import { LinkList } from "@/_utils/LinkList.ts";
 import {
   BeginTransactionTask,

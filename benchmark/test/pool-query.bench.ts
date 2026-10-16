@@ -1,15 +1,18 @@
+import { getConcurrencyBenchResult, printBenchResult } from "../utils/bench.ts";
 import { PoolQueryTest, TestQueries } from "../utils/common.ts";
-import { Bench, BenchCustomOptions, getResult } from "../utils/customBench.ts";
+import { ConcurrencyBench } from "../utils/ConcurrencyBench.ts";
+import { initTest } from "../utils/init-asla-pg-test.ts";
 
 await run();
 
 async function run() {
   const libs = await Promise.all([
-    import("../lib/asla-pg.ts"),
+    import("@asla/pg").then((mod) => initTest(mod)),
+    // import("@asla/pg-prev").then((mod) => initTest(mod as any, "@asla/pg-prev")),
     import("../lib/pg.ts"),
-    import("../lib/pgPromise.ts"),
+    // import("../lib/pgPromise.ts"),
     import("../lib/postgres.ts"),
-    import("../lib/slonik.ts"),
+    // import("../lib/slonik.ts"),
   ]);
   const poolQueryTests = libs.map((item): PoolQueryTest<any> => item.poolQueryTest);
 
@@ -20,14 +23,15 @@ async function run() {
     // "selectWhere",
   ];
   for (const name of queryTests) {
-    const bench = createBench({ iterations: 10000, warmupIterations: 1000 }, poolQueryTests);
-    const result = await bench.run();
+    const bench = new ConcurrencyBench({ iterations: 10000, warmupIterations: 100 });
+    createConcurrencyBench(bench, poolQueryTests);
+    const raw = await bench.run();
     console.log(name);
-    console.table(getResult(result));
+    const result = getConcurrencyBenchResult(raw);
+    printBenchResult(result);
   }
 }
-function createBench(options: BenchCustomOptions, poolQueryTest: PoolQueryTest<any>[]) {
-  const bench = new Bench(options);
+function createConcurrencyBench(bench: ConcurrencyBench, poolQueryTest: PoolQueryTest<any>[]) {
   for (const info of poolQueryTest) {
     bench.add({
       name: info.name,
@@ -40,5 +44,4 @@ function createBench(options: BenchCustomOptions, poolQueryTest: PoolQueryTest<a
       },
     });
   }
-  return bench;
 }

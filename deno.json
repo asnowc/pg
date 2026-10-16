@@ -16,6 +16,7 @@
   "imports": {
     "#abstract": "./src/abstract/mod.ts",
     "@types/node": "npm:@types/node@^26.5.0",
+    "@asla/pg-prev": "./dist/mod.js",
     "@asla/pg": "./src/mod.ts",
     "@/": "./src/",
     "@test/": "./test/",

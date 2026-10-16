@@ -1,5 +1,5 @@
 import { Bench } from "tinybench";
-import { getSortedResult } from "../utils/bench.ts";
+import { getTinyBenchBenchResult, printBenchResult } from "../utils/bench.ts";
 import {
   decodeInt16BE,
   decodeInt32BE,
@@ -106,7 +106,7 @@ async function runDecode() {
     bench.add("new DataView", newView);
     await bench.run();
     console.log(bench.name);
-    console.table(getSortedResult(bench));
+    console.table(printBenchResult(getTinyBenchBenchResult(bench)));
   }
 }
 
@@ -119,6 +119,6 @@ async function runEncode() {
     bench.add("new DataView", newView);
     await bench.run();
     console.log(bench.name);
-    console.table(getSortedResult(bench));
+    console.table(printBenchResult(getTinyBenchBenchResult(bench)));
   }
 }

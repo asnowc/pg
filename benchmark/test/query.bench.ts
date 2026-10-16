@@ -1,12 +1,14 @@
-import { Bench } from "tinybench";
-import { getSortedResult } from "../utils/bench.ts";
-import { addQueryBench, QueryTest, TestQueries } from "../utils/common.ts";
+import { getConcurrencyBenchResult, printBenchResult } from "../utils/bench.ts";
+import { QueryTest, TestQueries } from "../utils/common.ts";
+import { ConcurrencyBench } from "../utils/ConcurrencyBench.ts";
+import { initTest } from "../utils/init-asla-pg-test.ts";
 
 await run();
 
 async function run() {
   const libs = await Promise.all([
-    import("../lib/asla-pg.ts"),
+    import("@asla/pg").then((mod) => initTest(mod)),
+    import("@asla/pg-prev").then((mod) => initTest(mod as any)),
     import("../lib/pg.ts"),
     import("../lib/pgPromise.ts"),
     import("../lib/postgres.ts"),
@@ -20,20 +22,30 @@ async function run() {
     "selectArgs",
     // "selectWhere",
   ];
-  for (const name of queryTests) {
-    const bench = new Bench({
-      name,
-      time: 500,
-      iterations: 5000,
-      warmup: false, // 由 addQueryBench 控制预热
-    });
 
+  for (const name of queryTests) {
+    const bench = new ConcurrencyBench({
+      maxConcurrency: 500,
+      warmupIterations: 100,
+      iterations: 2000,
+    });
     for (const info of tests) {
       const benchFn = info[name];
-      addQueryBench({ bench, benchFn, hook: info, warmupTime: 100 });
+      let context: any;
+      bench.add({
+        name: info.name,
+        fn: () => benchFn(context.conn),
+        afterRun: async () => {
+          await info.close(context.conn, context.pool);
+        },
+        beforeRun: async () => {
+          context = await info.connect();
+        },
+      });
     }
-    await bench.run();
-    console.log(bench.name);
-    console.table(getSortedResult(bench));
+    const raw = await bench.run();
+    console.log(name);
+    const result = getConcurrencyBenchResult(raw);
+    printBenchResult(result);
   }
 }
