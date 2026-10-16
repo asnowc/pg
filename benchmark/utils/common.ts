@@ -28,41 +28,7 @@ export function addQueryBench<T, P>(options: {
     async: true,
   });
 }
-export type AddPoolBenchOptions<T> = {
-  concurrency: number;
-  poolSize: number;
-  bench: Bench;
-  poolHandler: PoolHandler<T>;
-  benchFn: (client: T) => Promise<void>;
-};
-export function addPoolQueryBench<T>(options: AddPoolBenchOptions<T>) {
-  const { concurrency, poolSize, poolHandler, benchFn, bench } = options;
 
-  function run(pool: T, size: number) {
-    return new Promise((resolve, reject) => {
-      let count = 0;
-      for (let i = 0; i < size; i++) {
-        benchFn(pool).then(() => {
-          count++;
-          if (count >= size) {
-            resolve(undefined);
-          }
-        }, reject);
-      }
-    });
-  }
-  let pool: T;
-  bench.add(poolHandler.name, () => run(pool, concurrency), {
-    beforeAll: async () => {
-      pool = await poolHandler.createPool({ poolSize });
-      await run(pool, poolSize * 2);
-    },
-    afterAll: async () => {
-      await poolHandler.closePool(pool);
-    },
-    async: true,
-  });
-}
 export interface TestQueries<T> {
   select: (client: T) => Promise<void>;
   selectArg: (client: T) => Promise<void>;

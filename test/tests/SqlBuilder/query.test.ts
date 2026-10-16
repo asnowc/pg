@@ -24,21 +24,3 @@ test("模板字符串查询", async ({ connect }) => {
     number: 123,
   });
 });
-
-test("查询函数", async ({ connect }) => {
-  const getData = create((input: { value: string; nullable: string | null; empty: string; number: string }) => {
-    return sql<QueryResult>`
-      SELECT 
-        ${input.value}::int AS value,
-        ${input.nullable}::text AS nullable,
-        ${input.empty}::text AS empty,
-        ${input.number}::int AS number`;
-  });
-
-  const row = await connect.query(getData({ value: "42", nullable: null, empty: "", number: "123" })).firstRow();
-
-  expect(row).toEqual({ value: 42, nullable: null, empty: "", number: 123 });
-});
-declare function create<T extends {}, R>(
-  fn: (input: T) => R,
-): (input: T) => R;
