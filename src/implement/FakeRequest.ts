@@ -53,7 +53,8 @@ async function connect(
 class Conn {
   writer: StreamWriter;
   constructor(private conn: Deno.Conn) {
-    const buffer = new BufferWriter((data) => conn.write(data), 8 * 1024);
+    const flushThreshold = 8 * 1024;
+    const buffer = new BufferWriter((data) => conn.write(data), flushThreshold * 2, flushThreshold);
     this.writer = new StreamWriter(buffer, () => conn.closeWrite(), (e) => {
       console.error("BufferWriter error", e);
     });

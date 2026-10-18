@@ -3,10 +3,13 @@
   "scripts": {
     "bench": "deno task bench",
     "bench:query": "deno task bench:query",
-    "bench:pool": "deno task bench:pool"
+    "bench:pool": "deno task bench:pool",
+    "bench:max-qps": "deno run -A --frozen ./test/max-qps.bench.ts"
   },
   "dependencies": {
     "@types/pg": "^8.23.1",
+    "commander": "^15.0.0",
+    "echarts": "^6.1.0",
     "pg": "^8.23.0",
     "pg-promise": "^12.7.1",
     "postgres": "^3.4.9",

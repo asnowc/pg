@@ -29,7 +29,12 @@ export class PgSession<T = unknown> extends EventEmitter {
     this.secretKey = backendKey?.secretKey ?? null;
 
     const parser = new MessageParsers(maxMessageSize);
-    this.writer = new BufferWriter(this.stream.write.bind(this.stream), new Uint8Array(8 * 1024));
+    const flushThreshold = 8 * 1024;
+    this.writer = new BufferWriter(
+      this.stream.write.bind(this.stream),
+      new Uint8Array(flushThreshold * 2),
+      flushThreshold,
+    );
     this.writeQueue = new QueryWriteQueue(
       this.writer,
       this.readQueue,

@@ -11,7 +11,8 @@
     "test:coverage": "deno x vitest run --coverage",
     "publishDry": "deno publish --dry-run --allow-dirty",
     "bundle": "deno bundle src/mod.ts -o dist/mod.js",
-    "transpile": "deno transpile src/**/*.ts --outdir dist --declaration"
+    "transpile": "deno transpile src/**/*.ts --outdir dist --declaration",
+    "bench:max-qps": "deno run -A --frozen ./benchmark/test/max-qps.bench.ts --pool-size 4 --steady-duration 20 --search-timeout 120"
   },
   "imports": {
     "#abstract": "./src/abstract/mod.ts",
