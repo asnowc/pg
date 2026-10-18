@@ -2,7 +2,7 @@ import type { PgConnectOptions, TLSEncryptionOptions } from "@/interface/Connect
 import { PROTOCOL_VERSION, TLSResponseCode } from "./const.ts";
 import { PgAuthenticationError } from "@/error.ts";
 import { encodeNegotiateTlsMessage, encodeStartupMessage } from "./encode.ts";
-import { startAuthentication } from "./auth.ts";
+import { AuthenticationResult, startAuthentication } from "./auth.ts";
 import { UnexpectedEOFError } from "@/_utils/error.ts";
 import { PgSession } from "@/protocol.ts";
 import { ConnectionStream, writeData } from "@/_utils/ConnectionStream.ts";
@@ -19,19 +19,20 @@ function createConnectionStream<T extends ConnectionSource>(source: T): Connecti
   }
   return stream;
 }
-export async function connectPgSession<T extends ConnectionSource>(
+
+export async function startAuth<T extends ConnectionSource>(
   source: T,
   options: PgConnectOptions<T>,
-): Promise<PgSession> {
-  const { encryption, maxMessageSize, user, database } = options;
+): Promise<{ source: T; authResult: AuthenticationResult }> {
+  const { encryption, user, database } = options;
   let stream = createConnectionStream(source);
   if (encryption) {
     //TODO: 查询服务器支持的加密方式
     const encryptionOptions = typeof encryption === "function" ? await encryption() : encryption;
     if (encryptionOptions) {
       if (encryptionOptions.mode === "TLS") {
-        const newSource = await negotiateTls(stream, source, encryptionOptions);
-        stream = createConnectionStream(newSource);
+        source = await negotiateTls(stream, source, encryptionOptions);
+        stream = createConnectionStream(source);
       } else {
         throw new PgAuthenticationError(`Unsupported encryption mode: ${encryptionOptions.mode}`);
       }
@@ -44,11 +45,20 @@ export async function connectPgSession<T extends ConnectionSource>(
     );
     await writeData(stream, startupMessage);
     const info = await startAuthentication(stream, options);
-    return new PgSession(stream, { maxMessageSize, authResult: info, meta: undefined });
+    return { source, authResult: info };
   } catch (error) {
     stream.destroy();
     throw error;
   }
+}
+
+export async function connectPgSession<T extends ConnectionSource>(
+  source: T,
+  options: PgConnectOptions<T>,
+): Promise<PgSession> {
+  const { maxMessageSize } = options;
+  const { source: activeSource, authResult } = await startAuth(source, options);
+  return new PgSession(createConnectionStream(activeSource), { maxMessageSize, authResult, meta: undefined });
 }
 
 /**
@@ -58,9 +68,9 @@ async function negotiateTls<T>(
   stream: ConnectionStream,
   source: T,
   encryptionOptions: TLSEncryptionOptions<T>,
-): Promise<ConnectionSource> {
+): Promise<T> {
   await writeData(stream, encodeNegotiateTlsMessage());
-  return new Promise<ConnectionSource>((resolve, reject) => {
+  return new Promise<T>((resolve, reject) => {
     stream.startReadLoop(() => {
       const responseCode = stream.readUInt8();
       if (responseCode === TLSResponseCode.Accepted) resolve(encryptionOptions.upgradeTLS(source));

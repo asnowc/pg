@@ -4,12 +4,12 @@ import { decodeBase64, decodeUTF16String, encodeBase64 } from "@/_utils/string.t
 import { AuthCode } from "../const.ts";
 import { encodePasswordMessage } from "../encode.ts";
 import { PgProtocolError } from "@/_utils/error.ts";
-import { StreamParser, StreamReader } from "@/_utils/StreamReader.ts";
+import { StreamReader } from "@/_utils/StreamReader.ts";
 import { StreamWriter } from "@/_utils/StreamWriter.ts";
 
 export type AuthenticationData = true | Promise<void>;
 
-export interface AuthParser<T> extends StreamParser<T> {
+export interface AuthParser<T> {
   authCode: string;
   next(reader: StreamReader, code?: number): undefined | T;
 }
@@ -56,7 +56,10 @@ class AuthSASLParser implements AuthParser<Promise<void> | true> {
         this.authCode = "SASL_CONTINUE";
         const data = reader.readBinary(reader.readableLength);
         if (!state) throw new PgAuthenticationError("Unexpected SASL continuation");
-        this.writer.pushWrite(async () => encodePasswordMessage({ data: await state.continue(data) }));
+        this.writer.pushWrite(async (writer) => {
+          const message = encodePasswordMessage({ data: await state.continue(data) });
+          return writer.writeData(message);
+        });
         return;
       }
       case AuthCode.SASL_FINAL: {
@@ -74,14 +77,15 @@ class AuthSASLParser implements AuthParser<Promise<void> | true> {
       throw new PgProtocolError("Invalid AuthenticationSASL message: missing terminator");
     }
 
-    this.writer.pushWrite(async () => {
+    this.writer.pushWrite(async (writer) => {
       const options = this.options;
       const password = typeof options.password === "function" ? await options.password() : options.password;
       const createExchange = options.createSaslExchange ?? createScramExchange;
       const exchange = await createExchange({ mechanisms, user: options.user, password });
       const data = await exchange.initialResponse();
       this.f1!.exchange = exchange;
-      return encodePasswordMessage({ mechanism: exchange.mechanism, data });
+      const message = encodePasswordMessage({ mechanism: exchange.mechanism, data });
+      return writer.writeData(message);
     });
     return { mechanisms };
   }
@@ -91,13 +95,14 @@ class AuthCleartextPasswordParser implements AuthParser<true> {
   }
   authCode = "CLEAR_TEXT";
   next(reader: StreamReader): true | undefined {
-    this.writer.pushWrite(async () => {
+    this.writer.pushWrite(async (writer) => {
       let password = this.options.password;
       if (typeof password === "function") password = await password();
       if (password === undefined) {
         throw new PgAuthenticationError("PostgreSQL requested a password, but none was provided");
       }
-      return encodePasswordMessage({ password });
+      const message = encodePasswordMessage({ password });
+      return writer.writeData(message);
     });
     return true;
   }

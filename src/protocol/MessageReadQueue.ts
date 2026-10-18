@@ -1,6 +1,5 @@
 import { MessageParsers } from "./parsers/MessageParser.ts";
 import { BackendMessageCode, PgTransactionStatus } from "./const.ts";
-import { LinkList } from "@/_utils/LinkList.ts";
 import { InternalError } from "@/_utils/error.ts";
 import { ReceiverType, ResultReceiver } from "./parsers/QueryTask.ts";
 import { QueryResultParser } from "./parsers/QueryResultParser.ts";
@@ -8,21 +7,33 @@ import { decodeError, decodeNotice, decodeNotification, decodeParameterStatus, d
 import { PgDatabaseError, PreviousQueryError } from "@/error.ts";
 import { AsyncMessageType } from "@/interface/protocol.ts";
 import type { QueryWriteQueue } from "./MessageWriteQueue.ts";
+import { CountLinkList, eachLink } from "@/_utils/LinkList.ts";
 
-export class QueryReadQueue extends LinkList<ResultReceiver> {
+export class QueryReadQueue extends CountLinkList<ResultReceiver> {
   transactionStatus = PgTransactionStatus.Idle;
 
   enqueueSync(result?: QueryResultParser): void {
-    this.enqueue({ type: ReceiverType.Sync });
+    this.push({ type: ReceiverType.Sync });
   }
   enqueueSimpleQuery(result: QueryResultParser): Promise<void> {
     const waiter = Promise.withResolvers<void>();
-    this.enqueue(result);
+    this.push(result);
     return waiter.promise;
   }
   init(parsers: MessageParsers, queryWrite: QueryWriteQueue) {
     this.initLifecycleMessageListener(parsers);
     this.initQueryMessageListener(parsers, queryWrite);
+  }
+  private rejectQueueToSync(error: Error) {
+    while (this.head) {
+      if (this.head.type === ReceiverType.Sync) {
+        return;
+      }
+      if (isQueryReceiver(this.head)) {
+        this.head.reject(error);
+      }
+      this.shift();
+    }
   }
   private initQueryMessageListener(parsers: MessageParsers, queryWrite: QueryWriteQueue) {
     parsers.set(BackendMessageCode.DataRow, (body) => this.getResultReceiver().dataRow(body));
@@ -46,8 +57,9 @@ export class QueryReadQueue extends LinkList<ResultReceiver> {
       current.resolve(current);
     });
     parsers.set(BackendMessageCode.ErrorResponse, (body) => {
-      const next = this.dequeue();
+      const next = this.head;
       if (!next) throw new InternalError("Unexpected ErrorResponse: no query available");
+      this.shift();
       const info = decodeError(body);
       const error = new PgDatabaseError(info.fields);
       if (isQueryReceiver(next)) next.reject(error);
@@ -55,15 +67,7 @@ export class QueryReadQueue extends LinkList<ResultReceiver> {
       const afterError = new PreviousQueryError({ cause: error });
       // PostgreSQL drops the rest of this extended segment, including transaction control.
 
-      while (this.head) {
-        if (this.head.type === ReceiverType.Sync) {
-          return;
-        }
-        if (isQueryReceiver(this.head)) {
-          this.head.reject(afterError);
-        }
-        this.dequeue();
-      }
+      this.rejectQueueToSync(afterError);
       const isNoSyncInReadQueue = !this.head;
       if (isNoSyncInReadQueue) {
         queryWrite.clearWriteQueueForSync(); // queue has no SYNC, so we need to clear the write queue and send a SYNC immediately
@@ -80,7 +84,7 @@ export class QueryReadQueue extends LinkList<ResultReceiver> {
       if (!current || current.type !== ReceiverType.Sync) {
         throw new InternalError("ReadyForQuery message  not matched with SYNC");
       }
-      this.dequeue();
+      this.shift();
       const status = decodeReadyForQuery(body);
     });
     parsers.set(BackendMessageCode.BindComplete, (body) => {
@@ -92,8 +96,10 @@ export class QueryReadQueue extends LinkList<ResultReceiver> {
   }
 
   private popReceiver(): ResultReceiver {
-    const receiver = this.dequeue();
+    const receiver = this.head;
     if (!receiver) throw new InternalError("No receiver available to pop");
+
+    this.shift();
     return receiver;
   }
   private popResultReceiver(): QueryResultParser<unknown> {
@@ -112,7 +118,7 @@ export class QueryReadQueue extends LinkList<ResultReceiver> {
     return query;
   }
   fail(err: Error) {
-    for (const item of this) {
+    for (const item of eachLink(this.head)) {
       if (isQueryReceiver(item)) item.reject(err);
     }
     this.clear();

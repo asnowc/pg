@@ -1,6 +1,6 @@
 import { BackendMessageCode, FrontendMessageCode, PgTransactionStatus } from "@/protocol.ts";
 import { QueryReadQueue } from "@/protocol/MessageReadQueue.ts";
-import { BufferShortWriter } from "@/_utils/StreamWriter.ts";
+import { BufferWriter } from "@/_utils/StreamWriter.ts";
 import { QueryWriteQueue } from "@/protocol/MessageWriteQueue.ts";
 import { EventEmitter } from "@/_utils/EventEmitter.ts";
 import { BufferReader } from "@/_utils/StreamReader.ts";
@@ -79,17 +79,18 @@ export class MessageTest extends EventEmitter {
     if (maxWrite !== Infinity && (!Number.isSafeInteger(maxWrite) || maxWrite <= 0)) {
       throw new RangeError("maxWrite must be a positive integer or Infinity");
     }
-    this.readQueue.init(this.parsers);
     this.writeQueue = new QueryWriteQueue(
-      new BufferShortWriter(async (data) => {
+      new BufferWriter(async (data) => {
         if (this.writeError) throw this.writeError;
         const written = Math.min(data.byteLength, maxWrite);
         this.writtenMessages.next(data.subarray(0, written));
         return written;
       }, 8 * 1024),
       this.readQueue,
+      async () => {},
       () => this.emit("writeFree", this.messageTypes),
     );
+    this.readQueue.init(this.parsers, this.writeQueue);
   }
   private readonly parsers = new MessageParsers(1024);
   readonly readQueue = new QueryReadQueue();

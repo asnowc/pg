@@ -5,6 +5,7 @@ export type QueryTask =
   | BeginTransactionTask
   | ExtendedQueryTask
   | SimpleQueryTask
+  | CloseTask
   | EmptyTask;
 
 export interface ExtendedQueryTask {
@@ -27,7 +28,12 @@ export interface BeginTransactionTask {
 }
 
 type EmptyTask = {
-  type: QueryAction.Commit | QueryAction.Rollback | QueryAction.Sync | QueryAction.Close;
+  type: QueryAction.Commit | QueryAction.Rollback | QueryAction.Sync;
+};
+type CloseTask = {
+  type: QueryAction.Close;
+  resolve: () => void;
+  reject: (reason: unknown) => void;
 };
 
 type EmptyReceiver = {

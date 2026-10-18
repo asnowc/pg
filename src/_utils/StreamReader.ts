@@ -23,13 +23,6 @@ export interface StreamReader {
   copyBinary(size: number): Uint8Array;
 }
 
-/**
- * 用于解析字节块的接口，每次调用 next 方法时传入一个 BufferReader，返回解析结果或 undefined。
- */
-export interface StreamParser<T = unknown> {
-  next(reader: StreamReader): undefined | T;
-}
-
 export class BufferReader implements StreamReader {
   constructor(buffer: Uint8Array, dataSize: number = 0) {
     this.buffer = buffer;

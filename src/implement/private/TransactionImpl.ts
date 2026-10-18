@@ -9,7 +9,7 @@ import type {
   TypedSqlStatement,
   TypedSqlStatementEncoder,
 } from "@/interface/Query.ts";
-import QueryReaderImpl, { SessionHandle } from "./QueryReader.ts";
+import QueryReaderImpl from "./QueryReader.ts";
 import { sqlStatementToSqlEncoder } from "./sql_statement.ts";
 
 export class TransactionImpl implements Transaction {

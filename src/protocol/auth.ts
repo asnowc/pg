@@ -7,7 +7,7 @@ import { ConnectionStream } from "@/_utils/ConnectionStream.ts";
 import { AuthenticationData, AuthParser, getAuthParser } from "./parsers/AuthParser.ts";
 import { BufferReader } from "@/_utils/StreamReader.ts";
 import { PgAuthenticationError } from "@/error.ts";
-import { BufferWriter } from "@/_utils/StreamWriter.ts";
+import { BufferWriter, StreamWriter } from "@/_utils/StreamWriter.ts";
 
 const DEFAULT_MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
 
@@ -33,7 +33,11 @@ export async function startAuthentication(
   let authOk: AuthenticationData | undefined;
 
   await new Promise<void>((resolve, reject) => {
-    const writer = new BufferWriter(new Uint8Array(8 * 1024), (data) => conn.write(data), reject);
+    const writer = new StreamWriter(
+      new BufferWriter((data) => conn.write(data), 8 * 1024),
+      () => conn.closeWrite(),
+      reject,
+    );
     parser.set(BackendMessageCode.Authentication, (data) => {
       const reader = new BufferReader(data, data.byteLength);
       const code = reader.readUInt32BE();

@@ -86,7 +86,7 @@ export type ConnectionEncryptionOptions<T> = TLSEncryptionOptions<T>;
 export type TLSEncryptionOptions<T> = {
   mode: "TLS";
   /** 平台负责 TLS 握手，并返回升级后的同一逻辑连接。 */
-  upgradeTLS(connection: T): Promise<ConnectionSource>;
+  upgradeTLS(connection: T): Promise<T>;
 };
 
 /** @public */

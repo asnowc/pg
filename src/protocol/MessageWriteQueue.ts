@@ -1,6 +1,5 @@
 import type { TransactionMode, TypedSqlStatementEncoder } from "@/interface/Query.ts";
 import { throwRewrittenError } from "@/_utils/error.ts";
-import { LinkList } from "@/_utils/LinkList.ts";
 import {
   BeginTransactionTask,
   ExtendedQueryTask,
@@ -19,45 +18,38 @@ import {
   encodeQueryMessage,
   encodeTerminateMessage,
 } from "./encode.ts";
-import { BufferShortWriter } from "@/_utils/StreamWriter.ts";
+import { BufferWriter, BufferWriterQueue } from "@/_utils/StreamWriter.ts";
 import { createTypeSqlStatementEncoder } from "@/sql/SqlStatementEncoder.ts";
 import { QueryReadQueue } from "./MessageReadQueue.ts";
 import { FRAME } from "./static_frame.ts";
-import { InternalError, SessionClosedError } from "@/_utils/error.ts";
-import console from "node:console";
 
-export class QueryWriteQueue {
+export class QueryWriteQueue extends BufferWriterQueue<QueryTask> {
   constructor(
-    private readonly writer: BufferShortWriter,
+    private writer: BufferWriter,
     private readonly readQueue: QueryReadQueue,
-    private readonly onWriteEmpty: () => void,
+    private readonly onClose: () => Promise<void>,
+    onWriteError: (cause: unknown) => void,
+    onClear: () => void,
   ) {
+    super(onWriteError, onClear);
   }
-  rejectQueue(error: Error) {
-    for (const item of this.writeQueue) {
-      if (item.type === QueryAction.ExtendedQuery || item.type === QueryAction.SimpleQuery) item.reject(error);
+  protected override get writeOffset(): number {
+    return this.writer.writeOffset;
+  }
+  protected override flush(): Promise<void> {
+    return this.writer.flush();
+  }
+  override clear(error: Error = new Error("QueryWriteQueue cleared")): void {
+    for (const item of this) {
+      if (item.type === QueryAction.ExtendedQuery || item.type === QueryAction.SimpleQuery) {
+        item.reject(error);
+      }
     }
-    this.writeQueue.clear();
-  }
-  private writeQueue = new LinkList<QueryTask>();
-
-  private closePromise?: PromiseWithResolvers<void>;
-  get closed(): boolean {
-    return !!this.closePromise;
-  }
-  setClosed() {
-    if (!this.closePromise) this.closePromise = Promise.withResolvers<void>();
-    this.closePromise.resolve();
-  }
-
-  private writing?: Promise<unknown>;
-  /** 写队列是否有待处理的任务 */
-  get hasPending(): boolean {
-    return !!this.writing || !!this.writeQueue.head;
+    super.clear();
   }
   extendedQuery<T>(statement: TypedSqlStatementEncoder): Promise<QueryResultParser<T>> {
     return new Promise<QueryResultParser<T>>((resolve, reject) => {
-      this.enqueueWrite({
+      this.push({
         type: QueryAction.ExtendedQuery,
         statement,
         resolve: resolve as (value: QueryResultParser) => void,
@@ -66,123 +58,71 @@ export class QueryWriteQueue {
     }).catch((e) => throwRewrittenError(e));
   }
   sync(): void {
-    this.enqueueWrite({ type: QueryAction.Sync });
+    this.push({ type: QueryAction.Sync });
   }
   clearWriteQueueForSync(): void {
-    let item = this.writeQueue.dequeue();
+    let item = this.queueHead;
     while (item) {
-      if (item.type === QueryAction.Sync) {
-        return;
-      }
-      item = this.writeQueue.dequeue();
+      if (item.type === QueryAction.Sync) return;
+      this.shift();
+      item = this.queueHead;
     }
     this.sync();
-    this.checkWriteQueue();
   }
 
   simpleQuery(statement: TypedSqlStatementEncoder): Promise<SampleQueryResultParser> {
     return new Promise((resolve, reject) => {
-      this.enqueueWrite({ type: QueryAction.SimpleQuery, statement, resolve, reject });
+      this.push({ type: QueryAction.SimpleQuery, statement, resolve, reject });
     });
   }
   beginTransaction(mode?: TransactionMode): void {
-    this.enqueueWrite({ type: QueryAction.Begin, mode });
+    this.push({ type: QueryAction.Begin, mode });
   }
   commitTransaction(): void {
-    this.enqueueWrite({ type: QueryAction.Commit });
+    this.push({ type: QueryAction.Commit });
   }
   rollbackTransaction(): void {
-    this.enqueueWrite({ type: QueryAction.Rollback });
+    this.push({ type: QueryAction.Rollback });
+  }
+  close() {
+    return new Promise<void>((resolve, reject) => {
+      this.push({ type: QueryAction.Close, resolve, reject });
+    });
   }
 
-  close(): Promise<void> {
-    if (!this.closePromise) {
-      this.closePromise = Promise.withResolvers<void>();
-    }
-    if (this.hasPending) {
-      this.writeQueue.enqueue({ type: QueryAction.Close });
-    } else {
-      this.writeQueue.enqueue({ type: QueryAction.Close });
-      this.startWrite();
-    }
-    return this.closePromise.promise;
-  }
-
-  private enqueueWrite(item: QueryTask) {
-    if (this.closed) {
-      if (item.type === QueryAction.ExtendedQuery || item.type === QueryAction.SimpleQuery) {
-        item.reject(new SessionClosedError());
-      }
-      return;
-    }
-    this.writeQueue.enqueue(item);
-  }
-
-  checkWriteQueue(): void {
-    if (this.writing) return;
-    if (!this.writeQueue.head) return;
-    this.startWrite();
-  }
-  private startWrite() {
-    this.writing = this.handleWrite().then(
-      () => {
-        this.writing = undefined;
-        if (this.writeQueue.head) return this.checkWriteQueue();
-        this.onWriteEmpty();
-      },
-      (cause) => {
-        const error = cause instanceof Error ? cause : new Error("PostgreSQL query write failed", { cause });
-        this.readQueue.fail(error);
-        this.writing = undefined;
-        //TODO: 通知 PgSession 写入失败
-      },
-    );
-  }
-
-  private async handleWrite() {
-    const { writeQueue } = this;
-    let item = writeQueue.dequeue();
+  protected override async processItemWrite(item: QueryTask): Promise<void> {
+    // 需要确保函数调用到  this.readQueue.enqueueSync() 是同步的
+    // 否则 clearWriteQueueForSync 会情况当前正在处理的 SYNC 之后的任务
     while (item) {
       switch (item.type) {
-        case QueryAction.ExtendedQuery: {
-          await this.writeExtendedQueryTask(item);
-          break;
-        }
+        case QueryAction.ExtendedQuery:
+          return this.writeExtendedQueryTask(item);
         case QueryAction.Sync:
           this.readQueue.enqueueSync();
-          await this.writer.writeData(FRAME.SYNC);
-          break;
-        case QueryAction.SimpleQuery: {
-          await this.writeSimpleQueryTask(item);
-          break;
-        }
+          return this.writer.writeData(FRAME.SYNC);
+        case QueryAction.SimpleQuery:
+          return this.writeSimpleQueryTask(item);
         case QueryAction.Begin:
-          await this.writeBeginTransactionTask(item);
-          break;
+          return this.writeBeginTransactionTask(item);
+
         case QueryAction.Commit:
-          await this.writeEndTransactionTask(item.type);
-          break;
+          return this.writeEndTransactionTask(item.type);
+
         case QueryAction.Rollback:
-          await this.writeEndTransactionTask(item.type);
-          break;
+          return this.writeEndTransactionTask(item.type);
         case QueryAction.Close:
           await this.writer.writeData(encodeTerminateMessage());
-          await this.writer.flush(0);
-
-          if (this.writeQueue.head) {
-            console.error(new InternalError("Write queue is not empty after sending terminate message"));
-            this.rejectQueue(new SessionClosedError());
-          }
+          if (this.writer.writeOffset) await this.writer.flush();
+          await this.onClose();
+          item.resolve();
           return;
       }
-
-      item = writeQueue.dequeue();
     }
-    await this.writer.flush(0);
   }
+
   private async writeExtendedQueryTask(item: ExtendedQueryTask): Promise<void> {
     const parser = new QueryResultParser(item.resolve, item.reject, item.statement);
-    this.readQueue.enqueue(parser);
+    this.readQueue.push(parser);
     await this.writeExtended(item.statement);
     await this.writer.writeData(FRAME.FLUSH);
   }
@@ -200,12 +140,12 @@ export class QueryWriteQueue {
 
   private async writeBeginTransactionTask(item: BeginTransactionTask): Promise<void> {
     const statement = createTypeSqlStatementEncoder("BEGIN" + (item.mode ? " ISOLATION LEVEL " + item.mode : ""));
-    this.readQueue.enqueue({ type: ReceiverType.StartTransaction });
+    this.readQueue.push({ type: ReceiverType.StartTransaction });
     await this.writeExtended(statement);
   }
   private async writeEndTransactionTask(type: "COMMIT" | "ROLLBACK"): Promise<void> {
     const statement = createTypeSqlStatementEncoder(type);
-    this.readQueue.enqueue({ type: ReceiverType.EndTransaction });
+    this.readQueue.push({ type: ReceiverType.EndTransaction });
     this.readQueue.enqueueSync();
     await this.writeExtended(statement);
   }

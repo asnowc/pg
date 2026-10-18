@@ -8,7 +8,7 @@ import type { QueryCommonOptions } from "./_internal.ts";
  * @public
  * @since 0.3.0
  */
-export type QueryOptions = QueryCommonOptions;
+export type QueryOptions = QueryCommonOptions & Pick<TypedSqlStatement, "typeDecoders" | "columnDecoders">;
 
 /**
  * 支持扩展查询的操作。
@@ -29,10 +29,7 @@ export interface SingleQueryOperation {
    * const rows = await conn.query(sql).getRows();
    * ```
    */
-  query<T>(
-    queryable: SqlStatement<T>,
-    options?: QueryOptions & Pick<TypedSqlStatement, "typeDecoders" | "columnDecoders">,
-  ): QueryReader<T>;
+  query<T>(queryable: SqlStatement<T>, options?: QueryOptions): QueryReader<T>;
   query<T>(queryable: TypedSqlStatementEncoder<T>, options?: QueryOptions): QueryReader<T>;
 }
 export interface PipelineQueryOperation {
@@ -50,10 +47,7 @@ export interface PipelineQueryOperation {
    * ]);
    * ```
    */
-  pipeline<T>(
-    queryable: SqlStatement<T>,
-    options?: QueryOptions & Pick<TypedSqlStatement, "typeDecoders" | "columnDecoders">,
-  ): QueryReader<T>;
+  pipeline<T>(queryable: SqlStatement<T>, options?: QueryOptions): QueryReader<T>;
   pipeline<T>(queryable: TypedSqlStatementEncoder<T>, options?: QueryOptions): QueryReader<T>;
 }
 

@@ -5,7 +5,7 @@ import { MessageParsers } from "./parsers/MessageParser.ts";
 import { ConnectionStream } from "@/_utils/ConnectionStream.ts";
 import type { TransactionMode, TypedSqlStatementEncoder } from "@/interface/Query.ts";
 import type { QueryResultParser } from "./parsers/QueryResultParser.ts";
-import { BufferShortWriter } from "@/_utils/StreamWriter.ts";
+import { BufferWriter } from "@/_utils/StreamWriter.ts";
 import { EventEmitter, Listener } from "@/_utils/EventEmitter.ts";
 import { SessionDestroyedError, UnexpectedEOFError } from "@/_utils/error.ts";
 
@@ -29,18 +29,19 @@ export class PgSession<T = unknown> extends EventEmitter {
     this.secretKey = backendKey?.secretKey ?? null;
 
     const parser = new MessageParsers(maxMessageSize);
-    this.writer = new BufferShortWriter(this.stream.write.bind(this.stream), new Uint8Array(8 * 1024));
+    this.writer = new BufferWriter(this.stream.write.bind(this.stream), new Uint8Array(8 * 1024));
     this.writeQueue = new QueryWriteQueue(
       this.writer,
       this.readQueue,
+      () => stream.closeWrite(),
+      (cause: unknown) => {
+        const error = cause instanceof Error ? cause : new Error("PostgreSQL query write failed", { cause });
+        this.readQueue.fail(error);
+        this.destroy(error);
+      },
       () => {
-        this.emit("writeFree");
-        if (this.closed) {
-          this.stream.closeWrite().then(
-            () => void this.writeQueue.setClosed(),
-            (e) => void this.destroy(e),
-          );
-        }
+        if (this.locked) return;
+        this.emit("release");
       },
     );
     this.readQueue.init(parser, this.writeQueue);
@@ -58,7 +59,7 @@ export class PgSession<T = unknown> extends EventEmitter {
       if (this.closed) {
         //这里可能是 this.destroy() 被调用导致 write error
         this.readQueue.fail(err);
-        this.writeQueue.rejectQueue(err);
+        this.writeQueue.clear(err);
       } else {
         this.destroy(err);
       }
@@ -75,15 +76,12 @@ export class PgSession<T = unknown> extends EventEmitter {
   }
   private readonly writeQueue: QueryWriteQueue;
   private readonly readQueue = new QueryReadQueue();
-  private readonly writer: BufferShortWriter;
+  private readonly writer: BufferWriter;
 
-  get hasPending(): boolean {
-    return this.writeQueue.hasPending;
+  get ttl(): number {
+    return this.writeQueue.length + this.readQueue.length;
   }
-
-  checkWriteQueue(): void {
-    this.writeQueue.checkWriteQueue();
-  }
+  locked = false;
   beginTransaction(mode?: TransactionMode): void {
     return this.writeQueue.beginTransaction(mode);
   }
@@ -99,42 +97,41 @@ export class PgSession<T = unknown> extends EventEmitter {
   sync(): void {
     this.writeQueue.sync();
   }
-
-  close(): Promise<void> {
-    return this.writeQueue.close();
-  }
-  /** 释放已调用 close() */
+  #closedInfo?: Promise<void> | true;
   get closed(): boolean {
-    return this.writeQueue.closed;
+    return !!this.#closedInfo;
   }
+  async close(): Promise<void> {
+    if (!this.#closedInfo) {
+      this.#closedInfo = this.writeQueue.close();
+    }
+    await this.#closedInfo;
+  }
+
   destroy(error?: Error): void {
-    this.writeQueue.setClosed();
+    this.#closedInfo = true;
     if (error) {
       this.emit("error", error);
     } else {
       error = new SessionDestroyedError();
     }
     this.readQueue.fail(error);
-    this.writeQueue.rejectQueue(error);
     this.stream.destroy();
   }
 }
 
 export interface PgSession {
-  on(event: "writeFree", callback: () => void): void;
   on(event: "error", callback: () => void): void;
   on(event: "close", callback: () => void): void;
   on(event: "release", callback: () => void): void;
   on(event: string, callback: Listener): void;
 
   off(event: "error", callback: Listener): void;
-  off(event: "writeFree", callback: Listener): void;
   off(event: "close", callback: Listener): void;
   off(event: "release", callback: Listener): void;
   off(event: string, callback: Listener): void;
 
   emit(event: "error", error: unknown): boolean;
-  emit(event: "writeFree"): boolean;
   emit(event: "close"): boolean;
   emit(event: "release"): boolean;
   emit(event: string, ...args: unknown[]): boolean;

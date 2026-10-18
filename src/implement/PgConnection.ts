@@ -1,10 +1,80 @@
-import { QueryOperation } from "./private/QueryOperation.ts";
 import type { PgSession } from "@/protocol.ts";
 import { PgConnection as IPgConnection, PgPoolConnection as IPgPoolConnection } from "@/interface/Connection.ts";
+import type {
+  CopyFromHandle,
+  CopyFromOptions,
+  CopyQueryOperation,
+  CopyToOptions,
+  Cursor,
+  CursorOpenOptions,
+  CursorQueryOperation,
+  MultipleQueryOperation,
+  PipelineQueryOperation,
+  QueryOptions,
+  QueryReader,
+  SampleQueryReader,
+  SingleQueryOperation,
+  SqlStatement,
+  SqlStatements,
+  Transaction,
+  TransactionMode,
+  TransactionQueryOperation,
+  TypedSqlStatementEncoder,
+} from "@/interface/Query.ts";
+import { sqlStatementToSqlEncoder } from "./private/sql_statement.ts";
+import QueryReaderImpl from "./private/QueryReader.ts";
+import { TransactionImpl } from "./private/TransactionImpl.ts";
+
+class QueryOperation
+  implements
+    PipelineQueryOperation,
+    MultipleQueryOperation,
+    SingleQueryOperation,
+    CopyQueryOperation,
+    CursorQueryOperation,
+    TransactionQueryOperation {
+  constructor(session: PgSession) {
+    this.#session = session;
+  }
+
+  #session: PgSession;
+  query<T>(queryable: SqlStatement<T> | TypedSqlStatementEncoder<T>, options?: QueryOptions): QueryReader<T> {
+    const encoder = sqlStatementToSqlEncoder(queryable, options);
+    return new QueryReaderImpl(() => {
+      const promise = this.#session.extendedQuery<T>(encoder);
+      this.#session.sync();
+      return promise;
+    });
+  }
+
+  begin(mode?: TransactionMode): Transaction {
+    throw new Error("Not implemented");
+  }
+  open<T>(queryable: SqlStatement<T>, options?: CursorOpenOptions): Promise<Cursor<T>> {
+    throw new Error("Not implemented");
+  }
+  copyFrom(queryable: SqlStatement<unknown>, options?: CopyFromOptions): CopyFromHandle {
+    throw new Error("Not implemented");
+  }
+  copyTo(queryable: SqlStatement<unknown>, options?: CopyToOptions): ReadableStream<Uint8Array> {
+    throw new Error("Not implemented");
+  }
+
+  pipeline(queryable: unknown, options?: unknown): QueryReader<unknown> {
+    throw new Error("Not implemented");
+  }
+
+  queryMultiple(queryable: SqlStatements, options?: QueryOptions): SampleQueryReader<unknown[]>;
+  queryMultiple(queryable: ReadableStream<Uint8Array>, options?: QueryOptions): SampleQueryReader<unknown[]>;
+  queryMultiple(queryable: unknown, _options?: unknown): SampleQueryReader {
+    if (typeof queryable !== "string") throw new TypeError("Only string simple queries are supported");
+    throw new Error("Not implemented");
+  }
+}
 
 export class PgConnection extends QueryOperation implements IPgConnection {
   constructor(session: PgSession) {
-    super({ get: () => this.#session, release: () => {} });
+    super(session);
     this.#session = session;
     this.finished = new Promise<void>((resolve, reject) => {
       this.#session.on("close", resolve);
@@ -35,7 +105,7 @@ export class PgConnection extends QueryOperation implements IPgConnection {
 
 export class PgPoolConnection extends QueryOperation implements IPgPoolConnection {
   constructor(session: PgSession, onRelease: (session: PgSession) => void) {
-    super({ get: () => this.#getSession(), release: (session) => this.#session = session });
+    super(session);
     this.#release = onRelease;
     this.#session = session;
 

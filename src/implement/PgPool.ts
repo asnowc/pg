@@ -1,13 +1,22 @@
 import { PgSession } from "@/protocol.ts";
-import { QueryOperation } from "./private/QueryOperation.ts";
 import { connectPgSession } from "@/protocol/connect.ts";
 import type {
   ConnectionSource,
   PgConnectOptions,
   PgPoolConnection as IPgPoolConnection,
 } from "@/interface/Connection.ts";
-import { LinkList } from "@/_utils/LinkList.ts";
+import { eachLink, LinkList } from "@/_utils/LinkList.ts";
 import { PgPoolConnection } from "./PgConnection.ts";
+import {
+  QueryOptions,
+  QueryReader,
+  SingleQueryOperation,
+  SqlStatement,
+  TypedSqlStatementEncoder,
+} from "@/interface/Query.ts";
+import { sqlStatementToSqlEncoder } from "./private/sql_statement.ts";
+import QueryReaderImpl from "./private/QueryReader.ts";
+
 /**
  * 原生连接池配置。建连和认证由调用方注入 。
  *  @public
@@ -25,12 +34,11 @@ export interface CreatePoolOptions {
 type PoolConnState = {
   /** isFree 状态更新的最后更新时间 */
   date: number;
-  isBorrowed: boolean;
 };
 type PoolPgSession = PgSession<PoolConnState>;
 
 /** @public */
-export class PgPool extends QueryOperation implements AsyncDisposable {
+export class PgPool implements SingleQueryOperation, AsyncDisposable {
   /**
    * 创建惰性建连的原生连接池。池级查询自动归还连接；事务、游标和 COPY 必须结束或取消。
    * QueryReader 的行会先物化，再归还连接，因此延迟消费结果不会读取其他借用者的数据。
@@ -39,7 +47,6 @@ export class PgPool extends QueryOperation implements AsyncDisposable {
   constructor(options: CreatePoolOptions) {
     checkOptions(options);
 
-    super({ get: async () => this.#getSession(), release });
     this.#maxConnection = options.maxCount ?? 3;
     this.#idleTimeout = options.idleTimeout ?? 0;
     this.#createRetry = options.createRetry ?? 0;
@@ -48,7 +55,6 @@ export class PgPool extends QueryOperation implements AsyncDisposable {
   #connecting = 0;
   #pool = new Set<PoolPgSession>();
   #free = new Set<PoolPgSession>(); // 写队列和读队列都空闲的连接
-  #writeFree = new Set<PoolPgSession>(); // 仅写队列空闲的连接
   /** 最大连接数 */
   #maxConnection: number;
   /** 空闲回收时间（毫秒） */
@@ -71,7 +77,7 @@ export class PgPool extends QueryOperation implements AsyncDisposable {
     try {
       const { connectOptions, stream } = await this.#createConnection();
       session = await connectPgSession(stream, connectOptions) as PoolPgSession;
-      session.meta = { date: Date.now(), isBorrowed: false };
+      session.meta = { date: Date.now() };
       this.#createRetry = 0;
     } catch (e) {
       this.#createRetry++;
@@ -88,22 +94,17 @@ export class PgPool extends QueryOperation implements AsyncDisposable {
     session.on("close", () => {
       this.#pool.delete(session);
       this.#free.delete(session);
-      this.#writeFree.delete(session);
       if (this.#closed && this.totalCount === 0) this.#closed.resolve();
     });
     session.on("release", () => {
-      session.meta.isBorrowed = false;
-      if (!session.hasPending) this.#onFree(session);
-    });
-    session.on("writeFree", () => {
-      if (!session.meta.isBorrowed) this.#onFree(session);
+      this.#onFree(session);
     });
 
     this.#pool.add(session);
     this.#onFree(session);
   }
   #onFree(session: PoolPgSession) {
-    const next = this.#waitQueue.dequeue();
+    const next = this.#waitQueue.shift();
     if (next) return void next.resolve(session);
     if (this.closed) return void closeByteStream(session);
 
@@ -114,26 +115,31 @@ export class PgPool extends QueryOperation implements AsyncDisposable {
   #setTimeoutCheck() {
     this.#timer = setTimeout(() => {
       checkTimeout(this.#pool, this.#free, this.#idleTimeout);
-      checkTimeout(this.#pool, this.#writeFree, this.#idleTimeout);
       this.#setTimeoutCheck();
     }, this.#idleTimeout);
   }
 
   #timer?: NodeJS.Timeout;
   #clearWaitQueue(error: Error) {
-    for (const item of this.#waitQueue) {
+    for (const item of eachLink(this.#waitQueue.head)) {
       item.reject(error);
     }
     this.#waitQueue.clear();
   }
+
   #waitQueue = new LinkList<{ resolve(session: PoolPgSession): void; reject(reason: unknown): void }>();
   #getSession(): Promise<PoolPgSession> | PoolPgSession {
     if (this.closed) throw new Error("Pool is closed");
-    const session = dequeueSet(this.#free) ?? dequeueSet(this.#writeFree);
-    if (session) return session as PoolPgSession;
-
+    let min: PoolPgSession | undefined;
+    for (const session of this.#free) {
+      if (!min || session.ttl < min.ttl) min = session;
+    }
+    if (min) {
+      this.#free.delete(min);
+      return min;
+    }
     return new Promise((resolve, reject) => {
-      this.#waitQueue.enqueue({ resolve, reject });
+      this.#waitQueue.push({ resolve, reject });
       if (this.totalCount < this.#maxConnection) this.#create();
     });
   }
@@ -165,7 +171,7 @@ export class PgPool extends QueryOperation implements AsyncDisposable {
       this.#closed.reject(e);
     }
 
-    if (this.#writeFree.size + this.#connecting == 0) {
+    if (this.#connecting == 0) {
       this.#closed.resolve();
     }
     return this.#closed.promise;
@@ -177,16 +183,21 @@ export class PgPool extends QueryOperation implements AsyncDisposable {
     this.#closed.resolve();
     this.#clearWaitQueue(error);
     for (const session of this.#free) {
-      closeByteStream(session);
+      session.destroy(error);
     }
     this.#free.clear();
-    for (const session of this.#writeFree) {
-      closeByteStream(session);
-    }
-    this.#writeFree.clear();
   }
   [Symbol.asyncDispose](): Promise<void> {
     return this.close();
+  }
+  query<T>(queryable: SqlStatement<T> | TypedSqlStatementEncoder<T>, options?: QueryOptions): QueryReader<T> {
+    const encoder = sqlStatementToSqlEncoder(queryable, options);
+    return new QueryReaderImpl<T>(async () => {
+      const session = await this.#getSession();
+      const promise = session.extendedQuery<T>(encoder);
+      session.sync();
+      return promise;
+    });
   }
 }
 function checkOptions(options: CreatePoolOptions) {
@@ -216,14 +227,6 @@ function checkTimeout(map: Set<PgSession>, set: Set<PoolPgSession>, timeout: num
   }
 }
 
-function dequeueSet<T>(set: Set<T>) {
-  if (set.size === 0) return undefined;
-  for (const item of set) {
-    set.delete(item);
-    return item;
-  }
-  return undefined;
-}
 function release(session: PgSession) {
   session.emit("release");
 }

@@ -1,9 +1,8 @@
 export class LinkList<T extends {} = {}> {
   head?: Link<T>;
   private tail?: Link<T>;
-  enqueue(item: Link<T>) {
+  push(item: Link<T>) {
     if (this.tail) {
-      item.prev = this.tail;
       this.tail.next = item;
       this.tail = item;
     } else {
@@ -11,41 +10,49 @@ export class LinkList<T extends {} = {}> {
       this.tail = item;
     }
   }
-  dequeue(): Link<T> | undefined {
+  shift(): Link<T> | undefined {
     if (!this.head) return undefined;
     const item = this.head;
     this.head = item.next;
 
-    if (this.head) this.head.prev = undefined;
     if (!item.next) this.tail = undefined;
     return item;
-  }
-  *[Symbol.iterator](): Iterator<Readonly<Link<{}> & T>> {
-    let current = this.head;
-    while (current) {
-      yield current;
-      current = current.next;
-    }
-  }
-  setLink(item: Link<T>) {
-    this.head = item;
   }
   clear() {
     this.head = undefined;
     this.tail = undefined;
   }
-  getLength() {
-    let count = 0;
-    let current = this.head;
-    while (current) {
-      count++;
-      current = current.next;
-    }
-    return count;
+}
+
+export class CountLinkList<T extends {} = {}> {
+  head?: Link<T>;
+  private tail?: Link<T>;
+  length = 0;
+  push(item: T): void {
+    if (this.tail) this.tail.next = item;
+    else this.head = item;
+    this.tail = item;
+    this.length++;
+  }
+  shift() {
+    this.head = this.head!.next;
+    if (!this.head) this.tail = undefined;
+    this.length--;
+  }
+  clear() {
+    this.head = undefined;
+    this.tail = undefined;
+    this.length = 0;
   }
 }
 
-type Link<T extends {} = {}> = T & {
-  prev?: Link<T>;
+export type Link<T extends {} = {}> = T & {
   next?: Link<T>;
 };
+export function* eachLink<T extends {}>(node?: Link<T>): Generator<T, void, unknown> {
+  let current: Link<T> | undefined = node;
+  while (current) {
+    yield current;
+    current = current.next;
+  }
+}

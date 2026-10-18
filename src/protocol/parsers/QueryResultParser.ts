@@ -64,8 +64,7 @@ export class SampleQueryResultParser extends QueryResultParser {
   #link = new LinkList<QueryResultParser>();
   override commandComplete(body: Uint8Array): void {
     super.commandComplete(body);
-    const current = this.#link.head;
-    if (current) this.#link.dequeue();
+    if (this.#link.head) this.#link.shift();
   }
 }
 

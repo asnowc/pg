@@ -1,12 +1,30 @@
-export class BufferShortWriter {
-  constructor(private callWrite: (buffer: Uint8Array) => Promise<number>, bufferOrSize: Uint8Array | number) {
-    const buffer = typeof bufferOrSize === "number" ? new Uint8Array(bufferOrSize) : bufferOrSize;
-    this.buffer = buffer;
-    this.view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-    this.flushThreshold = Math.floor(buffer.byteLength / 2);
+/**
+ * | buffered data | writable space |
+ * |0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 |
+ *                  ^
+ *             writeOffset
+ */
+
+export class BufferWriter {
+  constructor(
+    private callWrite: (buffer: Uint8Array) => Promise<number>,
+    bufferOrSize: Uint8Array | number,
+    flushThreshold?: number,
+  ) {
+    const writeBuffer = typeof bufferOrSize === "number" ? new Uint8Array(bufferOrSize) : bufferOrSize;
+    this.buffer = writeBuffer;
+
+    this.flushThreshold = typeof flushThreshold === "number"
+      ? Math.floor(flushThreshold)
+      : Math.floor(writeBuffer.byteLength / 2);
+
+    if (this.flushThreshold <= 0 || this.flushThreshold > writeBuffer.byteLength) {
+      throw new Error("flushThreshold must be a positive integer and less than or equal to the buffer length.");
+    }
+    this.view = new DataView(writeBuffer.buffer, writeBuffer.byteOffset, writeBuffer.byteLength);
   }
   /**
-   * 调用 callWrite 的字节大小阈值。正整数
+   * 缓冲区数据达到此字节数时触发写入。空缓冲区中的大块数据可以绕过缓冲区直接写入。
    */
   private readonly flushThreshold: number;
   readonly buffer: Uint8Array;
@@ -19,249 +37,200 @@ export class BufferShortWriter {
   }
 
   /**
-   * 将缓冲区数据到底层, 直到缓冲区的数据量小于指定的阈值。至少调用一次 callWrite
-   * @param threshold 指定阈值。默认为 buffer 的一半
+   * 将缓冲区中的数据全部写入底层。
    */
-  async flush(threshold = this.flushThreshold): Promise<void> {
-    const min = this.writeOffset - threshold;
-    let written = 0;
-    while (written < min) {
-      written += await this.callWrite(this.buffer.subarray(written, this.writeOffset));
+  async flush(): Promise<void> {
+    let totalWritten = 0;
+    while (totalWritten < this.writeOffset) {
+      totalWritten += await this.callWrite(this.buffer.subarray(totalWritten, this.writeOffset));
     }
-    if (written < this.writeOffset) await this.buffer.copyWithin(0, written, this.writeOffset);
-    this.writeOffset -= written;
+    this.writeOffset = 0;
   }
-  /** 调用一次 callWrite 。缓冲区剩余未写入的数据将被移到到缓冲区的起始位置 */
-  private async writeOnce() {
-    const written = await this.callWrite(this.buffer.subarray(0, this.writeOffset));
-    this.buffer.copyWithin(0, written, this.writeOffset);
-    this.writeOffset -= written;
-    return written;
+  /**
+   * 从缓冲区写入数据，直到累计写入量严格大于 minimumBytesToWrite。
+   */
+  private async transferBuffer(minimumBytesToWrite: number) {
+    let totalWritten = 0;
+    while (totalWritten <= minimumBytesToWrite) {
+      totalWritten += await this.callWrite(this.buffer.subarray(totalWritten, this.writeOffset));
+    }
+    if (totalWritten > 0) {
+      if (totalWritten === this.writeOffset) {
+        this.writeOffset = 0;
+      } else {
+        this.buffer.copyWithin(0, totalWritten, this.writeOffset);
+        this.writeOffset -= totalWritten;
+      }
+    }
+    return totalWritten;
   }
+  async callOnce() {
+    this.writeOffset -= await this.callWrite(this.buffer.subarray(0, this.writeOffset));
+  }
+
+  /**
+   * 写入数据；达到阈值时发送缓冲数据，未达到阈值的尾部数据留在缓冲区，直到后续写入或 flush()。
+   */
   async writeData(data: Uint8Array) {
-    const buffer = this.buffer;
-    let copied = 0;
-    do {
-      const toWrite = Math.min(this.writableLength, data.byteLength - copied);
-      buffer.set(data.subarray(copied, copied + toWrite), this.writeOffset);
-      this.writeOffset += toWrite;
-      copied += toWrite;
+    let pendingByteCount = data.byteLength + this.writeOffset;
+    let inputOffset = 0;
+    while (pendingByteCount >= this.flushThreshold) {
+      if (this.writeOffset > 0) {
+        const bytesToBuffer = Math.min(this.flushThreshold - this.writeOffset, data.byteLength);
+        this.buffer.set(data.subarray(inputOffset, inputOffset + bytesToBuffer), this.writeOffset);
+        inputOffset += bytesToBuffer;
+        this.writeOffset += bytesToBuffer;
+        pendingByteCount -= await this.transferBuffer(bytesToBuffer);
+      } else {
+        const written = await this.callWrite(data.subarray(inputOffset));
+        inputOffset += written;
+        pendingByteCount -= written;
+      }
+    }
 
-      if (this.writableLength > this.flushThreshold) await this.writeOnce();
-    } while (copied < data.byteLength);
+    if (inputOffset < data.byteLength) {
+      this.buffer.set(data.subarray(inputOffset), this.writeOffset);
+      this.writeOffset += data.byteLength - inputOffset;
+    }
   }
 }
 
-/**
- * 二进制缓冲区队列写入器。
- */
-export interface StreamWriter {
-  /**
-   * 将字节块写入到写入队列中。数据在被写入到底层前，请勿修改 data 内容
-   */
-  pushData(data: Uint8Array): void;
-  /**
-   * 将写入操作添加到队列中。
-   * @param getData 生成数据的函数。返回的数据在被写入到底层前，请勿修改其内容。
-   */
-  pushWrite(write: BufferWriterFunction): void;
-  /**
-   * 将写入操作添加到队列中。
-   * @param onWriteInto 调用时，会把写入缓冲区和偏移量传入. 可用缓冲区大小可能为 0
-   */
-  pushWriteInto(onWriteInto: BufferWriterWriteInto): void;
-}
-export type BufferWriterWriteIntoResult = {
-  /** written 必须是正整数 */
-  written: number;
-  done?: boolean;
-};
-
-export interface BufferWriterWriteInto {
-  /**
-   * @param offset buffer 从 offset 到末尾为可写入空间（offset 小于等于 buffer.byteLength）。
-   * 返回 null 表示没有写入任何数据，返回 BufferWriterWriteIntoResult 表示写入了数据。
-   */
-  (buffer: Uint8Array, offset: number): null | BufferWriterWriteIntoResult | Promise<BufferWriterWriteIntoResult>;
-}
-export type BufferWriterFunction = () => Promise<Uint8Array> | Uint8Array;
-
-export class BufferWriter implements StreamWriter {
-  constructor(
-    buffer: Uint8Array,
-    private callWrite: (buffer: Uint8Array) => Promise<number>,
-    private onError: (error: unknown) => void,
-  ) {
-    this.buffer = buffer;
-    this.flushThreshold = Math.floor(buffer.byteLength / 2);
-  }
-  /**
-   * 调用 callWrite 的字节大小阈值。正整数
-   */
-  private readonly flushThreshold: number;
-  private readonly buffer: Uint8Array;
-  private bufferedLength: number = 0;
-
-  /** 可写入到 FixedBufferWriter 的字节长度 */
-  get writableLength(): number {
-    return this.buffer.byteLength - this.bufferedLength;
+export abstract class BufferWriterQueue<T extends {}> {
+  constructor(private onError: (error: unknown) => void, private onClear?: () => void) {
   }
 
-  private queueHead?: QueueItem;
-  private queueTail?: QueueItem;
-  private enqueue(item: QueueItem): void {
-    if (this.queueTail) this.queueTail.next = item;
-    else this.queueHead = item;
-    this.queueTail = item;
+  protected abstract flush(): Promise<void>;
+  protected abstract get writeOffset(): number;
+  protected abstract processItemWrite(item: Link<T>): Promise<void>;
+
+  get queueHead(): T | undefined {
+    return this.#head;
+  }
+  #head?: Link<T>;
+  #tail?: Link<T>;
+  length = 0;
+  push(item: T): void {
+    if (this.#tail) this.#tail.next = item;
+    else this.#head = item;
+    this.#tail = item;
+    this.length++;
+
+    if (this.pendingWrite) return;
+    this.startWriteLoop();
+  }
+  shift() {
+    this.#head = this.#head!.next;
+    if (!this.#head) this.#tail = undefined;
+    this.length--;
+  }
+  clear() {
+    this.#head = undefined;
+    this.#tail = undefined;
+    this.length = 0;
   }
 
   /** 正在进行的写入操作的 Promise，如果没有正在进行的写入，则为 undefined */
   private pendingWrite?: Promise<void>;
-  private flushTimer?: NodeJS.Timeout;
 
-  pushData(data: Uint8Array): void {
-    const item: QueueItem = { type: "data", data };
-    if (this.pendingWrite) return this.enqueue(item);
-    this.processItem(item);
-  }
-  pushWrite(write: BufferWriterFunction): void {
-    const item: QueueItem = { type: "writeFn", write };
-    if (this.pendingWrite) return this.enqueue(item);
-    this.processItem(item);
-  }
-  pushWriteInto(onWriteInto: BufferWriterWriteInto): void {
-    const item: QueueItem = { type: "writeInto", writeInto: onWriteInto };
-    if (this.pendingWrite) return this.enqueue(item);
-    this.processItem(item);
-  }
-  private onItemFinished = (): void => {
-    this.pendingWrite = undefined;
-    if (this.queueHead) {
-      const item = this.queueHead;
-      this.queueHead = item.next;
-      if (!item.next) this.queueTail = undefined;
-      this.processItem(item);
-      return;
-    }
-    if (this.bufferedLength > 0 && !this.flushTimer) {
-      this.flushTimer = setTimeout(() => {
-        this.flushTimer = undefined;
-        this.pendingWrite = this.flushBuffer(0).then(this.onItemFinished, this.onError);
-      }, 0);
-    }
-    return;
-  };
-  private processItem(item: QueueItem) {
-    if (this.flushTimer) {
-      clearTimeout(this.flushTimer);
-      this.flushTimer = undefined;
-    }
-    let promise: Promise<void>;
-    switch (item.type) {
-      case "writeFn": {
-        const data = item.write();
-        if (data instanceof Promise) promise = data.then((data) => this.writeData(data));
-        else promise = this.writeData(data);
-        break;
-      }
-      case "writeInto":
-        promise = this.writeInto(item.writeInto);
-        break;
-      case "data":
-        promise = this.writeData(item.data);
-        break;
-    }
-
-    this.pendingWrite = promise.then(this.onItemFinished, this.onError);
-  }
-
-  /**
-   * 将数据写入缓冲区，如果缓冲区已满，则调用 startWrite 将数据写入到底层。
-   */
-  private async writeData(data: Uint8Array): Promise<void> {
-    const bufferCapacity = this.buffer.byteLength;
-    let dataOffset = 0;
-    let remainingLength = this.bufferedLength + data.byteLength;
-    while (remainingLength > this.flushThreshold) {
-      if (this.bufferedLength === 0) {
-        // 此时可以直接将数据写入到底层，而无需先写入缓冲区
-        do {
-          const written = await this.callWrite(data.subarray(dataOffset));
-          dataOffset += written;
-          remainingLength -= written;
-        } while (remainingLength > this.flushThreshold);
-        break;
-      }
-      const chunk = data.subarray(dataOffset, Math.min(data.byteLength, bufferCapacity - this.bufferedLength));
-      this.buffer.set(chunk, this.bufferedLength);
-
-      dataOffset += chunk.byteLength;
-      this.bufferedLength += chunk.byteLength;
-
-      const written = await this.callWrite(this.buffer.subarray(0, this.bufferedLength));
-      this.buffer.copyWithin(0, written, this.bufferedLength);
-      this.bufferedLength -= written;
-      remainingLength -= written;
-    }
-    if (remainingLength > 0) {
-      const chunk = data.subarray(dataOffset);
-      this.buffer.set(chunk, this.bufferedLength);
-      this.bufferedLength += chunk.byteLength;
-    }
-  }
-
-  /**
-   * 调用 writeInto  将数据写入缓存区，直到写入完成。
-   * 当缓冲区不满足 writeInto 的写入需求时，会将缓冲区的数据写入到底层。
-   * 如果缓冲区总大小不足以满足 writeInto 的写入需求，会抛出错误。
-   */
-  private async writeInto(writeInto: BufferWriterWriteInto): Promise<void> {
-    let result: BufferWriterWriteIntoResult | null;
-    let written = 0;
-    do {
-      result = await writeInto(this.buffer, this.bufferedLength);
-      if (result === null) {
-        if (this.bufferedLength === 0) throw new Error("Writer buffer is too small");
-
-        written = await this.flushBuffer(this.flushThreshold);
-        if (written === 0) written = await this.flushBuffer(0);
-      } else if (result.written < 1) {
-        throw new Error("writeInto did not write any data");
+  private startWriteLoop() {
+    this.pendingWrite = this.handleWriteLoop().then(() => {
+      if (this.#head) {
+        this.startWriteLoop();
       } else {
-        this.bufferedLength += result.written;
+        this.pendingWrite = undefined;
+        this.onClear?.();
       }
-    } while (result === null || !result.done);
+    }, (error) => {
+      this.clear();
+      this.onError(error);
+    });
+  }
+
+  private async handleWriteLoop() {
+    let item = this.#head;
+    while (item) {
+      this.shift();
+      await this.processItemWrite(item);
+      item = this.#head;
+    }
+    if (this.writeOffset > 0) await this.flush();
+  }
+
+  *[Symbol.iterator](): Generator<T, void, void> {
+    let item = this.#head;
+    while (item) {
+      yield item;
+      item = item.next;
+    }
+  }
+}
+type Link<T extends {}> = T & {
+  next?: Link<T>;
+};
+
+/**
+ * 二进制缓冲区队列写入器。
+ */
+export class StreamWriter extends BufferWriterQueue<QueueItem> {
+  constructor(
+    private writer: BufferWriter,
+    private onClose: () => Promise<void>,
+    onError: (error: unknown) => void,
+  ) {
+    super(onError);
   }
 
   /**
-   *  将缓冲区的数据写入到底层，直到缓冲区的数据量小于指定的阈值。
+   * 将字节块写入到写入队列中。数据在被写入到底层前，请勿修改 data 内容
    */
-  private async flushBuffer(bufferThreshold: number): Promise<number> {
-    const bufferedLength = this.bufferedLength;
-    let writtenLength = 0;
-    while (bufferedLength - writtenLength > bufferThreshold) {
-      const written = await this.callWrite(this.buffer.subarray(writtenLength, bufferedLength));
-      writtenLength += written;
+  pushData(data: Uint8Array): void {
+    this.push({ type: QueueItemType.Data, data });
+  }
+  /**
+   * 将写入操作添加到队列中。
+   * @param getData 生成数据的函数。返回的数据在被写入到底层前，请勿修改其内容。
+   */
+  pushWrite(write: (writer: BufferWriter) => Promise<void>): void {
+    this.push({ type: QueueItemType.WriteFn, write });
+  }
+  pushClose(): void {
+    this.push({ type: QueueItemType.Close });
+  }
+  protected override flush(): Promise<void> {
+    return this.writer.flush();
+  }
+  protected override get writeOffset(): number {
+    return this.writer.writeOffset;
+  }
+  protected override async processItemWrite(item: QueueItem) {
+    switch (item.type) {
+      case QueueItemType.WriteFn:
+        return item.write(this.writer);
+      case QueueItemType.Data:
+        return this.writer.writeData(item.data);
+      case QueueItemType.Close:
+        return this.onClose();
     }
-    this.buffer.copyWithin(0, writtenLength, bufferedLength);
-    this.bufferedLength = bufferedLength - writtenLength;
-    return writtenLength;
   }
 }
 
-type QueueItem = WriteFnQueueItem | WriteIntoQueueItem | DataQueueItem;
+type QueueItem = WriteFnQueueItem | DataQueueItem | CloseQueueItem;
+
+enum QueueItemType {
+  WriteFn,
+  Data,
+  Close,
+}
+
 type WriteFnQueueItem = {
-  type: "writeFn";
-  write: BufferWriterFunction;
-  next?: QueueItem;
+  type: QueueItemType.WriteFn;
+  write: (writer: BufferWriter) => Promise<void>;
 };
-type WriteIntoQueueItem = {
-  type: "writeInto";
-  writeInto: BufferWriterWriteInto;
-  next?: QueueItem;
-};
+
 type DataQueueItem = {
-  type: "data";
+  type: QueueItemType.Data;
   data: Uint8Array;
-  next?: QueueItem;
+};
+type CloseQueueItem = {
+  type: QueueItemType.Close;
 };
