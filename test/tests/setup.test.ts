@@ -24,12 +24,7 @@ test("使用示例", async () => {
 test("使用示例", async () => {
   const sql = createSqlBuilder(JS_DATA_ENCODER_V1);
   const connectInfo = PUBLIC_DB_CONNECT_INFO;
-  const stream = await Deno.connect({ hostname: connectInfo.hostname, port: connectInfo.port });
-  await using conn = await connect(stream, {
-    database: connectInfo.database,
-    user: connectInfo.user,
-    password: connectInfo.password,
-  });
+  await using conn = await connect(connectInfo);
   conn.finished.catch((e) => {
     console.error(e);
   });

@@ -1,8 +1,7 @@
 import { test as viTest } from "vitest";
-import { DbManage, type DbQueryPool, type PgConnection, PgDbQueryPool, PgPool } from "@asla/pg";
+import { connect, DbManage, type DbQueryPool, type PgConnection, PgDbQueryPool, PgPool } from "@asla/pg";
 import process from "node:process";
 import { DB_CONNECT_INFO, PUBLIC_DB_CONNECT_INFO } from "@test/utils/db.ts";
-import { denoConnect } from "@test/utils/connect.ts";
 
 export interface BaseContext {
   emptyDbPool: DbQueryPool;
@@ -41,7 +40,7 @@ export const test = viTest.extend<BaseContext>({
     await use(conn);
   },
   async conn({}, use) {
-    await using connection = await denoConnect(PUBLIC_DB_CONNECT_INFO);
+    await using connection = await connect(PUBLIC_DB_CONNECT_INFO);
     connection.finished.catch((err) => {
       console.error(err);
     });
@@ -103,5 +102,5 @@ export function createPool() {
   return dbPool;
 }
 export function createConn() {
-  return denoConnect(PUBLIC_DB_CONNECT_INFO);
+  return connect(PUBLIC_DB_CONNECT_INFO);
 }

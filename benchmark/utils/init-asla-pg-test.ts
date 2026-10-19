@@ -5,17 +5,17 @@ export function initTest(
   {
     createSqlBuilder,
     JS_DATA_ENCODER_V1,
-    connect: connectSession,
+    connect: rawConnect,
     PgPool,
   }: typeof import("@asla/pg"),
   name: string = "@asla/pg",
 ) {
   const sql = createSqlBuilder(JS_DATA_ENCODER_V1);
 
-  async function connect() {
-    const tcp = await Deno.connect({ hostname: DB_CONNECT_INFO.host, port: DB_CONNECT_INFO.port });
-    tcp.setNoDelay(true);
-    return connectSession(tcp, {
+  function connect() {
+    return rawConnect({
+      hostname: DB_CONNECT_INFO.host,
+      port: DB_CONNECT_INFO.port,
       user: DB_CONNECT_INFO.user,
       database: DB_CONNECT_INFO.database,
       password: DB_CONNECT_INFO.password,

@@ -34,17 +34,22 @@ const OUTPUT_DIRECTORY = fileURLToPath(new URL("../results", import.meta.url));
 const WORKER_EXIT_GRACE = 30;
 
 interface Options {
-  poolSize: string;
-  steadyDuration: string;
-  searchTimeout: string;
+  poolSize: number;
+  steadyDuration: number;
+  searchTimeout: number;
 }
 
 const values = new Command()
   .name("max-qps.bench.ts")
   .description("Independent-process adaptive max-QPS CPU and memory benchmark")
-  .option("--pool-size <count>", "Pool connection limit", "4")
-  .option("--steady-duration <seconds>", "Continue tuning this long after the first local convergence", "60")
-  .option("--search-timeout <seconds>", "Maximum estimation and search time before failing", "120")
+  .option("--pool-size <count>", "Pool connection limit", integer(1), 4)
+  .option(
+    "--steady-duration <seconds>",
+    "Continue tuning this long after the first local convergence",
+    integer(1),
+    60,
+  )
+  .option("--search-timeout <seconds>", "Maximum estimation and search time before failing", integer(1), 120)
   .allowExcessArguments(false)
   .addHelpText(
     "after",
@@ -58,35 +63,15 @@ await main();
 async function main() {
   const selected = [...new Set(SELECTED_LIBRARIES.map(library))];
   if (selected.length === 0) throw new Error("SELECTED_LIBRARIES must not be empty");
-  const poolSize = integer("pool-size", values.poolSize);
-  const steadyDuration = integer("steady-duration", values.steadyDuration);
-  const searchTimeout = integer("search-timeout", values.searchTimeout);
-  for (
-    const [name, value] of Object.entries({
-      MIN_CONCURRENCY,
-      MAX_CONCURRENCY,
-      TUNE_INTERVAL,
-      DRAIN_TIMEOUT,
-      WORKER_EXIT_GRACE,
-    })
-  ) {
-    if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${name} must be a positive safe integer`);
-  }
+  const { poolSize, steadyDuration, searchTimeout } = values;
+
   const minConcurrency = MIN_CONCURRENCY;
   const maxConcurrency = MAX_CONCURRENCY;
   const initialConcurrency = INITIAL_CONCURRENCY ?? Math.min(maxConcurrency, Math.max(minConcurrency, poolSize));
   const tuneInterval = TUNE_INTERVAL;
   const drainTimeout = DRAIN_TIMEOUT;
   const minGainPercent = MIN_GAIN_PERCENT;
-  if (!Number.isFinite(minGainPercent) || minGainPercent < 0 || minGainPercent > 100) {
-    throw new Error("MIN_GAIN_PERCENT must be a number between 0 and 100");
-  }
-  if (
-    !Number.isSafeInteger(initialConcurrency) || minConcurrency > maxConcurrency ||
-    initialConcurrency < minConcurrency || initialConcurrency > maxConcurrency
-  ) {
-    throw new Error("Concurrency must satisfy min <= initial <= max");
-  }
+
   const options = {
     steadyDuration,
     searchTimeout,

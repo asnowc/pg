@@ -7,36 +7,32 @@ import { UnexpectedEOFError } from "@/_utils/error.ts";
 import { PgSession } from "@/protocol.ts";
 import { ConnectionStream, writeData } from "@/_utils/ConnectionStream.ts";
 import { ConnectionSource } from "@asla/pg";
-import { Duplex } from "node:stream";
-import { DenoBufferStream, NodeBufferStream } from "@/platforms.ts";
-
-function createConnectionStream<T extends ConnectionSource>(source: T): ConnectionStream {
-  let stream: ConnectionStream;
-  if (source instanceof Duplex) {
-    stream = new NodeBufferStream(source);
-  } else {
-    stream = new DenoBufferStream(source);
-  }
-  return stream;
-}
+import { createConnectionStream } from "@/platforms/createConnectionStream.ts";
 
 export async function startAuth<T extends ConnectionSource>(
   source: T,
   options: PgConnectOptions<T>,
-): Promise<{ source: T; authResult: AuthenticationResult }> {
+): Promise<{ source: ConnectionSource; stream: ConnectionStream; authResult: AuthenticationResult }> {
   const { encryption, user, database } = options;
   let stream = createConnectionStream(source);
-  if (encryption) {
-    //TODO: 查询服务器支持的加密方式
-    const encryptionOptions = typeof encryption === "function" ? await encryption() : encryption;
-    if (encryptionOptions) {
-      if (encryptionOptions.mode === "TLS") {
-        source = await negotiateTls(stream, source, encryptionOptions);
-        stream = createConnectionStream(source);
+  let finaleSource: ConnectionSource | null = null;
+  if (encryption?.length) {
+    for (const option of encryption) {
+      if (option.mode === "TLS") {
+        finaleSource = await negotiateTls(stream, source, option);
+        if (finaleSource) {
+          stream = createConnectionStream(finaleSource);
+          break;
+        }
       } else {
-        throw new PgAuthenticationError(`Unsupported encryption mode: ${encryptionOptions.mode}`);
+        throw new PgAuthenticationError(`Unsupported encryption mode: ${option.mode}`);
       }
     }
+    if (!finaleSource) {
+      throw new PgAuthenticationError("No encryption mode could be negotiated");
+    }
+  } else {
+    finaleSource = source;
   }
   try {
     const startupMessage = encodeStartupMessage(
@@ -45,7 +41,7 @@ export async function startAuth<T extends ConnectionSource>(
     );
     await writeData(stream, startupMessage);
     const info = await startAuthentication(stream, options);
-    return { source, authResult: info };
+    return { source: finaleSource, stream, authResult: info };
   } catch (error) {
     stream.destroy();
     throw error;
@@ -68,14 +64,14 @@ async function negotiateTls<T>(
   stream: ConnectionStream,
   source: T,
   encryptionOptions: TLSEncryptionOptions<T>,
-): Promise<T> {
+): Promise<ConnectionSource | null> {
   await writeData(stream, encodeNegotiateTlsMessage());
-  return new Promise<T>((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     stream.startReadLoop(() => {
       const responseCode = stream.readUInt8();
       if (responseCode === TLSResponseCode.Accepted) resolve(encryptionOptions.upgradeTLS(source));
       else if (responseCode === TLSResponseCode.Rejected) {
-        reject(new PgAuthenticationError("PostgreSQL server refused TLS"));
+        resolve(null);
       } else {
         reject(new PgAuthenticationError(`Invalid PostgreSQL SSL response: 0x${responseCode.toString(16)}`));
       }

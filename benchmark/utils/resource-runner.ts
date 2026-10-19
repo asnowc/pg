@@ -6,13 +6,14 @@ import { type AdaptiveResourceResult, renderResourceChart, type ResourceSample }
 
 export const libraries = ["postgres", "fake", "fake2", "@asla/pg"] as const;
 export type Library = typeof libraries[number];
-
-export function integer(name: string, value: string, minimum = 1): number {
-  const number = Number(value);
-  if (!Number.isSafeInteger(number) || number < minimum) {
-    throw new Error(`--${name} must be a safe integer >= ${minimum}, received ${JSON.stringify(value)}`);
-  }
-  return number;
+export function integer(minimum: number) {
+  return (value: string) => {
+    const number = Number.parseInt(value);
+    if (!Number.isSafeInteger(number) || number < minimum) {
+      throw new Error(`Expected a integer >= ${minimum}, received ${JSON.stringify(value)}`);
+    }
+    return number;
+  };
 }
 
 export function library(value: string): Library {
