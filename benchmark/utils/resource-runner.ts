@@ -2,66 +2,49 @@ import { cpuUsage, memoryUsage } from "node:process";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import type { PoolQueryTest } from "./common.ts";
-import { type AdaptiveResourceResult, renderResourceChart, type ResourceSample } from "./resource-report.ts";
+import { renderResourceChart, type ResourceResult, type ResourceSample } from "./resource-report.ts";
 
-export const libraries = ["postgres", "fake", "fake2", "@asla/pg"] as const;
-export type Library = typeof libraries[number];
-export function integer(minimum: number) {
-  return (value: string) => {
-    const number = Number.parseInt(value);
-    if (!Number.isSafeInteger(number) || number < minimum) {
-      throw new Error(`Expected a integer >= ${minimum}, received ${JSON.stringify(value)}`);
-    }
-    return number;
-  };
-}
-
-export function library(value: string): Library {
-  const result = libraries.find((name) => name === value);
-  if (!result) throw new Error(`Unknown library ${JSON.stringify(value)}; expected ${libraries.join(", ")}`);
-  return result;
-}
-
-export function filename(name: string): string {
-  return name === "@asla/pg" ? "asla-pg" : name;
-}
-
-export function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-export async function withTimeout<T>(promise: Promise<T>, seconds: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`${label} timed out after ${seconds}s`)), seconds * 1000);
-      }),
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function loadTarget<T>(test: PoolQueryTest<T>, poolSize: number) {
-  const pool = await test.createPool({ poolSize });
-  return { query: () => test.select(pool), close: () => test.closePool(pool) };
-}
-
+export const libraries = ["@asla/pg-node", "postgres", "@asla/pg", "fake2"] as const;
 export async function loadLibrary(name: Library, poolSize: number) {
   switch (name) {
     case "postgres":
       return loadTarget((await import("../lib/postgres.ts")).poolQueryTest, poolSize);
-    case "fake":
-      return loadTarget((await import("./fake.ts")).poolQueryTest, poolSize);
+      // case "fake":
+      //   return loadTarget((await import("./fake.ts")).poolQueryTest, poolSize);
     case "fake2":
       return loadTarget((await import("./fake2.ts")).poolQueryTest, poolSize);
     case "@asla/pg": {
       const { initTest } = await import("./init-asla-pg-test.ts");
       return loadTarget(initTest(await import("@asla/pg")).poolQueryTest, poolSize);
     }
+    case "@asla/pg-node": {
+      const { initTest } = await import("./init-asla-pg-test.ts");
+      return loadTarget(initTest(await import("@asla/pg"), name, true).poolQueryTest, poolSize);
+    }
   }
+}
+export type Library = typeof libraries[number];
+export function integer(minimum: number) {
+  return (value: string) => {
+    const number = Number(value);
+    if (!/^\d+$/.test(value) || !Number.isSafeInteger(number) || number < minimum) {
+      throw new Error(`Expected a integer >= ${minimum}, received ${JSON.stringify(value)}`);
+    }
+    return number;
+  };
+}
+
+export function filename(name: string): string {
+  return name.replace(/^@/, "").replace(/[\\/]/g, "-");
+}
+
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function loadTarget<T>(test: PoolQueryTest<T>, poolSize: number) {
+  const pool = await test.createPool({ poolSize });
+  return { query: () => test.select(pool), close: () => test.closePool(pool) };
 }
 
 interface ResourceCounters {
@@ -131,13 +114,12 @@ export async function runResourceScenario(options: {
   script: string;
   selected: readonly Library[];
   args: string[];
-  timeout: number;
   description: string;
 }): Promise<number> {
-  const { directory, script, selected, args, timeout, description } = options;
+  const { directory, script, selected, args, description } = options;
   await Deno.mkdir(directory, { recursive: true });
   let failures = 0;
-  const results: AdaptiveResourceResult[] = [];
+  const results: ResourceResult[] = [];
   for (const name of selected) {
     console.log(`Running ${name}: ${description}`);
     const child = new Deno.Command(Deno.execPath(), {
@@ -156,43 +138,36 @@ export async function runResourceScenario(options: {
       stdout: "inherit",
       stderr: "inherit",
     }).spawn();
-    let exited = false;
-    const statusPromise = child.status.then((status) => {
-      exited = true;
-      return status;
-    });
-    try {
-      const status = await withTimeout(statusPromise, timeout, `${name} worker PID ${child.pid}`);
-      if (!status.success) {
-        failures++;
-        console.error(`${name} worker exited with code ${status.code}`);
-      }
-    } catch (error) {
+    const result = await child.status;
+    if (!result.success) {
       failures++;
-      console.error(error);
-    } finally {
-      if (!exited) {
-        child.kill("SIGKILL");
-        await statusPromise;
-      }
+      console.error(`${name} worker exited with code ${result.code}`);
     }
     try {
-      const result: AdaptiveResourceResult = JSON.parse(
+      const result: ResourceResult = JSON.parse(
         await Deno.readTextFile(resolve(directory, `${filename(name)}.json`)),
       );
       results.push(result);
       console.log(
         `${name}: started=${result.started} succeeded=${result.succeeded} failed=${result.failed} dropped=${result.dropped}`,
       );
+      for (const [index, stage] of result.stages.entries()) {
+        console.log(
+          `${name}: stage=${index + 1} concurrency=${stage.concurrency} duration=${stage.elapsedSeconds.toFixed(2)}s ` +
+            `completed=${stage.completedInWindow} average=${stage.averageQps.toFixed(1)}/s`,
+        );
+      }
       console.log(
-        `${name}: searchConverged=${result.searchConverged} searchEnd=${result.searchCompletedAtSeconds}s steady=${
-          result.steadyElapsedSeconds.toFixed(2)
-        }s steadyQps=${result.steadyAverageQps?.toFixed(1) ?? "unavailable"}`,
+        `${name}: concurrency=${result.concurrency} warmupEnd=${
+          result.warmupCompletedAtSeconds?.toFixed(2) ?? "not reached"
+        }s measurement=${result.measurementElapsedSeconds.toFixed(2)}s sampled=${
+          result.elapsedSeconds.toFixed(2)
+        }s drained=${result.drained}`,
       );
       console.log(
-        `${name}: average=${result.averageQps.toFixed(1)}/s peak=${
+        `${name}: post-warmup aggregate average=${result.averageQps?.toFixed(1) ?? "unavailable"}/s peak=${
           result.peakQps.toFixed(1)
-        }/s peakConcurrency=${result.peakConcurrency}`,
+        }/s (all samples)`,
       );
     } catch (error) {
       if (!(error instanceof Deno.errors.NotFound)) throw error;

@@ -6,14 +6,16 @@ export function initTest(
     createSqlBuilder,
     JS_DATA_ENCODER_V1,
     connect: rawConnect,
+    connectFromNodeTCP,
     PgPool,
   }: typeof import("@asla/pg"),
   name: string = "@asla/pg",
+  node = false,
 ) {
   const sql = createSqlBuilder(JS_DATA_ENCODER_V1);
-
+  const c = node ? connectFromNodeTCP : rawConnect;
   function connect() {
-    return rawConnect({
+    return c({
       hostname: DB_CONNECT_INFO.host,
       port: DB_CONNECT_INFO.port,
       user: DB_CONNECT_INFO.user,

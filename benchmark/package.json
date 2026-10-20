@@ -1,11 +1,5 @@
 {
   "private": true,
-  "scripts": {
-    "bench": "deno task bench",
-    "bench:query": "deno task bench:query",
-    "bench:pool": "deno task bench:pool",
-    "bench:max-qps": "deno run -A --frozen ./test/max-qps.bench.ts"
-  },
   "dependencies": {
     "@types/pg": "^8.23.1",
     "commander": "^15.0.0",

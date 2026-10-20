@@ -28,70 +28,44 @@ interface ResourceResultBase {
   drained: boolean;
   cpuUs: number;
   firstError?: string;
-  drainError?: string;
   samples: ResourceSample[];
 }
 
-export interface ConcurrencyDecision {
-  seconds: number;
-  previous: number;
-  next: number;
-  qps: number;
-  baselineQps: number;
-  action: "probe" | "accept" | "revert";
-  step: number;
-  nextStep: number;
-  phase: "coarse" | "refine";
-  gainThresholdPercent: number;
-  converged: boolean;
-}
-
-export interface ConcurrencyEstimate {
-  seconds: number;
+export interface ConcurrencyStage {
   concurrency: number;
-  completed: number;
+  startSeconds: number;
+  endSeconds: number;
   elapsedSeconds: number;
-  cpuUs: number;
-  averageLatencyMs: number | null;
-  cpuUsPerQuery: number | null;
-  estimatedConcurrency: number | null;
-  nextConcurrency: number;
-  reason?: string;
-}
-
-export interface AdaptiveResourceResult extends ResourceResultBase {
-  qps: null;
-  steadyDuration: number;
-  searchTimeout: number;
-  searchConverged: boolean;
-  searchCompletedAtSeconds: number | null;
-  convergedConcurrency: number | null;
-  steadyElapsedSeconds: number;
-  steadyCompleted: number;
-  steadyAverageQps: number | null;
-  searchError?: string;
-  minConcurrency: number;
-  initialConcurrency: number;
-  finalConcurrency: number;
-  tuneInterval: number;
-  minGainPercent: number;
   completedInWindow: number;
   averageQps: number;
-  peakQps: number;
-  peakConcurrency: number | null;
-  decisions: ConcurrencyDecision[];
-  estimates: ConcurrencyEstimate[];
 }
 
-function postSearchAverage(result: AdaptiveResourceResult, key: keyof ResourceSample): number | null {
-  const start = result.searchCompletedAtSeconds;
-  if (!result.searchConverged || start === null) return null;
+export interface ResourceResult extends ResourceResultBase {
+  qps: null;
+  concurrency: number[];
+  duration: number;
+  warmup: number;
+  warmupCompletedAtSeconds: number | null;
+  measurementElapsedSeconds: number;
+  stages: ConcurrencyStage[];
+  completedInWindow: number;
+  averageQps: number | null;
+  peakQps: number;
+}
+
+function measurementAverage(
+  result: ResourceResult,
+  key: keyof ResourceSample,
+  stage: ConcurrencyStage | undefined,
+): number | null {
+  if (!stage) return null;
   let total = 0;
   let seconds = 0;
   for (const sample of result.samples) {
     const interval = Math.max(
       0,
-      Math.min(sample.seconds, result.elapsedSeconds) - Math.max(start, sample.seconds - sample.intervalSeconds),
+      Math.min(sample.seconds, stage.endSeconds) -
+        Math.max(stage.startSeconds, sample.seconds - sample.intervalSeconds),
     );
     total += sample[key] * interval;
     seconds += interval;
@@ -99,8 +73,7 @@ function postSearchAverage(result: AdaptiveResourceResult, key: keyof ResourceSa
   return seconds > 0 ? total / seconds : null;
 }
 
-export async function renderResourceChart(results: AdaptiveResourceResult[]): Promise<string> {
-  if (results.length === 0) throw new Error("Cannot chart an empty result set");
+export async function renderResourceChart(results: ResourceResult[]): Promise<string> {
   // Keep the charting runtime out of measured worker processes.
   const { init, format } = await import("echarts");
   const first = results[0];
@@ -115,33 +88,47 @@ export async function renderResourceChart(results: AdaptiveResourceResult[]): Pr
     { key: "successQps", title: "Successful queries / second", unit: "/s" },
     { key: "inFlight", title: "In-flight queries (concurrency)", unit: "" },
   ];
-  const names = results.map((result) =>
-    `${result.library}${result.failed > 0 || !result.drained || !result.searchConverged ? " (ERROR)" : ""}`
-  );
+  const names = results.map((result) => `${result.library}${result.failed > 0 || !result.drained ? " (ERROR)" : ""}`);
   const failureLabels = results.map((result, index) =>
     `${names[index]}: ${result.failed.toLocaleString("en-US")} failed`
   );
-  const summaries = panels.map(({ key, unit }) => {
-    const averages = results.map((result) => postSearchAverage(result, key));
-    const available = averages.filter((value): value is number => value !== null);
-    const minimum = available.length > 0 ? Math.min(...available) : null;
-    return names.map((name, resultIndex) => {
-      const average = averages[resultIndex];
-      const ratio = average !== null && minimum !== null && minimum > 0
-        ? `${(average / minimum).toFixed(2)}x`
-        : "ratio N/A";
-      return average === null
-        ? `${name}: no post-search data`
-        : `${name}: ${
-          average.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-        }${unit} (${ratio})`;
-    });
-  });
-  const summaryColumnWidth = Math.max(
-    255,
-    ...summaries.flat().map((text) => Math.ceil(format.getTextRect(text, "11px Arial, sans-serif").width) + 16),
+  const tables = panels.map(({ key, unit }) =>
+    first.concurrency.map((concurrency, stageIndex) => {
+      const averages = results.map((result) => measurementAverage(result, key, result.stages[stageIndex]));
+      const available = averages.filter((value): value is number => value !== null);
+      const minimum = available.length > 0 ? Math.min(...available) : null;
+      const rows = names.map((name, resultIndex) => {
+        const average = averages[resultIndex];
+        const ratio = average !== null && minimum !== null && minimum > 0
+          ? `${(average / minimum).toFixed(2)}x`
+          : "ratio N/A";
+        const averageText = average === null
+          ? "no measurement data"
+          : `${average.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${unit}`;
+        return { name, average, averageText, ratio, resultIndex };
+      });
+      rows.sort((a, b) => {
+        if (a.average === b.average) return a.resultIndex - b.resultIndex;
+        if (a.average === null) return 1;
+        if (b.average === null) return -1;
+        return a.average - b.average;
+      });
+      return { title: `#${stageIndex + 1} concurrency ${concurrency}`, rows };
+    })
   );
-  const panelWidth = summaryColumnWidth * 2;
+  const headers = ["Library", "Average", "vs minimum"];
+  const tableRows = tables.flat().flatMap((table) => table.rows.map((row) => [row.name, row.averageText, row.ratio]));
+  const columnWidths = headers.map((header, column) =>
+    Math.ceil(Math.max(
+      format.getTextRect(header, "bold 12px Arial, sans-serif").width,
+      ...tableRows.map((row) => format.getTextRect(row[column], "11px Arial, sans-serif").width),
+    )) + 24
+  );
+  const panelWidth = Math.max(510, columnWidths.reduce((sum, width) => sum + width, 0));
+  columnWidths[0] += panelWidth - columnWidths.reduce((sum, width) => sum + width, 0);
+  const columnOffsets = columnWidths.map((_, index) =>
+    columnWidths.slice(0, index).reduce((sum, width) => sum + width, 0)
+  );
   const panelStride = panelWidth + 120;
   const chartWidth = panelWidth * 2 + 260;
   const legendItemWidth = Math.max(
@@ -152,7 +139,9 @@ export async function renderResourceChart(results: AdaptiveResourceResult[]): Pr
   );
   const legendColumns = Math.max(1, Math.floor((chartWidth - 64) / legendItemWidth));
   const panelTop = 88 + Math.ceil(names.length / legendColumns) * 24;
-  const rowHeight = 300 + Math.ceil(results.length / 2) * 20;
+  const tableRowHeight = 20;
+  const tableStride = 24 + (results.length + 1) * tableRowHeight + 16;
+  const rowHeight = 300 + first.concurrency.length * tableStride;
   const failuresTop = panelTop + Math.ceil(panels.length / 2) * rowHeight + 8;
   const footerTop = failuresTop + 48 + Math.ceil(results.length / legendColumns) * 24;
   const option: EChartsOption = {
@@ -162,7 +151,9 @@ export async function renderResourceChart(results: AdaptiveResourceResult[]): Pr
     color: colors,
     title: [
       {
-        text: `Adaptive max-QPS | pool ${first.poolSize} | concurrency ${first.minConcurrency}-${first.maxInFlight}`,
+        text: `Fixed concurrency | pool ${first.poolSize} | concurrency ${
+          first.concurrency.join(",")
+        } | warmup ${first.warmup}s`,
         subtext:
           "Independent processes; 1-second samples; CPU 100% = one logical core. Memory includes the load generator.",
         left: 32,
@@ -230,26 +221,72 @@ export async function renderResourceChart(results: AdaptiveResourceResult[]): Pr
           data: result.samples
             .filter((sample) => sample.seconds > 0 || (key !== "cpuPercent" && !key.endsWith("Qps")))
             .map((sample) => [Math.min(sample.seconds, duration), sample[key]]),
-          markLine: result.searchConverged && result.searchCompletedAtSeconds !== null
-            ? {
-              silent: true,
-              symbol: "none",
-              precision: 20,
-              label: { show: false },
-              lineStyle: { color: colors[resultIndex], type: "dashed" },
-              data: [{ xAxis: result.searchCompletedAtSeconds }],
-            }
-            : undefined,
+          markLine: result.warmupCompletedAtSeconds === null ? undefined : {
+            silent: true,
+            symbol: "none",
+            label: { show: false },
+            lineStyle: { color: colors[resultIndex], type: "dashed" },
+            data: result.stages.map((stage) => ({ xAxis: stage.startSeconds })),
+          },
         };
       })
     ),
     graphic: [
-      ...summaries.flatMap((labels, panelIndex) =>
-        labels.map((text, resultIndex) => ({
-          type: "text" as const,
-          left: 82 + (panelIndex % 2) * panelStride + (resultIndex % 2) * summaryColumnWidth,
-          top: panelTop + 282 + Math.floor(panelIndex / 2) * rowHeight + Math.floor(resultIndex / 2) * 20,
-          style: { text, fill: colors[resultIndex], fontSize: 11, fontFamily: "Arial, sans-serif" },
+      ...tables.flatMap((panelTables, panelIndex) =>
+        panelTables.map((table, tableIndex) => ({
+          type: "group" as const,
+          left: 82 + (panelIndex % 2) * panelStride,
+          top: panelTop + 282 + Math.floor(panelIndex / 2) * rowHeight + tableIndex * tableStride,
+          children: [
+            {
+              type: "text" as const,
+              style: {
+                text: table.title,
+                fill: "#334155",
+                fontSize: 12,
+                fontWeight: "bold" as const,
+                fontFamily: "Arial, sans-serif",
+              },
+            },
+            ...[
+              { cells: headers, color: "#334155" },
+              ...table.rows.map((row) => ({
+                cells: [row.name, row.averageText, row.ratio],
+                color: colors[row.resultIndex],
+              })),
+            ].flatMap((row, rowIndex) =>
+              row.cells.flatMap((text, columnIndex) => [
+                {
+                  type: "rect" as const,
+                  shape: {
+                    x: columnOffsets[columnIndex],
+                    y: 24 + rowIndex * tableRowHeight,
+                    width: columnWidths[columnIndex],
+                    height: tableRowHeight,
+                  },
+                  style: {
+                    fill: rowIndex === 0 ? "#e2e8f0" : rowIndex % 2 === 0 ? "#f8fafc" : "#fff",
+                    stroke: "#cbd5e1",
+                    lineWidth: 1,
+                  },
+                },
+                {
+                  type: "text" as const,
+                  x: columnOffsets[columnIndex] + (columnIndex === 0 ? 12 : columnWidths[columnIndex] - 12),
+                  y: 24 + (rowIndex + 0.5) * tableRowHeight,
+                  style: {
+                    text,
+                    fill: row.color,
+                    fontSize: rowIndex === 0 ? 12 : 11,
+                    fontWeight: rowIndex === 0 ? "bold" as const : "normal" as const,
+                    fontFamily: "Arial, sans-serif",
+                    align: columnIndex === 0 ? "left" as const : "right" as const,
+                    verticalAlign: "middle" as const,
+                  },
+                },
+              ])
+            ),
+          ],
         }))
       ),
       {
@@ -274,8 +311,9 @@ export async function renderResourceChart(results: AdaptiveResourceResult[]): Pr
         left: 32,
         top: footerTop,
         style: {
-          text: "Bottom labels = post-search time-weighted means and ratios to the panel minimum.\n" +
-            "Vertical dashes start post-search timing; drain excluded. Ratios are N/A when the minimum is zero or unavailable.",
+          text:
+            "Tables = per-stage time-weighted means, sorted ascending, and ratios to the same-stage panel minimum.\n" +
+            "Vertical dashes mark warmup completion and stage starts; warmup and final drain excluded from averages.",
           fill: "#1e293b",
           fontSize: 12,
           lineHeight: 18,

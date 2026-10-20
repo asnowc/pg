@@ -13,6 +13,7 @@ async function run() {
     import("../utils/fake.ts"),
     import("../utils/fake2.ts"),
     import("@asla/pg").then((mod) => initTest(mod)),
+    import("@asla/pg").then((mod) => initTest(mod, "@asla/pg-node", true)),
     // import("../lib/pgPromise.ts"),
     // import("../lib/slonik.ts"),
   ]);

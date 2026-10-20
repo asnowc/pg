@@ -1,84 +1,67 @@
 # 查询基准
 
-## 自适应最大 QPS 资源基准
+## 固定并发资源基准
 
-不设置目标 QPS，查询完成后立即补发，并根据运行中的吞吐采样自动调整并发：
+不设置目标 QPS，按命令行指定的并发列表依次测试，每档保持固定并发，查询完成后立即补发：
 
-```powershell
-deno run -A --frozen .\benchmark\test\max-qps.bench.ts --pool-size 4 --steady-duration 60 --search-timeout 120
+```sh
+deno run -A --frozen ./benchmark/test/fixed-concurrency.bench.ts --pool-size 4 --concurrency=10,20,40,60 --warmup 10 --duration 60
 ```
 
-也可在 `benchmark` 目录执行 `npm run bench:max-qps -- --pool-size 4 --steady-duration 60`。 使用 Commander
-参数解析、ECharts SVG 服务端渲染和 `TEST_LOGIN_DB`； 默认依次比较四个实现，每个实现启动独立进程，SQL 均为
-`select 1 as x`。
+也可在仓库根目录执行 `deno task bench:concurrency --concurrency=10,20,40,60 --warmup 10 --duration 60`。 使用 Commander
+参数解析、ECharts SVG 服务端渲染和 `TEST_LOGIN_DB`。 比较的实现由 [resource-runner.ts](utils/resource-runner.ts) 中的
+`libraries` 指定， 每个实现启动独立进程，SQL 均为 `select 1 as x`。
 
-图表通过 npm `echarts` 服务端渲染为 SVG，不需要浏览器或原生 Canvas。首次运行前，在 `benchmark` 目录执行 `deno install`
-安装依赖。图表运行时仅在父进程生成报告时加载，不进入被测子进程。
+图表通过 npm `echarts` 服务端渲染为 SVG，不需要浏览器或原生 Canvas。 首次运行前，在 `benchmark` 目录执行 `deno install`
+安装依赖。 图表运行时仅在父进程生成报告时加载，不进入被测子进程。
 
-命令行仅提供三个配置选项：`--pool-size`（连接池大小，默认 `4`）、`--steady-duration`（首次收敛后继续运行的秒数， 默认
-`60`）和 `--search-timeout`（搜索超时秒数，默认 `120`）。其余配置集中在 [max-qps.bench.ts](test/max-qps.bench.ts)
-顶部的带注释常量中。
+除预热允许为 `0` 外，参数均为正整数：
 
-- **没有预热**，建池后立即记录资源与吞吐。动态入口已删除 `--warmup`，并将 `--duration` 替换为 `--steady-duration`（默认
-  `60` 秒）：首次找到近似最优并发后才开始计时，之后仍继续动态调整并发，后续再次改变并发不重置计时。
-- 前期使用两个约一秒的校准窗口，估算并发起点，避免从低并发逐档等待： 先采集每次成功查询的平均延迟和 CPU 时间，以 `90%`
-  单逻辑核心预算估算可承载 QPS， 再按 `并发 ≈ QPS × 平均延迟`
-  计算候选并发。首个窗口后至少尝试初始并发的八倍（不超过上限），
-  第二个窗口再按该负载下的数据估算搜索起点。校准数据全部保留，不当作预热丢弃。 CPU
-  时间或完成数不足时明确记录原因并使用有界容量探测，不声称已得到可靠估算。
-  这是启动启发式，不代表数据库或网络一定能承载预测 QPS，后续仍需验证。
-- `--search-timeout` 默认 `120` 秒，覆盖校准和搜索。未能在超时前收敛会保留采样、标记失败并以非零状态退出，
-  不将超时当作“找到最大并发”。每个实现的总时间约为搜索时间加 `--steady-duration`，另加建池、排空、关闭开销。
-- `MIN_CONCURRENCY` 为 `1`，`MAX_CONCURRENCY` 为 `1024`。`INITIAL_CONCURRENCY` 为 `null`
-  时，第一轮校准并发取连接池大小， 并限制在上述区间内；也可修改该常量指定初始并发。连接池大小与请求并发是两个独立配置。
-- 每个基准/探测窗口为 `TUNE_INTERVAL` 秒，默认 `2`。先测量当前并发的基准 QPS，再探测候选并发。
-  前期使用指数增长快速寻找高吞吐区域；候选未达到提升阈值时回退、反向并将本次探测步长减半；
-  遇到并发边界也缩小步长并反向。步长最小为 `1`，进入细化阶段后不再放大，避免持续二倍/减半跳动。
-  每轮探测前重新测量基准，避免早期峰值固定住后续搜索。
-- 连续完成 `5` 次实际步长 `step = 1` 的探测后，检查最近五次**被探测的候选并发**：
-  既不是严格递增、也不是严格递减，就认为首次收敛；若仍单向变化，继续滚动检查。 每次探测只在得到结果（`accept` 或
-  `revert`）时计数，不重复计算开始探测的 `probe` 记录； 接受候选不会清空窗口，非单位步长或基准 QPS 为零则重新累计。 例如
-  `10, 11, 10, 11, 10` 或五次相同值会收敛，`10, 11, 12, 13, 14` 不会。
-  上下界相同则没有搜索空间，立即开始后续计时。此判据是趋势启发式，不保证全局最大 QPS。
-- `MIN_GAIN_PERCENT` 为 `5`，单位百分比，表示粗探测的最小 QPS 提升阈值。细探测的实际阈值为
-  `minGain × min(1, 探测步长 / 基准并发)`，避免相邻并发仍要求提升 `5%`。 例如基准并发 `100`、步长 `1` 时，默认实际阈值为
-  `0.05%`。吞吐提升必须超过实际阈值才接受候选；如需区分更小的差异，可降低
-  `MIN_GAIN_PERCENT`，并延长采样窗口以减小噪声影响。
-- 并发降低时不取消已发送请求，只暂停补发直到在途数低于新目标；因此在途数可能暂时高于目标， 但不会超过
-  `MAX_CONCURRENCY`。没有人为限速或主动丢弃，错误发生后停止补发、排空并以失败状态退出。
-- 每秒采样 CPU、RSS、JS 堆、外部内存、成功/失败 QPS、在途数和当前并发。报告输出到
-  `benchmark/results/<时间戳>/adaptive-pool-<大小>/`，可通过 `OUTPUT_DIRECTORY` 常量修改根目录。`comparison.svg`
-  包含六个图：CPU、RSS、JS 堆、外部内存、成功 QPS 和 `In-flight queries (concurrency)`； 目标并发和失败速率仍保留在 JSON
-  中。`results.json` 和各实现 JSON 保存原始数据与调整记录。X
-  轴覆盖校准、搜索和后续运行的完整时长；各客户端对应颜色的竖向虚线标出其后续计时起点。
-- 配色按实际结果顺序自动生成，同一客户端在各子图、竖向虚线、图例和底部统计中保持同色，不再循环使用固定的四种颜色。
-  图例行数、底部统计区域和画布高度随库数量变化自动调整，较长的名称和统计文本会扩展画布宽度，无需手动维护颜色或布局。
-- 每张子图底部按图例颜色列出各实现**首次收敛后**的平均值及相对该指标最低平均值的倍数。成功 QPS
-  的倍数即相对最慢实现的吞吐倍数；CPU、内存等指标的倍数仅表示数值之比，不代表更快或更好。
-  平均值按实际采样间隔加权，排除校准、搜索和排空，并包含结束时不足一秒的区间；内存、在途数和并发使用区间末采样值估算。
-  未收敛或无后续采样时显示 `no post-search data`，不参与最低值比较；指标最低平均值为零时，倍数显示
-  `ratio N/A`，避免除零。
-- 整张图底部按客户端颜色展示全程失败查询总数 `failed`，包括校准、搜索、后续运行和排空期间收到的失败结果；
-  即使未收敛，也会展示已经记录的失败数量，而不是从每秒失败速率推算。
-- JSON 中 `qps: null` 表示没有目标 QPS。`averageQps` 用整个采样窗口内成功数 `completedInWindow`
-  除以实际测量时长（包含校准、搜索），不将排空完成数计入吞吐；`peakQps` 为实际长度至少一秒的采样区间中的最高成功 QPS，
-  `peakConcurrency` 为该区间的目标并发。`decisions` 记录每次探测、接受、回退及对应吞吐， 并包含本次步长 `step`、后续步长
-  `nextStep`、搜索阶段 `phase` 和实际阈值 `gainThresholdPercent`。 成功/失败总数仍包含排空结果，排空超时由 `drained` 和
-  `drainError` 标记。
-- `estimates` 保存校准 CPU 时间、平均延迟和预测并发；`searchConverged`、`searchCompletedAtSeconds`、
-  `convergedConcurrency` 记录首次收敛状态、时刻和并发，失败原因保存在 `searchError`。 `steadyDuration`
-  为要求的后续时长，`steadyElapsedSeconds`、`steadyCompleted`、`steadyAverageQps`
-  只统计首次收敛后的运行，不含排空。未收敛时 `steadyAverageQps` 为 `null`，不伪造后续阶段结果。
-- 这是有限时间、指定并发范围内的在线探测，不保证找到全局最大 QPS。短窗口会受网络、GC、系统调度与数据库负载影响，
-  建议延长测量或调整 `TUNE_INTERVAL`，并重复运行。各实现负载会动态变化，资源曲线应结合实际 QPS 和并发一起比较。
-  CPU/内存只统计客户端进程（含负载调度器），不包括 PostgreSQL 服务端；CPU `100%` 表示一个逻辑核心，可以超过 `100%`。
+- `--concurrency <数量列表>`：必填，逗号分隔的正整数，按输入顺序逐档测试，不排序或去重。 例如
+  `--concurrency=10,20,40,60`；单个值仍可使用 `--concurrency 128`。
+- `--pool-size <数量>`：连接池大小，默认 `4`，与请求并发相互独立。
+- `--warmup <秒数>`：只在第一档并发预热一次，默认 `10` 秒；`0` 表示不预热。
+- `--duration <秒数>`：每档并发的正式测量时长，默认 `60` 秒。 总采样时长为 `warmup + duration × 并发档数`，上述示例约为
+  `250` 秒。
 
-- 内存是采样时的占用而不是分配速率或精确峰值，不主动强制 GC。`fake` 不构造完整查询结果，`fake2`
-  为简化调度，两者只能作为简化路径参考，不能视作与完整驱动功能等价。更低的 CPU/内存也可能只是承载了更少请求。
-- `SELECTED_LIBRARIES` 指定比较的实现，默认包含四个客户端；`DRAIN_TIMEOUT` 为 `10` 秒，也限制关池等待。排空超时由
-  `drained` 和 `drainError` 标记，失败会保留已有报告并以非零状态退出。报告不应作为源码提交。
+原来的文件名 `max-qps.bench.ts` 和任务名 `bench:max-qps` 已分别改为 `fixed-concurrency.bench.ts` 和
+`bench:concurrency`。 原来的 `--steady-duration` 和 `--search-timeout` 已移除，改用 `--duration`。
+不再校准、搜索或判断收敛，只按输入列表切换并发。
 
-查看全部选项：`deno run -A .\benchmark\test\max-qps.bench.ts --help`。
+- 每个客户端使用同一子进程和连接池运行全部并发档，先用第一档并发预热，随后逐档测量，
+  切换时不排空、不重建连接，也不重新预热。降低并发时暂停补发，直到在途数低于新目标，
+  因此切换后在途数可能暂时高于该档目标。跨档查询按完成时刻计入对应测量窗口。
+  惰性建连的开销包含在预热数据中；不预热时包含在第一档正式测量中。
+  最后一档到达时限后停止补发并排空在途查询；查询出错时也停止补发，以非零状态退出。
+- 每秒采样 CPU、RSS、JS 堆、外部内存、成功/失败 QPS、在途数和固定并发，
+  在预热结束、并发档切换和正式测量结束时补采边界区间，避免跨区间计算均值。
+  CPU/内存只统计客户端进程（含负载调度器），不包括 PostgreSQL 服务端；CPU `100%` 表示一个逻辑核心。
+  内存是采样时的占用，不是分配速率或精确峰值，不主动强制 GC。
+- 报告输出到 `benchmark/results/<时间戳>/fixed-pool-<大小>-concurrency-10-20-40-60/`，末段按实际并发列表生成。可通过
+  [fixed-concurrency.bench.ts](test/fixed-concurrency.bench.ts) 中的 `OUTPUT_DIRECTORY` 修改根目录。 `results.json`
+  汇总各实现结果，各实现还保存独立 JSON。 文件名去掉开头的 `@`，并将路径分隔符替换为 `-`，例如 `@asla/pg-node` 保存为
+  `asla-pg-node.json`。
+- `comparison.svg` 包含 CPU、RSS、JS 堆、外部内存、成功 QPS 和在途查询数六个图。
+  每个客户端是一条连续时间曲线，保留预热和所有并发档的数据， 同色竖向虚线标记实际预热结束时间和各档开始时间。
+  每张图下方按并发档分别显示表格，列出客户端、平均值和相对最低值的倍数。
+  每个表格按平均值从低到高排序，无测量数据的客户端排在末尾，行颜色与曲线保持一致。
+  均值按该档采样时长加权，不计预热和最终排空。倍数只与相同档位的其他客户端比较。成功 QPS
+  的倍数表示吞吐倍数；CPU、内存等指标的倍数不代表更快或更好。 最低值为零或无可用数据时，倍数显示
+  `ratio N/A`。失败查询总数包含排空阶段。
+- JSON 中 `concurrency` 是按输入顺序保留的并发数组，`maxInFlight` 是其中最大值， `warmup` 和 `duration`
+  是一次预热和每档正式测量的要求时长，`elapsedSeconds` 是预热加正式测量的实际采样时长，`warmupCompletedAtSeconds`
+  是实际预热结束时刻， `measurementElapsedSeconds` 是各档实际测量时长之和。`qps: null` 表示不限制目标 QPS。 `stages`
+  按执行顺序记录已运行档位的 `concurrency`、`startSeconds`、`endSeconds`、`elapsedSeconds`、 `completedInWindow` 和
+  `averageQps`；失败时保留当前档的部分数据，后续未运行档位不伪造结果。 顶层 `averageQps` 为全部正式测量窗口内成功数
+  `completedInWindow`
+  除以正式测量总时长，不包含预热和排空完成数；预热期间失败而未进入正式测量时，`warmupCompletedAtSeconds` 和 `averageQps`
+  为 `null`， 图表均值显示 `no measurement data`。`peakQps` 仍为全部采样中长度至少一秒的区间的最高成功 QPS。
+  成功/失败总数包含预热、正式测量和排空结果。原有搜索、校准和收敛字段不再输出。
+- 全部档位测量结束后等待在途查询全部完成，再关闭连接池；排空、关池和子进程退出均不设超时保护。 因此每档 `--duration`
+  只限制补发查询的时间，不保证整个进程在总采样时限内退出。
+  查询长时间无响应时需要手动终止。失败保留已生成的报告并以非零状态退出。报告不应作为源码提交。
+
+查看全部选项：`deno run -A ./benchmark/test/fixed-concurrency.bench.ts --help`。
 
 ## 运行连接池基准
 

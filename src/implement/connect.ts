@@ -6,7 +6,8 @@ import type {
 } from "@/interface/Connection.ts";
 import { connectPgSession } from "@/protocol/connect.ts";
 import { PgConnection } from "./PgConnection.ts";
-import { connectFromDenoTCP, connectFromNodeTCP } from "@/platforms.ts";
+import { connectFromDenoTCP } from "@/platforms/DenoConnAdapter.ts";
+import { connectFromNodeTCP } from "@/platforms/DuplexAdapter.ts";
 /**
  * @public
  */
@@ -28,3 +29,5 @@ export async function connect(options: PgNetConnectOptions): Promise<IPgConnecti
     return connectFromNodeTCP(options);
   }
 }
+//TODO: 删除导出
+export { connectFromNodeTCP };

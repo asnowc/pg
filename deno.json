@@ -12,7 +12,7 @@
     "publishDry": "deno publish --dry-run --allow-dirty",
     "bundle": "deno bundle src/mod.ts -o dist/mod.js",
     "transpile": "deno transpile src/**/*.ts --outdir dist --declaration",
-    "bench:max-qps": "deno run -A --frozen ./benchmark/test/max-qps.bench.ts --pool-size 4 --steady-duration 20 --search-timeout 120"
+    "bench:concurrency": "deno run -A --frozen ./benchmark/test/fixed-concurrency.bench.ts --pool-size 4 --concurrency 50,100,200,300,400,500 --duration 8 --warmup 0"
   },
   "imports": {
     "#abstract": "./src/abstract/mod.ts",
