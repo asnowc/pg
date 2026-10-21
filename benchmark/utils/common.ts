@@ -1,3 +1,5 @@
+import path from "node:path";
+
 export interface TestQueries<T> {
   select: (client: T) => Promise<void>;
   selectArg: (client: T) => Promise<void>;
@@ -18,3 +20,11 @@ export type ConnectHandler<T> = {
 
 export type QueryTest<T> = TestQueries<T> & ConnectHandler<T>;
 export type PoolQueryTest<T> = TestQueries<T> & PoolHandler<T>;
+
+/** 报告根目录；每个脚本一次运行共用一个目录。 */
+const OUTPUT_DIRECTORY = path.resolve(import.meta.dirname!, "../results");
+
+export function getReportDirectory(meta: ImportMeta) {
+  const filename = path.parse(meta.filename!).name;
+  return path.join(OUTPUT_DIRECTORY, `${filename}-${new Date().toISOString().replace(/[:.]/g, "-")}`);
+}

@@ -54,10 +54,11 @@ export class ConcurrencyBench {
         onWarmupEnd: async () => {
           console.log("run start");
         },
+        onRunEnd: async () => {
+          console.log("waiting for task to clear");
+        },
         onFnResult: (value) => collector.push(value),
       });
-      console.log("waiting for task to clear");
-      await task.waitPromiseClear();
       console.log("run complete");
       return { ...result, intervalSampleData, inputInterval: intervalSampleCPUAndMemory };
     } finally {
@@ -69,23 +70,13 @@ export class ConcurrencyBench {
 type RunOptions = {
   onFnResult?: (sample: ConcurrencyBenchSample) => void;
   onWarmupEnd?: () => Promise<void>;
+  onRunEnd?: () => Promise<void>;
 };
 
 class ConcurrencyBenchTask {
   constructor(private readonly settings: BenchSetting, private readonly fn: () => Promise<void>) {
   }
-  private errored?: Error;
-  private clearListeners = new Set<{ resolve: () => void; reject: (error: any) => void }>();
-  /** 等待当前阶段停止补发后的所有查询与样本回调完成。 */
-  waitPromiseClear(): Promise<void> {
-    if (this.errored) {
-      return Promise.reject(this.errored);
-    }
-    if (this.context.currentConcurrency <= 0) return Promise.resolve();
-    return new Promise<void>((resolve, reject) => {
-      this.clearListeners.add({ resolve, reject });
-    });
-  }
+
   private readonly context: TaskRunnerContext = {
     currentConcurrency: 0,
     nextRequestIndex: 0,
@@ -95,20 +86,7 @@ class ConcurrencyBenchTask {
     onSample: () => {},
   };
 
-  private async warmup() {
-    const { warmupDuration, warmupConcurrency } = this.settings;
-    if (warmupDuration <= 0 || warmupConcurrency <= 0) return { iterations: 0, duration: 0 };
-    const startTime = performance.now();
-    this.updateConcurrency(warmupConcurrency);
-    await this.waitTime(warmupDuration);
-    const context = this.context;
-    const endTime = performance.now();
-
-    return {
-      iterations: context.nextRequestIndex,
-      duration: endTime - startTime,
-    };
-  }
+  private finished?: PromiseWithResolvers<void>;
   private stagePending?: PromiseWithResolvers<void>;
   private waitTime(time: number) {
     const resolver = Promise.withResolvers<void>();
@@ -116,17 +94,29 @@ class ConcurrencyBenchTask {
     const id = setTimeout(resolver.resolve, time);
     return resolver.promise.finally(() => clearTimeout(id));
   }
-  private running = false;
   async run(options: RunOptions = {}): Promise<ConcurrencyBenchResult> {
-    if (this.running) throw new Error("Task is already running");
-    this.running = true;
+    if (this.finished) throw new Error("Task is already running");
+    this.finished = Promise.withResolvers<void>();
     const { onFnResult, onWarmupEnd } = options;
+    const context = this.context;
 
-    const warmupResult = await this.warmup();
+    let warmupResult: { iterations: number; duration: number };
+    if (this.settings.warmupDuration <= 0 || this.settings.warmupConcurrency <= 0) {
+      warmupResult = { iterations: 0, duration: 0 };
+    } else {
+      const { warmupDuration, warmupConcurrency } = this.settings;
+      const startTime = performance.now();
+      this.updateConcurrency(warmupConcurrency, context);
+      await this.waitTime(warmupDuration);
+      const endTime = performance.now();
+      warmupResult = {
+        iterations: context.nextRequestIndex,
+        duration: endTime - startTime,
+      };
+    }
     if (onWarmupEnd) await onWarmupEnd();
 
-    const stages = this.settings.stages;
-    const context = this.context;
+    const { stages } = this.settings;
     const runStartIndex = context.nextRequestIndex;
     if (onFnResult) {
       context.onSample = (data) => {
@@ -140,7 +130,7 @@ class ConcurrencyBenchTask {
     while (stage) {
       const concurrency = stage.value;
       const startIndex = context.nextRequestIndex;
-      this.updateConcurrency(concurrency);
+      this.updateConcurrency(concurrency, context);
       await this.waitTime(stage.duration);
       const endIndex = context.nextRequestIndex;
       stageSamples.push({ concurrency, startIndex, endIndex });
@@ -148,7 +138,7 @@ class ConcurrencyBenchTask {
       stage = stages[i];
     }
     context.targetConcurrency = 0;
-    this.running = false;
+    await this.finished.promise;
     return {
       stageSamples,
       warmup: warmupResult,
@@ -161,56 +151,59 @@ class ConcurrencyBenchTask {
     data[1] = end;
     data[2] = false;
     context.errorCount++;
+    context.onSample(data);
     if (context.errorCount <= this.settings.maxFailures) {
       if (context.currentConcurrency < context.targetConcurrency) {
         this.requestNext(end, context);
         return;
       }
     } else {
-      this.errored = new Error("Max failures reached", { cause: error });
-      this.stagePending?.reject(error);
-      for (const element of this.clearListeners) {
-        element.reject(error);
-      }
-      this.clearListeners.clear();
+      const finalError = new Error("Max failures reached", { cause: error });
+      this.abort(finalError);
     }
 
-    this.onSub(context);
+    this.onReduce(context);
   }
   private onSuccess(data: ConcurrencyBenchSample, context: TaskRunnerContext) {
     const end = performance.now();
     data[1] = end;
     data[2] = true;
     context.successCount++;
+    context.onSample(data);
     if (context.currentConcurrency < context.targetConcurrency) {
       this.requestNext(end, context);
     } else {
-      this.onSub(context);
+      this.onReduce(context);
     }
   }
-  private onSub(context: TaskRunnerContext) {
+  private onReduce(context: TaskRunnerContext) {
     context.currentConcurrency--;
     if (context.currentConcurrency === 0) {
-      for (const fn of this.clearListeners) {
-        fn.resolve();
-      }
-      this.clearListeners.clear();
+      this.finished?.resolve();
     }
   }
-  private updateConcurrency(value: number) {
-    const add = value - this.context.currentConcurrency;
-    this.context.currentConcurrency = value;
+  private updateConcurrency(value: number, context: TaskRunnerContext) {
+    const add = value - context.currentConcurrency;
+    context.currentConcurrency = value;
     if (add > 0) {
       const start = performance.now();
       for (let i = 0; i < add; i++) {
-        this.requestNext(start, this.context);
+        this.requestNext(start, context);
       }
     }
   }
   private requestNext(start: number, context: TaskRunnerContext) {
-    const i = this.context.nextRequestIndex++;
+    const i = context.nextRequestIndex++;
     const data: ConcurrencyBenchSample = [start, 0, false, i];
-    this.fn().then(() => this.onSuccess(data, context), (e) => this.onError(data, context, e));
+    this.fn().then(() => this.onSuccess(data, context), (e) => this.onError(data, context, e)).catch((e) =>
+      this.abort(e)
+    );
+  }
+
+  private abort(error: Error) {
+    this.context.targetConcurrency = 0;
+    this.stagePending?.reject(error);
+    this.finished?.reject(error);
   }
 }
 

@@ -1,5 +1,5 @@
-import { DB_CONNECT_INFO } from "./db.ts";
-import { PoolHandler, PoolQueryTest, TestQueries } from "./common.ts";
+import { DB_CONNECT_INFO } from "../utils/db.ts";
+import { PoolHandler, PoolQueryTest, TestQueries } from "..//utils/common.ts";
 import { FakeRequest, getFakePool } from "@/implement/FakeRequest.ts";
 
 export const LIB_NAME = "fake";

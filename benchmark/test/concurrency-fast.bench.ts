@@ -4,18 +4,17 @@ import {
   ConcurrencyBenchSample,
   renderSvg,
 } from "../deps/bench.ts";
-import { getReportDirectory } from "../utils/bench.ts";
-import { QueryTest, TestQueries } from "../utils/common.ts";
+import { getReportDirectory, QueryTest, TestQueries } from "../utils/common.ts";
 import { initTest } from "../utils/init-asla-pg-test.ts";
 import path from "node:path";
 
 const RESULT_DIR = getReportDirectory(import.meta);
 const LIBS: QueryTest<any>[] = await Promise.all([
   import("@asla/pg").then((mod) => initTest(mod).queryTest),
-  import("../lib/pg.ts").then((mod) => mod.queryTest),
-  // import("../lib/pgPromise.ts").then((mod) => mod.queryTest),
-  // import("../lib/postgres.ts").then((mod) => mod.queryTest),
-  // import("../lib/slonik.ts").then((mod) => mod.queryTest),
+  import("../client/pg.ts").then((mod) => mod.queryTest),
+  // import("../client/pgPromise.ts").then((mod) => mod.queryTest),
+  // import("../client/postgres.ts").then((mod) => mod.queryTest),
+  // import("../client/slonik.ts").then((mod) => mod.queryTest),
 ]);
 const queryNames: (keyof TestQueries<any>)[] = [
   "select",

@@ -13,11 +13,11 @@ export const libraries = ["@asla/pg-node", "postgres", "@asla/pg", "fake2"] as c
 export async function loadLibrary(name: string, poolSize: number) {
   switch (name) {
     case "postgres":
-      return loadTarget((await import("../lib/postgres.ts")).poolQueryTest, poolSize);
+      return loadTarget((await import("../client/postgres.ts")).poolQueryTest, poolSize);
       // case "fake":
       //   return loadTarget((await import("./fake.ts")).poolQueryTest, poolSize);
     case "fake2":
-      return loadTarget((await import("./fake2.ts")).poolQueryTest, poolSize);
+      return loadTarget((await import("../client/fake2.ts")).poolQueryTest, poolSize);
     case "@asla/pg": {
       const { initTest } = await import("./init-asla-pg-test.ts");
       return loadTarget(initTest(await import("@asla/pg")).poolQueryTest, poolSize);

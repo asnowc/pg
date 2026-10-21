@@ -1,5 +1,5 @@
-import { DB_CONNECT_INFO } from "./db.ts";
-import { PoolHandler, PoolQueryTest, TestQueries } from "./common.ts";
+import { DB_CONNECT_INFO } from "../utils/db.ts";
+import { PoolHandler, PoolQueryTest, TestQueries } from "..//utils/common.ts";
 import { PgSession } from "@/protocol.ts";
 import { sqlStatementToSqlEncoder } from "@/implement/private/sql_statement.ts";
 import { connectPgSession } from "@/protocol/connect.ts";
