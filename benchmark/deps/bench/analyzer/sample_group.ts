@@ -1,10 +1,25 @@
+import { ConcurrencyBenchResultWithCPUAndMemory } from "../types/bench_result.ts";
 import { CommonBenchSampleGroup } from "../types/sample.ts";
 
-export declare function analyzeSampleGroup<T>(sampleGroup: CommonBenchSampleGroup<T>, options: {
-  /** 数据分组。返回 undefined 表示丢弃样本 */
-  groupBy?: (sample: T) => string | undefined;
-}): Map<string, AnalyzeSampleGroupResult>;
-
+export declare function analyzeSampleGroup<T>(
+  input: {
+    sampleGroup: CommonBenchSampleGroup<T>;
+    intervalSamples: ConcurrencyBenchResultWithCPUAndMemory;
+    /** 数据分组。返回 undefined 表示丢弃样本 */
+    groupBy?: (sample: T) => string | undefined;
+  },
+): {
+  intervalSample: IntervalSamples;
+  resultGroup: Map<string, AnalyzeSampleGroupResult>;
+};
+export type IntervalSamples = {
+  rss: number[];
+  cpu: number[];
+  memoryExtended: number[];
+  jsHeap: number[];
+  qps: number[];
+  concurrency: number[];
+};
 export type AnalyzeSampleGroupResult = {
   p50: number;
   p75: number;
