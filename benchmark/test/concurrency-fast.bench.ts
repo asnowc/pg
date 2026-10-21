@@ -1,4 +1,5 @@
 import {
+  analyzeSampleGroup,
   ConcurrencyBench,
   ConcurrencyBenchResultWithCPUAndMemory,
   ConcurrencyBenchSample,
@@ -44,12 +45,16 @@ async function run(): Promise<void> {
       const result = await bench.runWidthCpuAndMemory({
         fn: () => queryFn(conn),
         intervalSampleCPUAndMemory: 1000,
-        collector: samples,
+        collectorSuccess: samples,
+        collectorFailed: samples,
       });
 
       results.push({ name: target.name, samples, result });
       await target.close(conn);
     }
+    results.map(({ name, result, samples }) => {
+      analyzeSampleGroup({ samples, intervalSamples: result, startTime: result.startTime, endTime: result.endTime });
+    });
     console.log(`Results for query: ${queryName}`);
   }
   console.log(`Reports: ${RESULT_DIR}`);

@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { ConcurrencyBenchSample } from "../types/sample.ts";
-import type { ConcurrencyBenchResultWithCPUAndMemory } from "../types/bench_result.ts";
+import type { ConcurrencyBenchResultWithCPUAndMemory, ConcurrencyBenchSample } from "../types/bench_result.ts";
 
 export type StoredBenchResult = {
   schemaVersion: 1;
@@ -12,8 +11,7 @@ export type StoredBenchResult = {
 
 function validSample(sample: ConcurrencyBenchSample) {
   return Number.isFinite(sample[0]) && sample[0] >= 0 &&
-    Number.isFinite(sample[1]) && sample[1] >= sample[0] &&
-    typeof sample[2] === "boolean" && Number.isSafeInteger(sample[3]) && sample[3] >= 0;
+    Number.isFinite(sample[1]) && sample[1] >= sample[0] && Number.isSafeInteger(sample[2]) && sample[2] >= 0;
 }
 
 function paths(dir: string, name: string) {
@@ -56,9 +54,7 @@ class FileCollector {
     this.writeOffset += 4;
     view.setUint32(this.writeOffset, floor(data[1], this.precision));
     this.writeOffset += 4;
-    view.setUint8(this.writeOffset, data[2] ? 1 : 0);
-    this.writeOffset += 1;
-    view.setUint32(this.writeOffset, floor(data[3], this.precision));
+    view.setUint32(this.writeOffset, data[2]);
     this.writeOffset += 4;
 
     const cacheLength = this.buffer.byteLength - this.writeOffset;

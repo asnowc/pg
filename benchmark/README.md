@@ -2,114 +2,103 @@
 
 ## 工具与运行环境
 
-统一入口是 [deps/bench.ts](deps/bench.ts)：并发运行 → 原始样本 → `analyzeSampleGroup` → `renderSvg`。 JavaScript / Node
-API 的兼容性约束仅适用于 `benchmark/deps`，该目录不依赖 Deno API、Deno 全局或 polyfill。 `benchmark/test`
-中的数据库基准脚本仍用 `deno run` 直接运行，不需要 Node 启动器或预编译。 工具也可通过现有 Vitest 等支持 TypeScript
-转换的 Node 工具链运行。ECharts 只在生成 SVG 时加载，不进入 fixed 的被测子进程。 无需浏览器或原生 Canvas；首次运行前在
-`benchmark` 目录执行 `deno install` 安装已有依赖。
+当前并发执行器是 [ConcurrencyBench](deps/bench/ConcurrencyBench.ts)，汇总入口是
+[deps/bench.ts](deps/bench.ts)。执行器使用 JavaScript Promise、定时器以及 `node:process` 的 CPU/内存接口， 不依赖 Deno
+全局。可通过 Deno 或支持 TypeScript 的 Node 工具链运行。 现有文件收集、分析和 SVG
+流程尚未全部适配新的成功/失败双收集器，不能直接视为完整可用的流水线。
 
 连接配置来自 [db.ts](utils/db.ts)，默认 `postgres://postgres@127.0.0.1:5432/test_public`， 使用 `TEST_LOGIN_DB`
 覆盖。当前比较明文 TCP，不读取 URL 中的 TLS 等查询参数。
 
-## 固定并发资源基准
+## 当前并发工具 API
 
-```sh
-deno run -A --frozen ./benchmark/test/fixed-concurrency.bench.ts --pool-size 4 --concurrency=10,20,40,60 --warmup 10 --duration 60 --max-failures 0
+构造 `ConcurrencyBench` 时使用以下配置，所有时长均以毫秒计：
+
+| 配置             | 含义                                                                         |
+| ---------------- | ---------------------------------------------------------------------------- |
+| `name`           | 结果名称，默认空字符串。                                                     |
+| `concurrency`    | 正整数、正整数数组或 `{ value, duration }[]`，按输入顺序执行，保留重复档位。 |
+| `duration`       | 数值档位的测量时长，默认 `3000`；对象档位使用自己的 `duration`。             |
+| `warmupDuration` | 仅第一档的预热时长，默认 `0`。                                               |
+
+`runWidthCpuAndMemory()` 接收被测 `fn`、采样间隔 `intervalSampleCPUAndMemory`， 以及分别接收成功和失败样本的
+`collectorSuccess`、`collectorFailed`。 收集器只需要同步的 `push(sample): void`
+方法，数组也可使用。两个收集器应分别保存数据， 否则三元组本身没有成功标志，合并后无法还原成功/失败归属。
+
+下面是在仓库根目录运行的无数据库调度示例：
+
+```ts
+import { ConcurrencyBench } from "./benchmark/deps/bench/ConcurrencyBench.ts";
+import type { ConcurrencyBenchSample } from "./benchmark/deps/bench/types/sample.ts";
+
+const successSamples: ConcurrencyBenchSample[] = [];
+const failedSamples: ConcurrencyBenchSample[] = [];
+const result = await new ConcurrencyBench({
+  name: "timer-example",
+  concurrency: [1, 2, 1],
+  duration: 200,
+  warmupDuration: 50,
+}).runWidthCpuAndMemory({
+  fn: () => new Promise<void>((resolve) => setTimeout(resolve, 1)),
+  intervalSampleCPUAndMemory: 50,
+  collectorSuccess: successSamples,
+  collectorFailed: failedSamples,
+});
+console.log(result, successSamples.length, failedSamples.length);
 ```
 
-也可运行 `deno task bench:concurrency` 并传入这些参数。客户端列表仍由 [resource-runner.ts](utils/resource-runner.ts) 的
-`libraries` 指定，SQL 为 `select 1 as x`。 不设置目标
-QPS，每个客户端一个独立子进程，进程内顺序执行全部并发档，客户端之间也顺序执行。
+### 阶段、样本和资源采样
 
-- `--concurrency <数量列表>`：必填，逗号分隔的正整数，按输入顺序执行，不排序、不去重。
-- `--pool-size <数量>`：连接池大小，默认 `4`，与请求并发独立。
-- `--warmup <秒数>`：仅第一档预热，默认 `10`；允许 `0`。
-- `--duration <秒数>`：每档正式测量时长，默认 `60`，必须为正整数。
-- `--max-failures <数量>`：允许的查询失败次数，默认 `0`，必须为非负安全整数。
-  累计失败次数**严格超过**上限才停止补发并非零退出；等于上限继续。 预热、所有并发档和最终排空共用预算，不逐档重置。
+- 预热结束后不排空，直接开始正式测量；正式档位之间也不排空、不重建连接。
+  降低目标并发时，已有请求继续执行，实际在途数可能暂时高于目标。
+- 最后一档计时结束后将目标并发设为 `0`，正常情况下等待所有在途调用完成后返回。 `duration`
+  限制补发窗口，不包含最终排空；被测调用若一直不结束，基准也不会结束。
+- 样本为 `[startTime, endTime, id]`，时间来自 `performance.now()`，单位为毫秒。 id
+  在任务内递增，预热和正式请求共用序列。预热发起的请求即使在正式阶段完成，也不会传给收集器。
+  成功和失败结果分别进入对应收集器；失败样本不包含原始异常。
+- 返回值的 `warmup.iterations` 是预热期间发起的次数，不是预热结束时已完成的次数。 `warmup.duration`
+  是预热的实际耗时，不包含单独的排空阶段。
+- `stageSamples` 保存每档目标并发及请求 id 范围 `[startIndex, endIndex)`。
+  范围按发起时间划分，不是收集器数组下标；跨档完成和最终排空的结果仍归原发起档。
+- `intervalSampleData` 按指定间隔采集累计 CPU 使用量、内存占用和单调时间戳，
+  覆盖预热、正式测量及最终排空。不额外补采起点、阶段边界或终点，短任务可能没有快照。
+  不能把首尾快照直接当作正式测量的精确起止时间。
 
-预热排空后开始正式测量，继续复用连接池。正式档位切换不排空、不重建连接、不重新预热。
-降低并发时暂停补发，直到在途数低于新目标，因此切换后在途数可能暂时高于目标。
-时限或失败超限后停止补发，等待所有查询完成，再关闭收集器和连接池。 排空、关池和退出不设超时；duration
-限制补发时间，不保证进程在指定时限内退出。
+### 错误与当前限制
 
-输出至 `benchmark/results/fixed-concurrency-<时间戳>/`，根目录由
-[fixed-concurrency.bench.ts](test/fixed-concurrency.bench.ts) 的 `OUTPUT_DIRECTORY` 配置：
+- 查询失败只计入失败结果，仍按目标并发补发，不会直接使基准 Promise 拒绝。 当前配置没有
+  `maxFailures`，也没有失败次数上限。工具不验证 SQL 返回行的内容。
+- 收集器异常目前仅打印日志并将目标并发设为 `0`，不会作为基准 Promise 的拒绝原因；
+  后续档位仍可能重新开始派发。异常发生在最终排空期间时，等待可能无法完成。
+  不应把这种情况下的成功返回当作样本完整的证明。
+- 若被测函数持续返回立即兑现或拒绝的 Promise，补发形成的微任务链可能阻塞阶段和资源采样计时器。
+  当前实现没有保证这种场景的计时公平性。
+- 调用方负责创建和释放数据库连接，以及文件收集器的最终刷新、关闭或异步释放。 执行器不代替调用方等待收集器的异步写入。
 
-- `<客户端>.samples.bin`：每次正式启动请求的 `[startTime, endTime, success, id]` 原始样本，
-  包含最终排空完成的调用，但不保存预热调用。时间为进程单调时钟的毫秒值。 文件头 8 字节：ASCII `PGBS`、版本 `1`、记录长度
-  `25`、两个保留零字节。 每条记录为两个 Float64 时间、一个成功标记字节、一个 Float64 安全整数 id，使用小端序。
-- `<客户端>.result.json`：格式版本、样本数量、运行结果、CPU/内存原始快照以及 PID/池大小等元数据。
-  仅在测量成功完成、样本刷新成功后写出，运行失败时不生成结果 JSON。 `warmup: { iterations, duration }`
-  单独记录预热次数和毫秒耗时，耗时不含排空。 `stageSamples` 记录每档的 `concurrency` 和请求 id 范围
-  `[startIndex, endIndex)`； 这些索引不是样本数组位置，完成顺序可能不同于发起顺序。成功/失败数直接从原始样本统计，
-  正式测量起止时间来自资源快照的首尾时间。
-- `comparison.svg`：全部客户端结束后，由主进程读取原始数据、分析并生成。 不再输出旧的 `results.json` 和旧 ResourceResult
-  格式。
+## 现有脚本与报告的迁移状态
 
-文件名去掉开头的 `@` 并替换路径分隔符，如 `asla-pg-node.samples.bin`。
-写入不覆盖同名原始文件；只读接口不会创建或修改文件，损坏、截断和计数不符时明确报错。
-文件收集器用小块串行写入，默认最多缓存 8 MiB，包含当前、排队和正在写入的块。 可通过
-`openFileCollector(dir, name, { maxBufferedBytes })` 调整；达到容量上限时直接报错停止，不等待背压、不丢样后继续。
-收集器和文件故障不属于查询失败预算，直接抛出异常并导致非零退出。
-失败时可能保留部分样本文件，但不将其作为完整测量结果参与比较。
-一个子进程失败不妨碍其他客户端完成；主进程保留其他客户端的报告并记录失败进程。
+[fixed-concurrency.bench.ts](test/fixed-concurrency.bench.ts) 仍使用旧的 `collector` 参数，
+需要改为成功/失败双收集器后才能用于当前执行器。它仍解析并传递 `--max-failures`，
+但当前执行器不再读取该配置；该选项不能提供失败预算。 `deno task bench:concurrency`
+指向此脚本，不能据此认为该任务已完成适配。
 
-查看全部选项：`deno run -A ./benchmark/test/fixed-concurrency.bench.ts --help`。
+[文件收集器](deps/bench/collector/file_collector.ts)、 [分析器](deps/bench/analyzer/sample_group.ts) 和
+[报告编排](utils/resource-runner.ts) 仍有按旧四元组 `[startTime, endTime, success, id]` 读取样本的逻辑，
+不能直接消费当前三元组。文件格式和图表统计需要与成功/失败分流一起迁移， 迁移前不将旧的二进制格式、SVG
+输出和失败退出语义作为当前 API 的保证。
 
-## 内存采样基准
+[concurrency-fast.bench.ts](test/concurrency-fast.bench.ts) 已使用新的收集器参数，
+但当前把成功和失败样本存入同一数组；需要区分结果时应改用独立收集器。 该脚本当前配置为并发 `500`、预热 `100ms`、测量
+`2000ms`，仅在内存中保留结果，不生成 SVG。
 
-在仓库根目录执行：
+报告目录 `benchmark/results` 已被忽略，不应作为源码提交。
 
-```sh
-deno run -A --frozen ./benchmark/test/pool-query.bench.ts
-deno run -A --frozen ./benchmark/test/query.bench.ts
-deno run -A --frozen ./benchmark/test/concurrency-fast.bench.ts
-```
+## 类型检查
 
-三个脚本都改为预热 **1 秒**，按 **100、250、500** 并发各测量 **3 秒**。 默认值在 [utils/bench.ts](utils/bench.ts) 的
-`DEFAULT_BENCH_INPUT` 中配置；工具自身的 duration、 warmupDuration 和阶段 duration 使用毫秒，默认分别为 3000 和
-0，maxFailures 默认 0。 并发输入支持单个数值、数值数组和 `{ value, duration }[]`。
+从仓库根目录检查当前执行器，无需数据库：
 
-- 连接池基准保持池大小 `4`，比较现有 `postgres`、`fake`、调度模拟、`@asla/pg` 和 `@asla/pg-node` 项的 select。
-- 固定连接基准比较现有客户端的 select/selectArg/selectArgs。旧版本比较项 `@asla/pg-prev` 必须预先提供**旧版本**构建的
-  `dist/mod.js`，缺少时明确报错，不跳过，也不能用当前版本构建冒充。
-- 在同一进程中依次运行客户端，建连/建池、预热、排空及关闭不计入正式窗口。 内存指标可能受前序客户端遗留内存影响，不等同于
-  fixed 的独立进程比较。
-- 原始数据仅存在内存；分别输出到 `benchmark/results/query-<时间戳>/`、 `pool-query-<时间戳>/` 和
-  `concurrency-fast-<时间戳>/`， 每个查询场景仅写一份 `<查询名>.svg`，没有原始样本或结果 JSON 文件。
-- 查询失败在预算内会显示计数但不导致非零退出；超出预算或基础设施故障在关闭资源、生成可用报告后非零退出。
-
-## 图表与统计口径
-
-- SVG 包含 CPU、RSS、JS 堆、外部内存、成功 QPS 和**目标并发**六类曲线，
-  目标并发不是实际在途请求数。横轴为各客户端相对正式起点的真实秒数。
-  阶段时间从各请求范围内首个请求的发起时间重建；降低并发导致延迟补发时，
-  该时间晚于实际切换，空请求范围不伪造采样或耗时。
-- CPU/内存正式测量期间每秒采样，并补采起点、阶段边界和终点。 CPU 由累计 user/system 微秒差计算，100%
-  表示一个逻辑核心；内存显示 MiB， 是采样时占用而非分配速率或精确峰值，不主动 GC。资源数据包含调度/采样开销，fixed
-  还包含文件收集开销。
-- 预热不进入正式样本，最终排空不进入资源和 QPS 曲线。 查询按发起请求的 id
-  范围归入对应档，跨档完成或最终排空的查询仍归原发起档，计入该档延迟和成功/失败数。 重复并发值仍按档位序号独立统计。
-- 每档比较 CPU/内存的时间加权均值和成功 QPS，按均值升序排列，
-  每档成功数包含最终排空，以重建的该档测量时长换算每秒成功数； 时间曲线的 QPS 则只统计对应资源采样区间内完成的成功查询。
-  倍数仅相对于相同档位的最低值，不表示所有指标越大越好。零分母、未运行档位及缺失数据显示 N/A。
-- 延迟仅统计成功调用，包含排队时间；分位数为 nearest-rank，覆盖 p50 至 p99.9。 RME 为 95% Student-t
-  均值置信区间相对半宽，不再把变异系数标为 RME。 无成功样本、样本不足或均值为零时，相应统计显示 N/A。
-- 失败统计来自正式请求样本，包含这些请求的排空结果，不包含预热；工具本身不验证 SQL 结果行。 `warmup`、`run` 和
-  `runWidthCpuAndMemory` 在查询失败超限或采样回调出错时，
-  停止补发、等待在途查询完成，然后直接抛出原始异常；结果不携带错误状态字段。 调用方仍负责文件收集器最终的
-  flush/close/dispose，异步写入错误也通过这些方法抛出。
-
-报告在已忽略的 `benchmark/results` 下，不应作为源码提交。
-
-## 工具测试
-
-无需数据库即可运行 Node 工具测试和可控子进程测试（子进程编排测试需要 Deno）：
-
-```sh
-node benchmark/node_modules/vitest/vitest.mjs run --config benchmark/vitest.config.ts
-deno check --config benchmark/deno.json benchmark/deps/bench.ts
+```powershell
+deno check --no-config .\benchmark\deps\bench\ConcurrencyBench.ts
 ```
 
 ## TCP 写入调度基准

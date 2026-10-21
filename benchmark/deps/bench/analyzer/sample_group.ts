@@ -1,5 +1,4 @@
-import type { ConcurrencyBenchResultWithCPUAndMemory } from "../types/bench_result.ts";
-import type { CommonBenchSampleGroup, ConcurrencyBenchSample } from "../types/sample.ts";
+import type { ConcurrencyBenchResultWithCPUAndMemory, ConcurrencyBenchSample } from "../types/bench_result.ts";
 
 export type IntervalMetric = "rss" | "cpu" | "memoryExtended" | "jsHeap" | "qps" | "concurrency";
 
@@ -38,7 +37,6 @@ export type AnalyzeSampleGroupResult = {
 };
 
 export type AnalyzedSampleGroup = {
-  name: string;
   run: ConcurrencyBenchResultWithCPUAndMemory;
   intervalSample: IntervalSamples;
   resultGroup: Map<string, AnalyzeSampleGroupResult>;
@@ -126,19 +124,20 @@ function upperBound(values: number[], value: number) {
 /**
  * 按阶段的请求 id 范围归组，延迟包含排空结果；资源曲线仅覆盖正式测量。
  */
-export function analyzeSampleGroup<T extends ConcurrencyBenchSample>(input: {
-  sampleGroup: CommonBenchSampleGroup<T>;
+export function analyzeSampleGroup(input: {
+  startTime: number;
+  endTime: number;
+  samples: ConcurrencyBenchSample[];
   intervalSamples: ConcurrencyBenchResultWithCPUAndMemory;
   /** 返回 undefined 的样本不参与延迟、成功/失败数和 QPS。 */
-  groupBy?: (sample: T) => string | undefined;
+  groupBy?: (sample: ConcurrencyBenchSample) => string | undefined;
 }): AnalyzedSampleGroup {
-  const { sampleGroup, intervalSamples: run, groupBy } = input;
-  const { startTime, endTime } = sampleGroup;
+  const { samples, intervalSamples: run, groupBy, endTime, startTime } = input;
   const snapshots = run.intervalSampleData;
   const stageIndices = run.stageSamples.map((stage) => stage.startIndex);
   const boundaries = new Set(stageIndices);
   const requestStarts = new Map<number, number>();
-  for (const sample of sampleGroup.samples) {
+  for (const sample of samples) {
     if (boundaries.has(sample[3])) requestStarts.set(sample[3], sample[0]);
   }
   const stageTimes = new Array<number>(stageIndices.length);
@@ -224,7 +223,6 @@ export function analyzeSampleGroup<T extends ConcurrencyBenchSample>(input: {
     };
   });
   return {
-    name: sampleGroup.name,
     run,
     intervalSample,
     resultGroup: new Map([...groups].map(([name, samples]) => [name, statistics(samples)])),
