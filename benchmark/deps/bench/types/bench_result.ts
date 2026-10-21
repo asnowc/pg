@@ -1,16 +1,18 @@
 export type ConcurrencyBenchResult = {
-  /** 开始时间，单位毫秒，不包括预热时间 */
-  startTime: number;
-  /** 结束时间，单位毫秒  */
-  endTime: number;
-  /** 实际迭代次数 */
-  iterations: number;
-  /** 实际预热次数 */
-  warmup: number;
-  /** 实际预热持续时间 */
-  warmupDuration: number;
+  name: string;
+  warmup: {
+    /** 预热迭代次数 */
+    iterations: number;
+    /** 预热持续时间 */
+    duration: number;
+  };
   /** 并发数变更采样 */
-  concurrencySamples: { value: number; startTime: number }[];
+  stageSamples: {
+    concurrency: number;
+    /** 发起请求的 id 范围 [startIndex, endIndex)，预热 id 不在范围内。 */
+    startIndex: number;
+    endIndex: number;
+  }[];
 };
 export type ConcurrencyBenchResultWithCPUAndMemory = ConcurrencyBenchResult & {
   intervalSampleData: (NodeJS.CpuUsage & NodeJS.MemoryUsage & {

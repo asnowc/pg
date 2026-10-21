@@ -1,16 +1,8 @@
 import { Command } from "commander";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
-import { measureFixed } from "../utils/fixed-resource.ts";
-import type { ResourceResult } from "../utils/resource-report.ts";
-import {
-  filename,
-  integer,
-  libraries,
-  type Library,
-  loadLibrary,
-  runResourceScenario,
-} from "../utils/resource-runner.ts";
+import { ConcurrencyBench, openFileCollector } from "../deps/bench.ts";
+import { filename, integer, libraries, loadLibrary, runResourceScenario } from "../utils/resource-runner.ts";
 
 // 报告根目录；每次运行自动创建时间戳子目录。
 const OUTPUT_DIRECTORY = fileURLToPath(new URL("../results", import.meta.url));
@@ -20,6 +12,7 @@ interface Options {
   concurrency: number[];
   warmup: number;
   duration: number;
+  maxFailures: number;
 }
 
 const values = new Command()
@@ -33,10 +26,16 @@ const values = new Command()
   )
   .option("--warmup <seconds>", "Warmup duration before measurement", integer(0), 10)
   .option("--duration <seconds>", "Measurement duration for each concurrency", integer(1), 60)
+  .option(
+    "--max-failures <count>",
+    "Allowed query failures across warmup and all stages (stop only when exceeded)",
+    integer(0),
+    0,
+  )
   .allowExcessArguments(false)
   .addHelpText(
     "after",
-    '\nUses TEST_LOGIN_DB and "select 1 as x". No target QPS.\nRuns concurrency counts in the supplied order, warming up only the first count.\nCharts use a continuous timeline with per-stage averages excluding warmup and final drain.\nTotal sampling time = warmup + duration * number of concurrency counts.',
+    '\nUses TEST_LOGIN_DB and "select 1 as x". No target QPS.\nRuns concurrency counts in the supplied order, warming up only the first count.\nCharts exclude warmup and final drain; all raw measurement samples are retained.',
   )
   .parse(Deno.args, { from: "user" })
   .opts<Options>();
@@ -44,44 +43,36 @@ const values = new Command()
 await main();
 
 async function main() {
-  const { poolSize, concurrency, warmup, duration } = values;
+  const { poolSize, concurrency, warmup, duration, maxFailures } = values;
 
   const options = {
     concurrency,
-    warmup,
-    duration,
+    warmupDuration: warmup * 1000,
+    duration: duration * 1000,
+    maxFailures,
   };
   const worker = Deno.env.get("PG_BENCH_WORKER");
   if (worker !== undefined) {
     const output = Deno.env.get("PG_BENCH_OUTPUT");
     if (!output) throw new Error("PG_BENCH_OUTPUT is required in a benchmark worker");
-    const name = worker as Library;
+    const name = worker;
     const target = await loadLibrary(name, poolSize);
     try {
-      const measured = await measureFixed(target.query, options);
-      const result: ResourceResult = {
-        library: name,
-        pid: Deno.pid,
-        denoVersion: Deno.version.deno,
-        qps: null,
-        poolSize,
-        maxInFlight: Math.max(...concurrency),
-        concurrency,
-        warmup,
-        duration,
-        ...measured,
-      };
-      await Deno.writeTextFile(resolve(output, `${filename(name)}.json`), JSON.stringify(result, null, 2));
-      if (result.failed > 0) Deno.exitCode = 1;
+      await using collector = await openFileCollector(output, filename(name));
+      const result = await new ConcurrencyBench({ ...options, name }).runWidthCpuAndMemory({
+        fn: target.query,
+        intervalSampleCPUAndMemory: 1000,
+        collector,
+      });
+      await collector.saveResult(result, { library: name, pid: Deno.pid, denoVersion: Deno.version.deno, poolSize });
     } finally {
       await target.close();
     }
-    Deno.exit(Deno.exitCode);
+    return;
   }
   const directory = resolve(
     OUTPUT_DIRECTORY,
-    new Date().toISOString().replace(/[:.]/g, "-"),
-    `fixed-pool-${poolSize}-concurrency-${concurrency.join("-")}`,
+    `fixed-concurrency-${new Date().toISOString().replace(/[:.]/g, "-")}`,
   );
   const failures = await runResourceScenario({
     directory,
@@ -96,6 +87,8 @@ async function main() {
       String(warmup),
       "--duration",
       String(duration),
+      "--max-failures",
+      String(maxFailures),
     ],
     description:
       `fixed-concurrency pool=${poolSize} concurrency=${concurrency} warmup=${warmup}s measurement=${duration}s`,

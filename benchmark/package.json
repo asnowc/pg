@@ -7,8 +7,7 @@
     "pg": "^8.23.0",
     "pg-promise": "^12.7.1",
     "postgres": "^3.4.9",
-    "slonik": "^49.10.9",
-    "tinybench": "^6.1.6"
+    "slonik": "^49.10.9"
   },
   "devDependencies": {
     "@deno/vite-plugin": "^2.0.3",

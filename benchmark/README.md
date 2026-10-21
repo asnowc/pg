@@ -1,90 +1,116 @@
 # 查询基准
 
+## 工具与运行环境
+
+统一入口是 [deps/bench.ts](deps/bench.ts)：并发运行 → 原始样本 → `analyzeSampleGroup` → `renderSvg`。 JavaScript / Node
+API 的兼容性约束仅适用于 `benchmark/deps`，该目录不依赖 Deno API、Deno 全局或 polyfill。 `benchmark/test`
+中的数据库基准脚本仍用 `deno run` 直接运行，不需要 Node 启动器或预编译。 工具也可通过现有 Vitest 等支持 TypeScript
+转换的 Node 工具链运行。ECharts 只在生成 SVG 时加载，不进入 fixed 的被测子进程。 无需浏览器或原生 Canvas；首次运行前在
+`benchmark` 目录执行 `deno install` 安装已有依赖。
+
+连接配置来自 [db.ts](utils/db.ts)，默认 `postgres://postgres@127.0.0.1:5432/test_public`， 使用 `TEST_LOGIN_DB`
+覆盖。当前比较明文 TCP，不读取 URL 中的 TLS 等查询参数。
+
 ## 固定并发资源基准
 
-不设置目标 QPS，按命令行指定的并发列表依次测试，每档保持固定并发，查询完成后立即补发：
-
 ```sh
-deno run -A --frozen ./benchmark/test/fixed-concurrency.bench.ts --pool-size 4 --concurrency=10,20,40,60 --warmup 10 --duration 60
+deno run -A --frozen ./benchmark/test/fixed-concurrency.bench.ts --pool-size 4 --concurrency=10,20,40,60 --warmup 10 --duration 60 --max-failures 0
 ```
 
-也可在仓库根目录执行 `deno task bench:concurrency --concurrency=10,20,40,60 --warmup 10 --duration 60`。 使用 Commander
-参数解析、ECharts SVG 服务端渲染和 `TEST_LOGIN_DB`。 比较的实现由 [resource-runner.ts](utils/resource-runner.ts) 中的
-`libraries` 指定， 每个实现启动独立进程，SQL 均为 `select 1 as x`。
+也可运行 `deno task bench:concurrency` 并传入这些参数。客户端列表仍由 [resource-runner.ts](utils/resource-runner.ts) 的
+`libraries` 指定，SQL 为 `select 1 as x`。 不设置目标
+QPS，每个客户端一个独立子进程，进程内顺序执行全部并发档，客户端之间也顺序执行。
 
-图表通过 npm `echarts` 服务端渲染为 SVG，不需要浏览器或原生 Canvas。 首次运行前，在 `benchmark` 目录执行 `deno install`
-安装依赖。 图表运行时仅在父进程生成报告时加载，不进入被测子进程。
+- `--concurrency <数量列表>`：必填，逗号分隔的正整数，按输入顺序执行，不排序、不去重。
+- `--pool-size <数量>`：连接池大小，默认 `4`，与请求并发独立。
+- `--warmup <秒数>`：仅第一档预热，默认 `10`；允许 `0`。
+- `--duration <秒数>`：每档正式测量时长，默认 `60`，必须为正整数。
+- `--max-failures <数量>`：允许的查询失败次数，默认 `0`，必须为非负安全整数。
+  累计失败次数**严格超过**上限才停止补发并非零退出；等于上限继续。 预热、所有并发档和最终排空共用预算，不逐档重置。
 
-除预热允许为 `0` 外，参数均为正整数：
+预热排空后开始正式测量，继续复用连接池。正式档位切换不排空、不重建连接、不重新预热。
+降低并发时暂停补发，直到在途数低于新目标，因此切换后在途数可能暂时高于目标。
+时限或失败超限后停止补发，等待所有查询完成，再关闭收集器和连接池。 排空、关池和退出不设超时；duration
+限制补发时间，不保证进程在指定时限内退出。
 
-- `--concurrency <数量列表>`：必填，逗号分隔的正整数，按输入顺序逐档测试，不排序或去重。 例如
-  `--concurrency=10,20,40,60`；单个值仍可使用 `--concurrency 128`。
-- `--pool-size <数量>`：连接池大小，默认 `4`，与请求并发相互独立。
-- `--warmup <秒数>`：只在第一档并发预热一次，默认 `10` 秒；`0` 表示不预热。
-- `--duration <秒数>`：每档并发的正式测量时长，默认 `60` 秒。 总采样时长为 `warmup + duration × 并发档数`，上述示例约为
-  `250` 秒。
+输出至 `benchmark/results/fixed-concurrency-<时间戳>/`，根目录由
+[fixed-concurrency.bench.ts](test/fixed-concurrency.bench.ts) 的 `OUTPUT_DIRECTORY` 配置：
 
-原来的文件名 `max-qps.bench.ts` 和任务名 `bench:max-qps` 已分别改为 `fixed-concurrency.bench.ts` 和
-`bench:concurrency`。 原来的 `--steady-duration` 和 `--search-timeout` 已移除，改用 `--duration`。
-不再校准、搜索或判断收敛，只按输入列表切换并发。
+- `<客户端>.samples.bin`：每次正式启动请求的 `[startTime, endTime, success, id]` 原始样本，
+  包含最终排空完成的调用，但不保存预热调用。时间为进程单调时钟的毫秒值。 文件头 8 字节：ASCII `PGBS`、版本 `1`、记录长度
+  `25`、两个保留零字节。 每条记录为两个 Float64 时间、一个成功标记字节、一个 Float64 安全整数 id，使用小端序。
+- `<客户端>.result.json`：格式版本、样本数量、运行结果、CPU/内存原始快照以及 PID/池大小等元数据。
+  仅在测量成功完成、样本刷新成功后写出，运行失败时不生成结果 JSON。 `warmup: { iterations, duration }`
+  单独记录预热次数和毫秒耗时，耗时不含排空。 `stageSamples` 记录每档的 `concurrency` 和请求 id 范围
+  `[startIndex, endIndex)`； 这些索引不是样本数组位置，完成顺序可能不同于发起顺序。成功/失败数直接从原始样本统计，
+  正式测量起止时间来自资源快照的首尾时间。
+- `comparison.svg`：全部客户端结束后，由主进程读取原始数据、分析并生成。 不再输出旧的 `results.json` 和旧 ResourceResult
+  格式。
 
-- 每个客户端使用同一子进程和连接池运行全部并发档，先用第一档并发预热，随后逐档测量，
-  切换时不排空、不重建连接，也不重新预热。降低并发时暂停补发，直到在途数低于新目标，
-  因此切换后在途数可能暂时高于该档目标。跨档查询按完成时刻计入对应测量窗口。
-  惰性建连的开销包含在预热数据中；不预热时包含在第一档正式测量中。
-  最后一档到达时限后停止补发并排空在途查询；查询出错时也停止补发，以非零状态退出。
-- 每秒采样 CPU、RSS、JS 堆、外部内存、成功/失败 QPS、在途数和固定并发，
-  在预热结束、并发档切换和正式测量结束时补采边界区间，避免跨区间计算均值。
-  CPU/内存只统计客户端进程（含负载调度器），不包括 PostgreSQL 服务端；CPU `100%` 表示一个逻辑核心。
-  内存是采样时的占用，不是分配速率或精确峰值，不主动强制 GC。
-- 报告输出到 `benchmark/results/<时间戳>/fixed-pool-<大小>-concurrency-10-20-40-60/`，末段按实际并发列表生成。可通过
-  [fixed-concurrency.bench.ts](test/fixed-concurrency.bench.ts) 中的 `OUTPUT_DIRECTORY` 修改根目录。 `results.json`
-  汇总各实现结果，各实现还保存独立 JSON。 文件名去掉开头的 `@`，并将路径分隔符替换为 `-`，例如 `@asla/pg-node` 保存为
-  `asla-pg-node.json`。
-- `comparison.svg` 包含 CPU、RSS、JS 堆、外部内存、成功 QPS 和在途查询数六个图。
-  每个客户端是一条连续时间曲线，保留预热和所有并发档的数据， 同色竖向虚线标记实际预热结束时间和各档开始时间。
-  每张图下方按并发档分别显示表格，列出客户端、平均值和相对最低值的倍数。
-  每个表格按平均值从低到高排序，无测量数据的客户端排在末尾，行颜色与曲线保持一致。
-  均值按该档采样时长加权，不计预热和最终排空。倍数只与相同档位的其他客户端比较。成功 QPS
-  的倍数表示吞吐倍数；CPU、内存等指标的倍数不代表更快或更好。 最低值为零或无可用数据时，倍数显示
-  `ratio N/A`。失败查询总数包含排空阶段。
-- JSON 中 `concurrency` 是按输入顺序保留的并发数组，`maxInFlight` 是其中最大值， `warmup` 和 `duration`
-  是一次预热和每档正式测量的要求时长，`elapsedSeconds` 是预热加正式测量的实际采样时长，`warmupCompletedAtSeconds`
-  是实际预热结束时刻， `measurementElapsedSeconds` 是各档实际测量时长之和。`qps: null` 表示不限制目标 QPS。 `stages`
-  按执行顺序记录已运行档位的 `concurrency`、`startSeconds`、`endSeconds`、`elapsedSeconds`、 `completedInWindow` 和
-  `averageQps`；失败时保留当前档的部分数据，后续未运行档位不伪造结果。 顶层 `averageQps` 为全部正式测量窗口内成功数
-  `completedInWindow`
-  除以正式测量总时长，不包含预热和排空完成数；预热期间失败而未进入正式测量时，`warmupCompletedAtSeconds` 和 `averageQps`
-  为 `null`， 图表均值显示 `no measurement data`。`peakQps` 仍为全部采样中长度至少一秒的区间的最高成功 QPS。
-  成功/失败总数包含预热、正式测量和排空结果。原有搜索、校准和收敛字段不再输出。
-- 全部档位测量结束后等待在途查询全部完成，再关闭连接池；排空、关池和子进程退出均不设超时保护。 因此每档 `--duration`
-  只限制补发查询的时间，不保证整个进程在总采样时限内退出。
-  查询长时间无响应时需要手动终止。失败保留已生成的报告并以非零状态退出。报告不应作为源码提交。
+文件名去掉开头的 `@` 并替换路径分隔符，如 `asla-pg-node.samples.bin`。
+写入不覆盖同名原始文件；只读接口不会创建或修改文件，损坏、截断和计数不符时明确报错。
+文件收集器用小块串行写入，默认最多缓存 8 MiB，包含当前、排队和正在写入的块。 可通过
+`openFileCollector(dir, name, { maxBufferedBytes })` 调整；达到容量上限时直接报错停止，不等待背压、不丢样后继续。
+收集器和文件故障不属于查询失败预算，直接抛出异常并导致非零退出。
+失败时可能保留部分样本文件，但不将其作为完整测量结果参与比较。
+一个子进程失败不妨碍其他客户端完成；主进程保留其他客户端的报告并记录失败进程。
 
 查看全部选项：`deno run -A ./benchmark/test/fixed-concurrency.bench.ts --help`。
 
-## 运行连接池基准
+## 内存采样基准
 
 在仓库根目录执行：
 
-```powershell
-deno run -A --frozen .\benchmark\test\pool-query.bench.ts
+```sh
+deno run -A --frozen ./benchmark/test/pool-query.bench.ts
+deno run -A --frozen ./benchmark/test/query.bench.ts
+deno run -A --frozen ./benchmark/test/concurrency-fast.bench.ts
 ```
 
-需要 Deno 和可连接的 PostgreSQL。连接配置来自 [db.ts](utils/db.ts)，默认地址为
-`postgres://postgres@127.0.0.1:5432/test_public`，使用 `TEST_LOGIN_DB` 覆盖。当前比较明文 TCP，不读取 URL 中的 TLS
-等查询参数。
+三个脚本都改为预热 **1 秒**，按 **100、250、500** 并发各测量 **3 秒**。 默认值在 [utils/bench.ts](utils/bench.ts) 的
+`DEFAULT_BENCH_INPUT` 中配置；工具自身的 duration、 warmupDuration 和阶段 duration 使用毫秒，默认分别为 3000 和
+0，maxFailures 默认 0。 并发输入支持单个数值、数值数组和 `{ value, duration }[]`。
 
-[pool-query.bench.ts](test/pool-query.bench.ts) 默认比较 `postgres`、`@asla/pg` 和 `fake` 的 `select`：
+- 连接池基准保持池大小 `4`，比较现有 `postgres`、`fake`、调度模拟、`@asla/pg` 和 `@asla/pg-node` 项的 select。
+- 固定连接基准比较现有客户端的 select/selectArg/selectArgs。旧版本比较项 `@asla/pg-prev` 必须预先提供**旧版本**构建的
+  `dist/mod.js`，缺少时明确报错，不跳过，也不能用当前版本构建冒充。
+- 在同一进程中依次运行客户端，建连/建池、预热、排空及关闭不计入正式窗口。 内存指标可能受前序客户端遗留内存影响，不等同于
+  fixed 的独立进程比较。
+- 原始数据仅存在内存；分别输出到 `benchmark/results/query-<时间戳>/`、 `pool-query-<时间戳>/` 和
+  `concurrency-fast-<时间戳>/`， 每个查询场景仅写一份 `<查询名>.svg`，没有原始样本或结果 JSON 文件。
+- 查询失败在预算内会显示计数但不导致非零退出；超出预算或基础设施故障在关闭资源、生成可用报告后非零退出。
 
-- 每个客户端配置 4 条连接，预热 100 次，正式执行 10,000 次。
-- 未指定 `maxConcurrency` 时，并发数等于迭代次数，因此会同时提交 10,000 个请求，而不是串行查询或仅 4 个并发请求。
-- 客户端之间依次运行；建池、预热和关闭不计入 `totalTime`。真实客户端惰性建连，由预热触发。
-- `totalTime` 是整批完成耗时；`mean`、分位数包含客户端排队时间，不是单条 SQL 的纯执行时间。
-- `ratio` 相对于当轮最慢客户端。当前 `±` 后面的数值实际是标准差除以均值（变异系数），不是置信区间。
-- 当前 runner 只统计调用是否抛错，不断言结果行；成功列实际显示总迭代数，有错误时需另行扣除错误数。
+## 图表与统计口径
 
-固定连接的其他比较见 [query.bench.ts](test/query.bench.ts)，其并发数和启用的客户端与连接池基准不同。
+- SVG 包含 CPU、RSS、JS 堆、外部内存、成功 QPS 和**目标并发**六类曲线，
+  目标并发不是实际在途请求数。横轴为各客户端相对正式起点的真实秒数。
+  阶段时间从各请求范围内首个请求的发起时间重建；降低并发导致延迟补发时，
+  该时间晚于实际切换，空请求范围不伪造采样或耗时。
+- CPU/内存正式测量期间每秒采样，并补采起点、阶段边界和终点。 CPU 由累计 user/system 微秒差计算，100%
+  表示一个逻辑核心；内存显示 MiB， 是采样时占用而非分配速率或精确峰值，不主动 GC。资源数据包含调度/采样开销，fixed
+  还包含文件收集开销。
+- 预热不进入正式样本，最终排空不进入资源和 QPS 曲线。 查询按发起请求的 id
+  范围归入对应档，跨档完成或最终排空的查询仍归原发起档，计入该档延迟和成功/失败数。 重复并发值仍按档位序号独立统计。
+- 每档比较 CPU/内存的时间加权均值和成功 QPS，按均值升序排列，
+  每档成功数包含最终排空，以重建的该档测量时长换算每秒成功数； 时间曲线的 QPS 则只统计对应资源采样区间内完成的成功查询。
+  倍数仅相对于相同档位的最低值，不表示所有指标越大越好。零分母、未运行档位及缺失数据显示 N/A。
+- 延迟仅统计成功调用，包含排队时间；分位数为 nearest-rank，覆盖 p50 至 p99.9。 RME 为 95% Student-t
+  均值置信区间相对半宽，不再把变异系数标为 RME。 无成功样本、样本不足或均值为零时，相应统计显示 N/A。
+- 失败统计来自正式请求样本，包含这些请求的排空结果，不包含预热；工具本身不验证 SQL 结果行。 `warmup`、`run` 和
+  `runWidthCpuAndMemory` 在查询失败超限或采样回调出错时，
+  停止补发、等待在途查询完成，然后直接抛出原始异常；结果不携带错误状态字段。 调用方仍负责文件收集器最终的
+  flush/close/dispose，异步写入错误也通过这些方法抛出。
+
+报告在已忽略的 `benchmark/results` 下，不应作为源码提交。
+
+## 工具测试
+
+无需数据库即可运行 Node 工具测试和可控子进程测试（子进程编排测试需要 Deno）：
+
+```sh
+node benchmark/node_modules/vitest/vitest.mjs run --config benchmark/vitest.config.ts
+deno check --config benchmark/deno.json benchmark/deps/bench.ts
+```
 
 ## TCP 写入调度基准
 

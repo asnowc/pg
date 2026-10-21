@@ -1,129 +1,127 @@
-import { Bench } from "tinybench";
-import { BenchTaskSample } from "./ConcurrencyBench.ts";
+import { access } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
+import path from "node:path";
+import {
+  type AnalyzedSampleGroup,
+  analyzeSampleGroup,
+  type BenchInput,
+  ConcurrencyBench,
+  type ConcurrencyBenchSample,
+  renderSvg,
+} from "../deps/bench.ts";
+import type { PoolQueryTest, QueryTest, TestQueries } from "./common.ts";
+import { initTest } from "./init-asla-pg-test.ts";
 
-export type BenchResultData = {
+export const DEFAULT_BENCH_INPUT = {
+  concurrency: [100, 250, 500],
+  duration: 3000,
+  warmupDuration: 1000,
+} satisfies BenchInput;
+/** 报告根目录；每个脚本一次运行共用一个目录。 */
+export const OUTPUT_DIRECTORY = fileURLToPath(new URL("../results", import.meta.url));
+
+export function reportDirectory(name: string) {
+  return resolve(OUTPUT_DIRECTORY, `${name}-${new Date().toISOString().replace(/[:.]/g, "-")}`);
+}
+export function getReportDirectory(meta: ImportMeta) {
+  const base = path.resolve(import.meta.dirname!, "../results");
+  return path.join(base, path.parse(meta.filename!).name + reportDirectory(meta.filename!));
+}
+type QueryName = keyof TestQueries<unknown>;
+export type BenchTarget = {
   name: string;
-  erroredCount: number;
-  totalTime: number;
-  min: number;
-  max: number;
-  /** 平均耗时 */
-  mean: number;
-  p50: number;
-  p75: number;
-  p99: number;
-  rme: number;
-  /** 样本数量 */
-  samplesNumber: number;
-
-  state: "completed";
+  create(query: QueryName): Promise<{ query: () => Promise<void>; close: () => Promise<void> }>;
 };
-export type BenchResult = BenchResultData | {
-  name: string;
-  state: "failed";
-};
-/**
- * 获取排序后的基准测试结果。排序顺序为，最快 -> 最慢 -> 无结果。无论是否翻转，无结果始终排在最后。
- */
-export function printBenchResult(input: BenchResult[]): void {
-  const compiledResults = input.filter((result) => result.state === "completed");
-  const unknownResults = input.filter((result) => result.state === "failed");
-  const sortedResult = compiledResults.sort((left, right) => left.totalTime - right.totalTime);
 
-  const results2 = unknownResults.map((result): Partial<BenchResult> => {
-    return { name: result.name };
-  });
-  const ratio = new Array<number>(sortedResult.length);
+export function queryTarget<T, P>(info: QueryTest<T, P>): BenchTarget {
+  return {
+    name: info.name,
+    async create(query) {
+      const { conn, pool } = await info.connect();
+      return { query: () => info[query](conn), close: () => info.close(conn, pool) };
+    },
+  };
+}
 
-  const baseline = sortedResult[sortedResult.length - 1].totalTime;
-  for (let i = 0; i < sortedResult.length; i++) {
-    ratio[i] = baseline / sortedResult[i].totalTime;
+export function poolTarget<T>(info: PoolQueryTest<T>, poolSize = 4): BenchTarget {
+  return {
+    name: info.name,
+    async create(query) {
+      const pool = await info.createPool({ poolSize });
+      return { query: () => info[query](pool), close: () => info.closePool(pool) };
+    },
+  };
+}
+
+export async function loadQueryTargets(): Promise<BenchTarget[]> {
+  const previousPath = new URL("../../dist/mod.js", import.meta.url);
+  try {
+    await access(previousPath);
+  } catch (error) {
+    if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") throw error;
+    throw new Error("@asla/pg-prev requires the previous version's dist/mod.js; provide that artifact before running", {
+      cause: error,
+    });
   }
-  const dt = "ms";
-  const result = [
-    ...sortedResult.map((result, index) => ({
-      [`name >>【${dt}】`]: result.name,
-      ratio: ratio[index].toFixed(2) + "X",
-      totalTime: floor(result.totalTime, 0),
-      mean: result.mean.toFixed(5) + " ±" + result.rme.toFixed(2) + "%",
-      min: floor(result.min, 5),
-      max: floor(result.max, 5),
-      p50: floor(result.p50, 5),
-      p75: floor(result.p75, 5),
-      p99: floor(result.p99, 5),
-      "samples (success/error)": `${result.samplesNumber} / ${result.erroredCount}`,
-    })),
-    ...results2,
-  ];
-  console.table(result);
-}
-
-function floor(value: number, x: number) {
-  const c = 10 ** x;
-  return Math.floor(value * c) / c;
-}
-
-export function getConcurrencyBenchResult(cases: BenchTaskSample[]): BenchResultData[] {
-  const result: BenchResultData[] = new Array(cases.length);
-  for (let i = 0; i < cases.length; i++) {
-    const item = cases[i];
-    const duration = item.sampleData.map((d) => d.end - d.start).sort((a, b) => a - b);
-    const mean = duration.reduce((a, b) => a + b, 0) / item.iterations;
-    result[i] = {
-      name: item.taskName,
-      state: "completed",
-      erroredCount: item.erroredCount,
-      totalTime: item.end - item.start,
-      min: duration[0],
-      max: duration[duration.length - 1],
-      mean,
-      p50: getPercent(duration, 0.5),
-      p75: getPercent(duration, 0.75),
-      p99: getPercent(duration, 0.99),
-      rme: calcRme(duration, mean),
-      samplesNumber: item.iterations,
-    };
+  const previous: typeof import("@asla/pg") = await import(previousPath.href);
+  if (typeof previous.connect !== "function" || typeof previous.PgPool !== "function") {
+    throw new Error("@asla/pg-prev does not expose the connection/pool API required by this benchmark");
   }
-  return result;
-}
-function getPercent(sortedData: number[], percent: number) {
-  const index = Math.ceil(sortedData.length * percent) - 1;
-  return sortedData[index];
-}
-function calcRme(data: number[], mean: number) {
-  const squaredDiffs = data.map((value) => (value - mean) ** 2);
-  const variance = squaredDiffs.reduce((a, b) => a + b, 0) / (data.length - 1);
-  const standardDeviation = Math.sqrt(variance);
-  return (standardDeviation / mean) * 100;
+  return Promise.all([
+    import("@asla/pg").then((mod) => queryTarget(initTest(mod).queryTest)),
+    Promise.resolve(queryTarget(initTest(previous, "@asla/pg-prev").queryTest)),
+    import("../lib/pg.ts").then((mod) => queryTarget(mod.queryTest)),
+    import("../lib/pgPromise.ts").then((mod) => queryTarget(mod.queryTest)),
+    import("../lib/postgres.ts").then((mod) => queryTarget(mod.queryTest)),
+    import("../lib/slonik.ts").then((mod) => queryTarget(mod.queryTest)),
+  ]);
 }
 
-export function getTinyBenchBenchResult(bench: Bench): BenchResult[] {
-  const total = bench.results.length;
-  const results = new Array<BenchResult>(total);
-  for (let i = 0; i < total; i++) {
-    const result = bench.results[i];
-    const task = bench.tasks[i];
-    if (result.state === "completed") {
-      results[i] = {
-        name: task.name,
-        state: "completed",
-        erroredCount: 0,
-        totalTime: result.totalTime,
-        min: result.latency.min,
-        max: result.latency.max,
-        mean: result.latency.mean,
-        p50: result.latency.p50,
-        p75: result.latency.p75,
-        p99: result.latency.p99,
-        rme: result.latency.rme,
-        samplesNumber: result.latency.samplesCount,
-      };
-    } else {
-      results[i] = {
-        state: "failed",
-        name: task.name,
-      };
+/** 原始数据只在内存中保存；每个查询场景仅输出 SVG。 */
+export async function runMemoryBench(options: {
+  directory: string;
+  targets: BenchTarget[];
+  queries: QueryName[];
+  input?: BenchInput;
+}): Promise<void> {
+  let failures = 0;
+  for (const queryName of options.queries) {
+    const results: AnalyzedSampleGroup[] = [];
+    const notes = ["Same-process comparison: retained memory from earlier clients may affect later measurements."];
+    for (const target of options.targets) {
+      try {
+        const resource = await target.create(queryName);
+        try {
+          const samples: ConcurrencyBenchSample[] = [];
+          const run = await new ConcurrencyBench({
+            ...options.input ?? DEFAULT_BENCH_INPUT,
+            name: target.name,
+          }).runWidthCpuAndMemory({ fn: resource.query, intervalSampleCPUAndMemory: 1000, collector: samples });
+          results.push(analyzeSampleGroup({
+            sampleGroup: {
+              name: target.name,
+              startTime: run.intervalSampleData[0].timestamp,
+              endTime: run.intervalSampleData.at(-1)!.timestamp,
+              sampleCount: samples.length,
+              samples,
+            },
+            intervalSamples: run,
+          }));
+          const failed = samples.filter((sample) => !sample[2]).length;
+          console.log(`${queryName}/${target.name}: success=${samples.length - failed} failed=${failed}`);
+        } finally {
+          await resource.close();
+        }
+      } catch (error) {
+        const message = `${queryName}/${target.name}: ${String(error)}`;
+        console.error(message);
+        notes.push(message);
+        failures++;
+      }
     }
+    await renderSvg({ path: resolve(options.directory, `${queryName}.svg`), title: queryName, results, notes });
   }
-  return results;
+  console.log(`Reports: ${options.directory}`);
+  if (failures) throw new Error(`${failures} benchmark failures; inspect the SVG reports and stderr`);
 }
