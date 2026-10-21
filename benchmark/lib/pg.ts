@@ -1,6 +1,6 @@
 import pg, { Client, Pool } from "pg";
 import { DB_CONNECT_INFO } from "../utils/db.ts";
-import { ConnectHandler, PoolInfo, PoolQueryTest, QueryTest, TestQueries } from "../utils/common.ts";
+import { ConnectHandler, PoolHandler, PoolQueryTest, QueryTest, TestQueries } from "../utils/common.ts";
 
 async function connect() {
   const pgClient = new pg.Client(DB_CONNECT_INFO);
@@ -8,12 +8,6 @@ async function connect() {
   return pgClient;
 }
 export const LIB_NAME = "pg";
-
-export const poolInfo: PoolInfo<Pool> = {
-  name: LIB_NAME,
-  createPool: ({ poolSize }) => new pg.Pool({ ...DB_CONNECT_INFO, max: poolSize }),
-  closePool: (pool) => pool.end(),
-};
 
 const queries: TestQueries<Client | Pool> = {
   select: async (client) => {
@@ -49,8 +43,13 @@ const queries: TestQueries<Client | Pool> = {
 };
 const connInfo: ConnectHandler<Client> = {
   name: LIB_NAME,
-  connect: async () => ({ conn: await connect(), pool: undefined }),
+  connect: async () => await connect(),
   close: (conn) => conn.end(),
+};
+const poolInfo: PoolHandler<Pool> = {
+  name: LIB_NAME,
+  createPool: ({ poolSize }) => new pg.Pool({ ...DB_CONNECT_INFO, max: poolSize }),
+  closePool: (pool) => pool.end(),
 };
 
 export const queryTest: QueryTest<Client> = {

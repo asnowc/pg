@@ -1,9 +1,3 @@
-export type PoolInfo<T> = {
-  createPool: (info: { poolSize: number }) => Promise<T> | T;
-  closePool: (pool: T) => Promise<void>;
-  name: string;
-};
-
 export interface TestQueries<T> {
   select: (client: T) => Promise<void>;
   selectArg: (client: T) => Promise<void>;
@@ -16,11 +10,11 @@ export type PoolHandler<T> = {
   name: string;
 };
 
-export type ConnectHandler<T, P = void> = {
+export type ConnectHandler<T> = {
   name: string;
-  connect: () => Promise<{ pool: P; conn: T }>;
-  close: (conn: T, pool: P) => Promise<void>;
+  connect: () => Promise<T>;
+  close: (conn: T) => Promise<void>;
 };
 
-export type QueryTest<T, P = void> = TestQueries<T> & ConnectHandler<T, P>;
+export type QueryTest<T> = TestQueries<T> & ConnectHandler<T>;
 export type PoolQueryTest<T> = TestQueries<T> & PoolHandler<T>;

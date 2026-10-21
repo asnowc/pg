@@ -1,4 +1,4 @@
-import { ConnectHandler, PoolInfo, PoolQueryTest, QueryTest, TestQueries } from "./common.ts";
+import { ConnectHandler, PoolHandler, PoolQueryTest, QueryTest, TestQueries } from "./common.ts";
 import { DB_CONNECT_INFO } from "../utils/db.ts";
 import type { PgConnection, PgPool } from "@asla/pg";
 export function initTest(
@@ -48,7 +48,7 @@ export function initTest(
   };
   const connInfo: ConnectHandler<PgConnection> = {
     name,
-    connect: async () => ({ conn: await connect(), pool: undefined }),
+    connect: () => connect(),
     close: (conn) => conn.close(),
   };
 
@@ -57,7 +57,7 @@ export function initTest(
     ...connInfo,
   };
 
-  const poolInfo: PoolInfo<PgPool> = {
+  const poolInfo: PoolHandler<PgPool> = {
     name,
     createPool: ({ poolSize }) =>
       new PgPool({

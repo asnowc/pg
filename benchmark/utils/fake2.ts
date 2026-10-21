@@ -1,5 +1,5 @@
 import { DB_CONNECT_INFO } from "./db.ts";
-import { PoolInfo, PoolQueryTest, TestQueries } from "./common.ts";
+import { PoolHandler, PoolQueryTest, TestQueries } from "./common.ts";
 import { PgSession } from "@/protocol.ts";
 import { sqlStatementToSqlEncoder } from "@/implement/private/sql_statement.ts";
 import { connectPgSession } from "@/protocol/connect.ts";
@@ -32,7 +32,7 @@ async function createPool(size: number) {
   });
   return new Pool(await Promise.all(pool));
 }
-export const poolInfo: PoolInfo<Pool> = {
+export const poolInfo: PoolHandler<Pool> = {
   name: LIB_NAME,
   createPool: ({ poolSize }) => createPool(poolSize),
   closePool: (pool) => pool.close(),

@@ -43,7 +43,7 @@ export class ConcurrencyBench {
     const { fn, intervalSampleCPUAndMemory, collector } = options;
     positive(intervalSampleCPUAndMemory, "intervalSampleCPUAndMemory");
     const task = this.createTask(fn);
-    await task.warmup();
+    console.log("creating task for", this.settings.name);
     const intervalSampleData: ConcurrencyBenchResultWithCPUAndMemory["intervalSampleData"] = [];
 
     const timer = setInterval(() => {
@@ -51,9 +51,14 @@ export class ConcurrencyBench {
     }, intervalSampleCPUAndMemory);
     try {
       const result = await task.run({
+        onWarmupEnd: async () => {
+          console.log("run start");
+        },
         onFnResult: (value) => collector.push(value),
       });
+      console.log("waiting for task to clear");
       await task.waitPromiseClear();
+      console.log("run complete");
       return { ...result, intervalSampleData, inputInterval: intervalSampleCPUAndMemory };
     } finally {
       clearInterval(timer);
@@ -63,6 +68,7 @@ export class ConcurrencyBench {
 
 type RunOptions = {
   onFnResult?: (sample: ConcurrencyBenchSample) => void;
+  onWarmupEnd?: () => Promise<void>;
 };
 
 class ConcurrencyBenchTask {
@@ -75,6 +81,7 @@ class ConcurrencyBenchTask {
     if (this.errored) {
       return Promise.reject(this.errored);
     }
+    if (this.context.currentConcurrency <= 0) return Promise.resolve();
     return new Promise<void>((resolve, reject) => {
       this.clearListeners.add({ resolve, reject });
     });
@@ -88,34 +95,36 @@ class ConcurrencyBenchTask {
     onSample: () => {},
   };
 
-  private warmupRunning = false;
-  private warmupResult?: ConcurrencyBenchResult["warmup"];
-  async warmup(): Promise<void> {
-    if (this.warmupRunning) throw new Error("Warmup has already been run");
+  private async warmup() {
     const { warmupDuration, warmupConcurrency } = this.settings;
-    if (warmupDuration <= 0 || warmupConcurrency <= 0) return;
-
-    this.warmupRunning = true;
+    if (warmupDuration <= 0 || warmupConcurrency <= 0) return { iterations: 0, duration: 0 };
     const startTime = performance.now();
     this.updateConcurrency(warmupConcurrency);
-    await new Promise((resolve) => setTimeout(resolve, warmupDuration));
+    await this.waitTime(warmupDuration);
     const context = this.context;
-    context.currentConcurrency = 0;
     const endTime = performance.now();
 
-    this.warmupResult = {
+    return {
       iterations: context.nextRequestIndex,
       duration: endTime - startTime,
     };
-
-    this.warmupRunning = false;
   }
-
-  private running = true;
+  private stagePending?: PromiseWithResolvers<void>;
+  private waitTime(time: number) {
+    const resolver = Promise.withResolvers<void>();
+    this.stagePending = resolver;
+    const id = setTimeout(resolver.resolve, time);
+    return resolver.promise.finally(() => clearTimeout(id));
+  }
+  private running = false;
   async run(options: RunOptions = {}): Promise<ConcurrencyBenchResult> {
     if (this.running) throw new Error("Task is already running");
     this.running = true;
-    const { onFnResult } = options;
+    const { onFnResult, onWarmupEnd } = options;
+
+    const warmupResult = await this.warmup();
+    if (onWarmupEnd) await onWarmupEnd();
+
     const stages = this.settings.stages;
     const context = this.context;
     const runStartIndex = context.nextRequestIndex;
@@ -132,32 +141,38 @@ class ConcurrencyBenchTask {
       const concurrency = stage.value;
       const startIndex = context.nextRequestIndex;
       this.updateConcurrency(concurrency);
-      await new Promise((resolve) => setTimeout(resolve, stage.duration));
+      await this.waitTime(stage.duration);
       const endIndex = context.nextRequestIndex;
       stageSamples.push({ concurrency, startIndex, endIndex });
       i++;
       stage = stages[i];
     }
-    context.currentConcurrency = 0;
+    context.targetConcurrency = 0;
     this.running = false;
     return {
       stageSamples,
-      warmup: this.warmupResult ?? { iterations: 0, duration: 0 },
+      warmup: warmupResult,
       name: this.settings.name,
     };
   }
 
-  private onError(data: ConcurrencyBenchSample, context: TaskRunnerContext) {
+  private onError(data: ConcurrencyBenchSample, context: TaskRunnerContext, error: Error) {
     const end = performance.now();
     data[1] = end;
     data[2] = false;
     context.errorCount++;
     if (context.errorCount <= this.settings.maxFailures) {
-      if (context.targetConcurrency < context.currentConcurrency) {
+      if (context.currentConcurrency < context.targetConcurrency) {
         this.requestNext(end, context);
         return;
       }
-      this.errored = new Error("Max failures reached");
+    } else {
+      this.errored = new Error("Max failures reached", { cause: error });
+      this.stagePending?.reject(error);
+      for (const element of this.clearListeners) {
+        element.reject(error);
+      }
+      this.clearListeners.clear();
     }
 
     this.onSub(context);
@@ -167,7 +182,7 @@ class ConcurrencyBenchTask {
     data[1] = end;
     data[2] = true;
     context.successCount++;
-    if (context.targetConcurrency < context.currentConcurrency) {
+    if (context.currentConcurrency < context.targetConcurrency) {
       this.requestNext(end, context);
     } else {
       this.onSub(context);
@@ -195,7 +210,7 @@ class ConcurrencyBenchTask {
   private requestNext(start: number, context: TaskRunnerContext) {
     const i = this.context.nextRequestIndex++;
     const data: ConcurrencyBenchSample = [start, 0, false, i];
-    this.fn().then(() => this.onSuccess(data, context), () => this.onError(data, context));
+    this.fn().then(() => this.onSuccess(data, context), (e) => this.onError(data, context, e));
   }
 }
 

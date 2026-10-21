@@ -1,16 +1,16 @@
 import { createPool, DatabasePool, DatabasePoolConnection, sql } from "slonik";
 import { CONNECT_URL } from "../utils/db.ts";
-import { ConnectHandler, PoolInfo, PoolQueryTest, QueryTest, TestQueries } from "../utils/common.ts";
+import { ConnectHandler, PoolHandler, PoolQueryTest, QueryTest, TestQueries } from "../utils/common.ts";
 
 export const LIB_NAME = "slonik";
 
-export const poolInfo = {
+const poolInfo = {
   name: LIB_NAME,
   createPool: ({ poolSize }) => createPool(CONNECT_URL.toString(), { maxPoolSize: poolSize }),
   closePool: (pool) => pool.end(),
-} satisfies PoolInfo<DatabasePool>;
+} satisfies PoolHandler<DatabasePool>;
 
-const queries: TestQueries<DatabasePoolConnection | DatabasePool> = {
+const queries: TestQueries<Conn | DatabasePool> = {
   select: async (client) => {
     await client.query(sql.unsafe`select 1 as x`);
   },
@@ -32,13 +32,12 @@ const queries: TestQueries<DatabasePoolConnection | DatabasePool> = {
     await client.query(sql.unsafe`select * from pg_catalog.pg_type where typname = ${"bool"}`);
   },
 };
-
-type ConnectionOwner = {
-  pool: DatabasePool;
-  release: () => void;
-  closed: Promise<void>;
+type Conn = {
+  query: DatabasePoolConnection["query"];
+  close: () => Promise<void>;
 };
-export const connInfo: ConnectHandler<DatabasePoolConnection, ConnectionOwner> = {
+
+export const connInfo: ConnectHandler<Conn> = {
   name: LIB_NAME,
   connect: async () => {
     const pool = await createPool(CONNECT_URL.toString(), { maximumPoolSize: 1 });
@@ -49,18 +48,21 @@ export const connInfo: ConnectHandler<DatabasePoolConnection, ConnectionOwner> =
       await release.promise;
     });
     closed.catch(ready.reject);
+    const conn = await ready.promise;
     return {
-      conn: await ready.promise,
-      pool: { pool, release: () => release.resolve(), closed },
+      close: async () => {
+        release.resolve();
+        await closed;
+        await pool.end();
+      },
+      query: conn.query.bind(conn),
     };
   },
-  close: async (_conn, owner) => {
-    owner.release();
-    await owner.closed;
-    await owner.pool.end();
+  close: async (conn) => {
+    await conn.close();
   },
 };
-export const queryTest: QueryTest<DatabasePoolConnection, ConnectionOwner> = {
+export const queryTest: QueryTest<Conn> = {
   ...queries,
   ...connInfo,
 };

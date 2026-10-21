@@ -1,10 +1,10 @@
 import { DB_CONNECT_INFO } from "./db.ts";
-import { PoolInfo, PoolQueryTest, TestQueries } from "./common.ts";
+import { PoolHandler, PoolQueryTest, TestQueries } from "./common.ts";
 import { FakeRequest, getFakePool } from "@/implement/FakeRequest.ts";
 
 export const LIB_NAME = "fake";
 
-export const poolInfo: PoolInfo<FakeRequest> = {
+export const poolInfo: PoolHandler<FakeRequest> = {
   name: LIB_NAME,
   createPool: ({ poolSize }) =>
     getFakePool({

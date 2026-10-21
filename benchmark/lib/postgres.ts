@@ -1,15 +1,17 @@
-import postgres, { ReservedSql, Sql } from "postgres";
+import postgres, { Sql } from "postgres";
 import { DB_CONNECT_INFO } from "../utils/db.ts";
-import { ConnectHandler, PoolInfo, PoolQueryTest, QueryTest, TestQueries } from "../utils/common.ts";
+import { ConnectHandler, PoolHandler, PoolQueryTest, QueryTest, TestQueries } from "../utils/common.ts";
 
 export const LIB_NAME = "postgres";
 
-export const poolInfo: PoolInfo<Sql> = {
+export const poolInfo: PoolHandler<Sql> = {
   name: LIB_NAME,
   createPool: ({ poolSize }) => postgres({ ...DB_CONNECT_INFO, max: poolSize, prepare: false }),
   closePool: (pool) => pool.end(),
 };
-
+type Conn = postgres.ReservedSql<{}> & {
+  __pool: Sql;
+};
 const queries: TestQueries<Sql> = {
   select: async (sql) => {
     await sql`select 1 as x`;
@@ -32,19 +34,21 @@ const queries: TestQueries<Sql> = {
     await sql`select * from pg_catalog.pg_type where typname = ${"bool"}`;
   },
 };
-export const connInfo: ConnectHandler<ReservedSql, Sql> = {
+export const connInfo: ConnectHandler<Conn> = {
   name: LIB_NAME,
   connect: async () => {
     const pool = postgres({ ...DB_CONNECT_INFO, max: 1, prepare: false });
     const conn = await pool.reserve();
-    return { conn, pool };
+    Reflect.set(conn, "__pool", pool);
+    return conn as Conn;
   },
-  close: async (conn, pool) => {
+  close: async (conn) => {
     conn.release();
+    const pool = Reflect.get(conn, "__pool") as Sql;
     await pool.end();
   },
 };
-export const queryTest: QueryTest<ReservedSql, Sql> = {
+export const queryTest: QueryTest<Conn> = {
   ...queries,
   ...connInfo,
 };
