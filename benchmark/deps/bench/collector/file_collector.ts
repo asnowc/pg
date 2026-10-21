@@ -1,17 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { clearImmediate, setImmediate } from "node:timers";
 import type { ConcurrencyBenchSample } from "../types/sample.ts";
 import type { ConcurrencyBenchResultWithCPUAndMemory } from "../types/bench_result.ts";
-
-const RECORD_SIZE = 25;
-const CHUNK_SIZE = RECORD_SIZE * 2048;
-const HEADER = Uint8Array.of(80, 71, 66, 83, 1, 25, 0, 0);
-
-export type FileCollectorOptions = {
-  /** 包括正在写入的块；默认 8 MiB，满额时 push 抛错，不等待磁盘。 */
-  maxBufferedBytes?: number;
-};
 
 export type StoredBenchResult = {
   schemaVersion: 1;
@@ -35,19 +25,18 @@ async function writeAll(fd: fs.FileHandle, data: Uint8Array) {
   let offset = 0;
   while (offset < data.byteLength) {
     const { bytesWritten } = await fd.write(data, offset, data.byteLength - offset);
-    if (bytesWritten <= 0) throw new Error("Sample file write made no progress");
     offset += bytesWritten;
   }
 }
 
+const BUFFER_SIZE = 1 * 1024 * 1024;
+const RECORD_SIZE = 13;
+const CHUNK_SIZE = 8 * 1024;
 class FileCollector {
-  private buffer?: Uint8Array;
-  private used = 0;
-  private allocated = 0;
-  private queue = Promise.resolve();
-  private flushTimer?: ReturnType<typeof setImmediate>;
-  private failure?: Error;
-  private writeFailure?: Error;
+  private buffer: Uint8Array = new Uint8Array(BUFFER_SIZE);
+  private view = new DataView(this.buffer.buffer, this.buffer.byteOffset, this.buffer.byteLength);
+  private writeOffset = 0;
+
   private closing?: Promise<void>;
   length = 0;
 
@@ -55,70 +44,72 @@ class FileCollector {
     private readonly fd: fs.FileHandle,
     private readonly dir: string,
     private readonly name: string,
-    private readonly capacity: number,
+    /** 时间精度。0 为毫秒，1000 为微秒 */
+    private readonly precision: number,
   ) {}
 
   push(data: ConcurrencyBenchSample): void {
     if (this.closing) throw new Error("FileCollector is closed");
-    if (this.failure) throw this.failure;
-    if (!this.buffer) {
-      const size = Math.floor(Math.min(CHUNK_SIZE, this.capacity - this.allocated) / RECORD_SIZE) * RECORD_SIZE;
-      if (size < RECORD_SIZE) {
-        this.failure = new Error(`Sample buffer reached maxBufferedBytes (${this.capacity}); sampling is incomplete`);
-        throw this.failure;
-      }
-      this.buffer = new Uint8Array(size);
-      this.allocated += size;
-    }
-    const view = new DataView(this.buffer.buffer, this.buffer.byteOffset + this.used, RECORD_SIZE);
-    view.setFloat64(0, data[0], true);
-    view.setFloat64(8, data[1], true);
-    view.setUint8(16, data[2] ? 1 : 0);
-    view.setFloat64(17, data[3], true);
-    this.used += RECORD_SIZE;
-    this.length++;
-    if (this.used === this.buffer.byteLength) this.enqueue();
-    else if (this.flushTimer === undefined) {
-      this.flushTimer = setImmediate(() => {
-        this.flushTimer = undefined;
-        this.enqueue();
-      });
+
+    const view = this.view;
+    view.setUint32(this.writeOffset, floor(data[0], this.precision));
+    this.writeOffset += 4;
+    view.setUint32(this.writeOffset, floor(data[1], this.precision));
+    this.writeOffset += 4;
+    view.setUint8(this.writeOffset, data[2] ? 1 : 0);
+    this.writeOffset += 1;
+    view.setUint32(this.writeOffset, floor(data[3], this.precision));
+    this.writeOffset += 4;
+
+    const cacheLength = this.buffer.byteLength - this.writeOffset;
+    if (cacheLength < RECORD_SIZE) {
+      this.change();
+    } else if (cacheLength > CHUNK_SIZE) {
+      this.checkWrite();
     }
   }
+  private change() {
+    this.buffer = new Uint8Array(BUFFER_SIZE);
+    this.view = new DataView(this.buffer.buffer, this.buffer.byteOffset, this.buffer.byteLength);
 
-  private enqueue() {
-    if (this.flushTimer !== undefined) {
-      clearImmediate(this.flushTimer);
-      this.flushTimer = undefined;
-    }
-    if (!this.buffer) return;
+    this.writeOffset = 0;
+  }
+  private writing: Promise<void> | undefined;
+  private checkWrite() {
+    if (this.writing) return;
+    this.writing = this.startWrite().then(
+      () => {
+        this.writing = undefined;
+      },
+      () => {
+        this.writing = undefined;
+      },
+    );
+  }
+  private async startWrite() {
     const buffer = this.buffer;
-    const data = buffer.subarray(0, this.used);
-    this.buffer = undefined;
-    this.used = 0;
-    this.queue = this.queue.then(async () => {
-      try {
-        if (!this.writeFailure) await writeAll(this.fd, data);
-      } catch (error) {
-        this.writeFailure = error instanceof Error ? error : new Error(String(error));
-        this.failure ??= this.writeFailure;
-      } finally {
-        this.allocated -= buffer.byteLength;
+    const bufferSize = buffer.byteLength;
+    let written = 0;
+    while (this.writeOffset - written > CHUNK_SIZE) {
+      const { bytesWritten } = await this.fd.write(buffer.subarray(written, this.writeOffset));
+      written += bytesWritten;
+      if (written > bufferSize - this.writeOffset) {
+        buffer.copyWithin(0, written, this.writeOffset);
+        this.writeOffset -= written;
+        written = 0;
       }
-    });
-  }
-
-  async flush(): Promise<void> {
-    this.enqueue();
-    await this.queue;
-    if (this.failure) throw this.failure;
+    }
+    if (written > 0) {
+      buffer.copyWithin(0, written, this.writeOffset);
+      this.writeOffset -= written;
+      written = 0;
+    }
   }
 
   async saveResult(
     result: ConcurrencyBenchResultWithCPUAndMemory,
     metadata: Record<string, unknown> = {},
   ): Promise<void> {
-    await this.flush();
     const record: StoredBenchResult = {
       schemaVersion: 1,
       sampleCount: this.length,
@@ -127,21 +118,18 @@ class FileCollector {
     };
     await fs.writeFile(paths(this.dir, this.name).result, JSON.stringify(record, null, 2));
   }
-
-  async read(): Promise<ConcurrencyBenchSample[]> {
-    await this.flush();
-    return readFileSamples(this.dir, this.name);
+  private async flush() {
+    let written = 0;
+    while (written < this.writeOffset) {
+      const { bytesWritten } = await this.fd.write(this.buffer.subarray(written, this.writeOffset));
+      written += bytesWritten;
+    }
   }
-
-  async *[Symbol.asyncIterator](): AsyncGenerator<ConcurrencyBenchSample> {
-    await this.flush();
-    yield* iterateFileSamples(this.dir, this.name);
-  }
-
   close(): Promise<void> {
     this.closing ??= (async () => {
       try {
-        await this.flush();
+        await this.writing;
+        if (this.writeOffset) await this.flush();
       } finally {
         await this.fd.close();
       }
@@ -153,38 +141,25 @@ class FileCollector {
     return this.close();
   }
 }
+function floor(value: number, shift: number) {
+  return Math.floor(value * shift);
+}
 
 /**
  * 新建 name.samples.bin；同名文件已存在时拒绝覆盖。调用方负责 await close/dispose。
  */
-export async function openFileCollector(dir: string, name: string, options: FileCollectorOptions = {}) {
-  const capacity = options.maxBufferedBytes ?? 8 * 1024 ** 2;
-  if (!Number.isSafeInteger(capacity) || capacity < RECORD_SIZE) throw new RangeError("Invalid maxBufferedBytes");
+export async function openFileCollector(dir: string, name: string) {
   const file = paths(dir, name).samples;
   await fs.mkdir(dir, { recursive: true });
   const fd = await fs.open(file, "wx+");
-  try {
-    await writeAll(fd, HEADER);
-    return new FileCollector(fd, dir, name, capacity);
-  } catch (error) {
-    await fd.close();
-    throw error;
-  }
+  return new FileCollector(fd, dir, name, 1000);
 }
 
 /** 只读，不创建或修改原始文件；损坏或截断时抛错。 */
 export async function* iterateFileSamples(dir: string, name: string): AsyncGenerator<ConcurrencyBenchSample> {
   const fd = await fs.open(paths(dir, name).samples, "r");
+  const buffer = new Uint8Array(CHUNK_SIZE);
   try {
-    const header = new Uint8Array(HEADER.length);
-    let read = 0;
-    while (read < header.length) {
-      const { bytesRead } = await fd.read(header, read, header.length - read);
-      if (!bytesRead) throw new Error("Truncated sample header");
-      read += bytesRead;
-    }
-    if (!HEADER.every((value, i) => value === header[i])) throw new Error("Unsupported sample format");
-    const buffer = new Uint8Array(CHUNK_SIZE);
     let remaining = 0;
     while (true) {
       const { bytesRead } = await fd.read(buffer, remaining, buffer.length - remaining);

@@ -18,5 +18,4 @@ export type ConcurrencyBenchResultWithCPUAndMemory = ConcurrencyBenchResult & {
   intervalSampleData: (NodeJS.CpuUsage & NodeJS.MemoryUsage & {
     timestamp: number;
   })[];
-  inputInterval: number;
 };

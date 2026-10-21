@@ -60,7 +60,7 @@ export class ConcurrencyBench {
         onFnResult: (value) => collector.push(value),
       });
       console.log("run complete");
-      return { ...result, intervalSampleData, inputInterval: intervalSampleCPUAndMemory };
+      return { ...result, intervalSampleData };
     } finally {
       clearInterval(timer);
     }
