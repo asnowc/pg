@@ -13,8 +13,16 @@ export type ConcurrencyBenchResult = {
     startIndex: number;
     endIndex: number;
   }[];
+  /** 总错误样本数 */
+  totalFailedSamples: number;
+  /** 总成功样本数 */
+  totalSuccessSamples: number;
+  /** 采样开始时间，单位为毫秒，使用 performance.now() 获取 */
   startTime: number;
+  /** 采样结束时间，单位为毫秒，使用 performance.now() 获取 */
   endTime: number;
+  /** 排空完成时间，单位为毫秒，使用 performance.now() 获取 */
+  clearTime: number;
 };
 export type ConcurrencyBenchResultWithCPUAndMemory = ConcurrencyBenchResult & {
   intervalSampleData: (NodeJS.CpuUsage & NodeJS.MemoryUsage & {

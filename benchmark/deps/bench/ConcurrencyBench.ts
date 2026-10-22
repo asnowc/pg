@@ -111,6 +111,7 @@ async function runBench(runner: ConcurrencyRunner, settings: BenchSetting, optio
       onSampleFailed(data);
     };
   }
+  const startTime = performance.now();
   let i = 0;
   let stage = stages[i];
   const stageSamples: ConcurrencyBenchResult["stageSamples"] = [];
@@ -125,11 +126,18 @@ async function runBench(runner: ConcurrencyRunner, settings: BenchSetting, optio
     stage = stages[i];
   }
   runner.targetConcurrency = 0;
-
+  const endTime = performance.now();
   await runner.waitClear();
+  const clearTime = performance.now();
   return {
     stageSamples,
     warmup: warmupResult,
+    totalFailedSamples: runner.errorCount,
+    totalSuccessSamples: runner.successCount,
+
+    startTime,
+    endTime,
+    clearTime,
     name: settings.name,
   };
 }

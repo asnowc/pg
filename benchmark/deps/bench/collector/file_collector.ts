@@ -185,6 +185,8 @@ export async function* iterateFileSamples(dir: string, name: string): AsyncGener
     await fd.close();
   }
 }
+export async function writeFileSamples(path: string, samples: ConcurrencyBenchSample[]): Promise<void> {
+}
 
 export async function readFileSamples(dir: string, name: string): Promise<ConcurrencyBenchSample[]> {
   const samples: ConcurrencyBenchSample[] = [];
