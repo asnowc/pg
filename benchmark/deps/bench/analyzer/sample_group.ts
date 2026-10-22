@@ -115,9 +115,16 @@ function latencyStatistics(latency: number[], errorCount: number): LatencyStatis
   };
 }
 
-/** 返回第一个大于 value 的下标；values 需升序。 */
-function upperBound(values: number[], value: number) {
-  return values.findIndex((v) => v > value);
+/** 返回最后一个不大于 value 的下标，即 value 所在的区间；values 需升序，value 小于首项时返回 -1。 */
+function floorIndex(values: number[], value: number) {
+  let low = 0;
+  let high = values.length;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    if (values[mid] <= value) low = mid + 1;
+    else high = mid;
+  }
+  return low - 1;
 }
 
 /** 按请求 id 将样本归入发起阶段，同时记录每个阶段最早的发起时间。 */
@@ -129,15 +136,15 @@ class StageBuckets {
 
   constructor(private readonly run: ConcurrencyBenchResultWithCPUAndMemory) {
     const count = run.stageSamples.length;
-    this.startIndices = run.stageSamples.map((stage) => stage.startIndex);
+    this.startIndices = run.stageSamples.map((stage) => stage.startRequestIndex);
     this.latency = Array.from({ length: count }, () => []);
     this.errorCount = new Array<number>(count).fill(0);
     this.firstStart = new Array<number>(count).fill(Infinity);
   }
 
   private stageOf(sample: ConcurrencyBenchSample) {
-    const index = upperBound(this.startIndices, sample[2]);
-    if (index < 0 || sample[2] >= this.run.stageSamples[index].endIndex) return -1;
+    const index = floorIndex(this.startIndices, sample[2]);
+    if (index < 0 || sample[2] >= this.run.stageSamples[index].endRequestIndex) return -1;
     this.firstStart[index] = Math.min(this.firstStart[index], sample[0]);
     return index;
   }
@@ -175,11 +182,12 @@ function buildIntervalSamples(
   successSamples: ConcurrencyBenchSample[],
   stageTimes: number[],
 ): IntervalSamples {
-  const snapshots = run.intervalSampleData;
+  const snapshots = run.snapshot;
   const timestamps = snapshots.map((snapshot) => snapshot.timestamp);
+  // completions[i] 统计完成时间落在 [timestamps[i], timestamps[i + 1]) 的成功请求
   const completions = new Array<number>(Math.max(0, snapshots.length - 1)).fill(0);
   for (const sample of successSamples) {
-    const index = upperBound(timestamps, sample[1]);
+    const index = floorIndex(timestamps, sample[1]);
     if (index >= 0 && index < completions.length) completions[index]++;
   }
   const result: IntervalSamples = {
@@ -197,7 +205,10 @@ function buildIntervalSamples(
     const current = snapshots[i];
     if (current.timestamp <= run.startTime || previous.timestamp >= run.endTime) continue;
     const ms = current.timestamp - previous.timestamp;
-    const stage = upperBound(stageTimes, Math.max(previous.timestamp, run.startTime));
+    if (ms <= 0) continue;
+    // 按区间中点归属阶段；快照与阶段边界不对齐时，比按左端点归属更接近真实阶段
+    const middle = (Math.max(previous.timestamp, run.startTime) + Math.min(current.timestamp, run.endTime)) / 2;
+    const stage = Math.max(0, floorIndex(stageTimes, middle));
     result.seconds.push((current.timestamp - run.startTime) / 1000);
     result.intervalSeconds.push(ms / 1000);
     result.concurrency.push(run.stageSamples[stage].concurrency);

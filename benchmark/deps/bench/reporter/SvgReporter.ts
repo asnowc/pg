@@ -8,7 +8,7 @@ export type SvgPanel = {
   title: string;
   /**
    * 图表下方的阶段平均值排行：asc 表示越小越好，desc 表示越大越好；false 不展示。
-   * 行按各阶段平均值的均值排序，单元格附带与该阶段最优值的比值。
+   * 每个并发阶段独立一张表并从左到右排列，表内按该阶段平均值排序，单元格附带与该阶段最优值的比值。
    */
   ranking: "asc" | "desc" | false;
 };
@@ -87,9 +87,9 @@ class ReportLayout {
     this.top += size + 12;
   }
 
-  table(columns: TableColumn[], rows: TableRow[]) {
+  table(columns: TableColumn[], rows: TableRow[], left = MARGIN) {
     const xs: number[] = [];
-    let x = MARGIN;
+    let x = left;
     for (const column of columns) {
       xs.push(column.align === "right" ? x + column.width : x);
       x += column.width;
@@ -100,7 +100,7 @@ class ReportLayout {
     this.top += ROW_HEIGHT - 4;
     this.graphics.push({
       type: "line",
-      shape: { x1: MARGIN, y1: this.top, x2: Math.min(x, WIDTH - MARGIN), y2: this.top },
+      shape: { x1: left, y1: this.top, x2: Math.min(x, WIDTH - MARGIN), y2: this.top },
       style: { stroke: "#cbd5e1", lineWidth: 1 },
     });
     this.top += 4;
@@ -145,43 +145,63 @@ function metricSeries(result: AnalyzedSampleGroup, metric: IntervalMetric, color
   };
 }
 
-function stageColumns(stageCount: number, width: number, results: AnalyzedSampleGroup[]): TableColumn[] {
-  return Array.from({ length: stageCount }, (_, index) => {
-    const concurrency = results.find((result) => result.stages[index])?.stages[index].concurrency;
-    return { title: `#${index + 1} c=${concurrency}`, width, align: "right" as const };
-  });
-}
+const RANKING_GAP = 24;
+const RANKING_MIN_WIDTH = 240;
+const RANKING_VALUE_WIDTH = 120;
 
-/** 行按阶段平均值的均值排序；每格附带与该阶段最优值的比值。 */
-function rankingTable(layout: ReportLayout, panel: SvgPanel, results: AnalyzedSampleGroup[], colors: string[]) {
+/**
+ * 每个并发阶段一张排行表，从左到右排列，一行放不下时换行。
+ * 表内按该阶段平均值排序，无数据的库排在末尾；每格附带与该阶段最优值的比值。
+ */
+function rankingTables(layout: ReportLayout, panel: SvgPanel, results: AnalyzedSampleGroup[], colors: string[]) {
   const direction = panel.ranking === "asc" ? 1 : -1;
   const stageCount = Math.max(...results.map((result) => result.stages.length));
-  const rows = results.map((result, index) => {
-    const values = Array.from({ length: stageCount }, (_, i) => result.stages[i]?.averages[panel.metric] ?? null);
-    const known = values.filter((value): value is number => value !== null);
-    const score = known.length ? known.reduce((sum, value) => sum + value, 0) / known.length : null;
-    return { index, values, score };
-  });
-  const best = Array.from({ length: stageCount }, (_, i) => {
-    const known = rows.flatMap((row) => row.values[i] === null ? [] : [row.values[i]!]);
-    return known.length ? (direction > 0 ? Math.min(...known) : Math.max(...known)) : null;
-  });
-  rows.sort((a, b) => {
-    if (a.score === null || b.score === null) return (a.score === null ? 1 : 0) - (b.score === null ? 1 : 0);
-    return direction * (a.score - b.score) || a.index - b.index;
-  });
+  if (stageCount <= 0) return;
+  const available = WIDTH - MARGIN * 2;
+  const perRow = Math.min(
+    stageCount,
+    Math.max(1, Math.floor((available + RANKING_GAP) / (RANKING_MIN_WIDTH + RANKING_GAP))),
+  );
+  const tableWidth = (available - RANKING_GAP * (perRow - 1)) / perRow;
+  const columns: TableColumn[] = [
+    { title: "Rank / library", width: tableWidth - RANKING_VALUE_WIDTH },
+    { title: "Average", width: RANKING_VALUE_WIDTH, align: "right" },
+  ];
   const ratio = (value: number | null, reference: number | null) =>
     value === null || reference === null || reference === 0 ? "" : ` (${(value / reference).toFixed(2)}x)`;
-  layout.table(
-    [{ title: "Rank / library", width: 260 }, ...stageColumns(stageCount, 140, results)],
-    rows.map((row, rank) => ({
-      color: colors[row.index],
-      cells: [
-        `${rank + 1}. ${results[row.index].name}`,
-        ...row.values.map((value, i) => format(value) + ratio(value, best[i])),
-      ],
-    })),
-  );
+
+  let rowTop = layout.top;
+  let rowBottom = rowTop;
+  for (let stageIndex = 0; stageIndex < stageCount; stageIndex++) {
+    const column = stageIndex % perRow;
+    if (column === 0 && stageIndex > 0) rowTop = rowBottom + 12;
+    const left = MARGIN + column * (tableWidth + RANKING_GAP);
+
+    const rows = results.map((result, index) => ({
+      index,
+      value: result.stages[stageIndex]?.averages[panel.metric] ?? null,
+    }));
+    rows.sort((a, b) => {
+      if (a.value === null || b.value === null) return (a.value === null ? 1 : 0) - (b.value === null ? 1 : 0);
+      return direction * (a.value - b.value) || a.index - b.index;
+    });
+    const best = rows[0]?.value ?? null;
+    const concurrency = results.find((result) => result.stages[stageIndex])?.stages[stageIndex].concurrency;
+
+    layout.top = rowTop;
+    layout.text(`Stage #${stageIndex + 1} · concurrency ${concurrency}`, { x: left, font: `bold 12px ${FONT}` });
+    layout.top += ROW_HEIGHT;
+    layout.table(
+      columns,
+      rows.map((row, rank) => ({
+        color: colors[row.index],
+        cells: [`${rank + 1}. ${results[row.index].name}`, format(row.value) + ratio(row.value, best)],
+      })),
+      left,
+    );
+    rowBottom = Math.max(rowBottom, layout.top);
+  }
+  layout.top = rowBottom + 8;
 }
 
 /** 每个阶段一张表，按平均延迟从高到低排序。 */
@@ -237,7 +257,7 @@ export async function renderSvg(input: SvgReportInput): Promise<void> {
 
   for (const panel of panels) {
     layout.chart(panel.title, results.map((result, i) => metricSeries(result, panel.metric, colors[i])), "{value}s");
-    if (panel.ranking && results.length) rankingTable(layout, panel, results, colors);
+    if (panel.ranking && results.length) rankingTables(layout, panel, results, colors);
   }
 
   layout.heading("Successful-query latency (ms); RME = 95% mean confidence interval (%)", 15);

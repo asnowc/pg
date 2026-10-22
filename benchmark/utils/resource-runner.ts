@@ -99,8 +99,8 @@ export async function runResourceScenario(options: {
       const analyzed = analyzeSampleGroup({
         sampleGroup: {
           name,
-          startTime: run.intervalSampleData[0].timestamp,
-          endTime: run.intervalSampleData.at(-1)!.timestamp,
+          startTime: run.snapshot[0].timestamp,
+          endTime: run.snapshot.at(-1)!.timestamp,
           samples,
           sampleCount: samples.length,
         },

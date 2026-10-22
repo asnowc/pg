@@ -10,14 +10,15 @@ export type ConcurrencyBenchResult = {
   stageSamples: {
     concurrency: number;
     /** 发起请求的 id 范围 [startIndex, endIndex)，预热 id 不在范围内。 */
-    startIndex: number;
-    endIndex: number;
+    startRequestIndex: number;
+    endRequestIndex: number;
+    startTime: number;
   }[];
   /** 总错误样本数 */
   totalFailedSamples: number;
   /** 总成功样本数 */
   totalSuccessSamples: number;
-  /** 采样开始时间，单位为毫秒，使用 performance.now() 获取 */
+  /** 采样开始时间，单位为毫秒，使用 performance.now() 获取。等于 stageSamples[0].startTime  */
   startTime: number;
   /** 采样结束时间，单位为毫秒，使用 performance.now() 获取 */
   endTime: number;
@@ -25,9 +26,20 @@ export type ConcurrencyBenchResult = {
   clearTime: number;
 };
 export type ConcurrencyBenchResultWithCPUAndMemory = ConcurrencyBenchResult & {
-  intervalSampleData: (NodeJS.CpuUsage & NodeJS.MemoryUsage & {
+  snapshot: (NodeJS.CpuUsage & NodeJS.MemoryUsage & RequestRunnerContext & {
     timestamp: number;
   })[];
 };
 /** 时间为 performance.now() 的毫秒值；id 是任务内唯一的安全整数。 */
 export type ConcurrencyBenchSample = [startTime: number, endTime: number, id: number];
+
+export interface RequestRunnerContext {
+  /** 当前实际的并发数 */
+  currentConcurrency: number;
+  /** 下一个请求的索引 */
+  nextRequestIndex: number;
+  /** 成功的请求数 */
+  successCount: number;
+  /** 失败的请求数 */
+  errorCount: number;
+}
