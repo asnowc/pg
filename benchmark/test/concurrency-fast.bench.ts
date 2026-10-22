@@ -1,13 +1,12 @@
 import {
   analyzeSampleGroup,
+  BenchCollector,
   ConcurrencyBench,
-  ConcurrencyBenchResultWithCPUAndMemory,
   ConcurrencyBenchSample,
   renderSvg,
 } from "../deps/bench.ts";
 import { getReportDirectory, QueryTest, TestQueries } from "../utils/common.ts";
 import { initTest } from "../utils/init-asla-pg-test.ts";
-import path from "node:path";
 
 const RESULT_DIR = getReportDirectory(import.meta);
 const LIBS: QueryTest<any>[] = await Promise.all([
@@ -27,41 +26,36 @@ const queryNames: (keyof TestQueries<any>)[] = [
 /** 原始数据只在内存中保存；每个查询场景仅输出 SVG。 */
 async function run(): Promise<void> {
   for (const queryName of queryNames) {
-    const results: {
-      name: string;
-      samples: ConcurrencyBenchSample[];
-      result: ConcurrencyBenchResultWithCPUAndMemory;
-    }[] = [];
+    const collector = new BenchCollector(RESULT_DIR);
+    console.log("result saving to", RESULT_DIR);
     for (const target of LIBS) {
       const samples: ConcurrencyBenchSample[] = [];
       const bench = new ConcurrencyBench({
-        concurrency: 500,
+        concurrency: [100, 500],
         warmupDuration: 100,
         duration: 2000,
         name: target.name,
       });
       const conn = await target.connect();
       const queryFn = target[queryName].bind(target);
+      console.log("running benchmark for", target.name, "\n");
       const result = await bench.runWidthCpuAndMemory({
         fn: () => queryFn(conn),
         intervalSampleCPUAndMemory: 1000,
         collectorSuccess: samples,
-        collectorFailed: samples,
+        collectorFailed: {
+          push: () => {
+            console.log("Failed sample");
+          },
+        },
       });
 
-      results.push({ name: target.name, samples, result });
-      await target.close(conn);
+      await Promise.allSettled([
+        collector.saveSampleFile(target.name, samples),
+        collector.saveBenchResult(target.name, result),
+        target.close(conn),
+      ]);
     }
-    const resultList = results.map(({ name, result, samples }) => {
-      return analyzeSampleGroup({
-        successSamples: samples,
-        failedSamples: [],
-        run: result,
-      });
-    });
-    renderSvg({ path: path.join(RESULT_DIR, `${queryName}-${name}.svg`), results: resultList });
-    console.log(`Results for query: ${queryName}`);
   }
-  console.log(`Reports: ${RESULT_DIR}`);
 }
 await run();

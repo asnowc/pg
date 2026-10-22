@@ -54,7 +54,6 @@ export class ConcurrencyBench {
 
     const runner = new ConcurrencyRunner(fn);
 
-    console.log("creating task for", this.settings.name);
     const intervalSampleData: ConcurrencyBenchResultWithCPUAndMemory["intervalSampleData"] = [];
 
     const timer = setInterval(() => {

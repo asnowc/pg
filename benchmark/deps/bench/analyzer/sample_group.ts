@@ -117,14 +117,7 @@ function latencyStatistics(latency: number[], errorCount: number): LatencyStatis
 
 /** 返回第一个大于 value 的下标；values 需升序。 */
 function upperBound(values: number[], value: number) {
-  let low = 0;
-  let high = values.length;
-  while (low < high) {
-    const middle = (low + high) >>> 1;
-    if (values[middle] <= value) low = middle + 1;
-    else high = middle;
-  }
-  return low;
+  return values.findIndex((v) => v > value);
 }
 
 /** 按请求 id 将样本归入发起阶段，同时记录每个阶段最早的发起时间。 */
@@ -143,7 +136,7 @@ class StageBuckets {
   }
 
   private stageOf(sample: ConcurrencyBenchSample) {
-    const index = upperBound(this.startIndices, sample[2]) - 1;
+    const index = upperBound(this.startIndices, sample[2]);
     if (index < 0 || sample[2] >= this.run.stageSamples[index].endIndex) return -1;
     this.firstStart[index] = Math.min(this.firstStart[index], sample[0]);
     return index;
@@ -186,7 +179,7 @@ function buildIntervalSamples(
   const timestamps = snapshots.map((snapshot) => snapshot.timestamp);
   const completions = new Array<number>(Math.max(0, snapshots.length - 1)).fill(0);
   for (const sample of successSamples) {
-    const index = upperBound(timestamps, sample[1]) - 1;
+    const index = upperBound(timestamps, sample[1]);
     if (index >= 0 && index < completions.length) completions[index]++;
   }
   const result: IntervalSamples = {
@@ -204,7 +197,7 @@ function buildIntervalSamples(
     const current = snapshots[i];
     if (current.timestamp <= run.startTime || previous.timestamp >= run.endTime) continue;
     const ms = current.timestamp - previous.timestamp;
-    const stage = upperBound(stageTimes, Math.max(previous.timestamp, run.startTime)) - 1;
+    const stage = upperBound(stageTimes, Math.max(previous.timestamp, run.startTime));
     result.seconds.push((current.timestamp - run.startTime) / 1000);
     result.intervalSeconds.push(ms / 1000);
     result.concurrency.push(run.stageSamples[stage].concurrency);

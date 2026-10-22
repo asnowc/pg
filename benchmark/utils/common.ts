@@ -26,5 +26,6 @@ const OUTPUT_DIRECTORY = path.resolve(import.meta.dirname!, "../results");
 
 export function getReportDirectory(meta: ImportMeta) {
   const filename = path.parse(meta.filename!).name;
-  return path.join(OUTPUT_DIRECTORY, `${filename}-${new Date().toISOString().replace(/[:.]/g, "-")}`);
+
+  return path.join(OUTPUT_DIRECTORY, `${filename}-${Temporal.Now.instant().epochMilliseconds}`);
 }
