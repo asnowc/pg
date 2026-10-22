@@ -1,24 +1,17 @@
 import type { ConcurrencyBenchResultWithCPUAndMemory, ConcurrencyBenchSample } from "../types/bench_result.ts";
 
-export type IntervalMetric = "rss" | "cpu" | "memoryExtended" | "jsHeap" | "qps" | "concurrency";
+export type IntervalMetric = "concurrency" | "qps" | "cpu" | "rss" | "memoryExtended" | "jsHeap";
 
-export type StageAnalysis = {
-  index: number;
-  concurrency: number;
-  startSeconds: number;
-  endSeconds: number;
-  averages: Record<IntervalMetric, number | null>;
-  statistics: AnalyzeSampleGroupResult;
-};
-
+/** 正式测量窗口内的资源时间序列，每个下标对应一个快照区间。 */
 export type IntervalSamples = Record<IntervalMetric, number[]> & {
+  /** 区间右端点相对正式测量开始的秒数 */
   seconds: number[];
+  /** 区间长度（秒） */
   intervalSeconds: number[];
-  stages: StageAnalysis[];
 };
 
-/** 延迟仅统计成功且在正式窗口内完成的调用，单位毫秒。 */
-export type AnalyzeSampleGroupResult = {
+/** 延迟仅统计成功调用，单位毫秒；无成功样本时各统计量为 null。 */
+export type LatencyStatistics = {
   p50: number | null;
   p75: number | null;
   p90: number | null;
@@ -29,17 +22,30 @@ export type AnalyzeSampleGroupResult = {
   min: number | null;
   max: number | null;
   mean: number | null;
-  /** 95% Student-t 均值置信区间的相对半宽（%）；不足两项或均值为零时不可用。 */
+  /** 95% Student-t 均值置信区间的相对半宽（%）；不足两项或均值为零时为 null。 */
   rme: number | null;
-  sampleCount: number;
-  errorCount: number;
   successCount: number;
+  errorCount: number;
+};
+
+export type StageAnalysis = {
+  index: number;
+  concurrency: number;
+  startSeconds: number;
+  endSeconds: number;
+  /** 阶段内按区间时长加权的平均值；无快照覆盖时为 null。 */
+  averages: Record<IntervalMetric, number | null>;
+  /** 该阶段发起的请求的延迟，包含在后续阶段或排空期间完成的请求。 */
+  latency: LatencyStatistics;
 };
 
 export type AnalyzedSampleGroup = {
+  name: string;
   run: ConcurrencyBenchResultWithCPUAndMemory;
   intervalSample: IntervalSamples;
-  resultGroup: Map<string, AnalyzeSampleGroupResult>;
+  stages: StageAnalysis[];
+  /** 全部正式请求的延迟 */
+  latency: LatencyStatistics;
 };
 
 const critical95 = [
@@ -82,8 +88,8 @@ function t95(df: number) {
     (3 * z ** 7 + 19 * z ** 5 + 17 * z ** 3 - 15 * z) / (384 * df ** 3);
 }
 
-function statistics(samples: ConcurrencyBenchSample[]): AnalyzeSampleGroupResult {
-  const latency = samples.filter((sample) => sample[2]).map((sample) => sample[1] - sample[0]).sort((a, b) => a - b);
+function latencyStatistics(latency: number[], errorCount: number): LatencyStatistics {
+  latency.sort((a, b) => a - b);
   const count = latency.length;
   const mean = count ? latency.reduce((sum, value) => sum + value, 0) / count : null;
   const percentile = (p: number) => count ? latency[Math.ceil(count * p) - 1] : null;
@@ -104,12 +110,12 @@ function statistics(samples: ConcurrencyBenchSample[]): AnalyzeSampleGroupResult
     max: latency.at(-1) ?? null,
     mean,
     rme,
-    sampleCount: samples.length,
     successCount: count,
-    errorCount: samples.length - count,
+    errorCount,
   };
 }
 
+/** 返回第一个大于 value 的下标；values 需升序。 */
 function upperBound(values: number[], value: number) {
   let low = 0;
   let high = values.length;
@@ -121,110 +127,158 @@ function upperBound(values: number[], value: number) {
   return low;
 }
 
+/** 按请求 id 将样本归入发起阶段，同时记录每个阶段最早的发起时间。 */
+class StageBuckets {
+  readonly latency: number[][];
+  readonly errorCount: number[];
+  readonly firstStart: number[];
+  private readonly startIndices: number[];
+
+  constructor(private readonly run: ConcurrencyBenchResultWithCPUAndMemory) {
+    const count = run.stageSamples.length;
+    this.startIndices = run.stageSamples.map((stage) => stage.startIndex);
+    this.latency = Array.from({ length: count }, () => []);
+    this.errorCount = new Array<number>(count).fill(0);
+    this.firstStart = new Array<number>(count).fill(Infinity);
+  }
+
+  private stageOf(sample: ConcurrencyBenchSample) {
+    const index = upperBound(this.startIndices, sample[2]) - 1;
+    if (index < 0 || sample[2] >= this.run.stageSamples[index].endIndex) return -1;
+    this.firstStart[index] = Math.min(this.firstStart[index], sample[0]);
+    return index;
+  }
+
+  addSuccess(sample: ConcurrencyBenchSample) {
+    const index = this.stageOf(sample);
+    if (index >= 0) this.latency[index].push(sample[1] - sample[0]);
+  }
+
+  addFailure(sample: ConcurrencyBenchSample) {
+    const index = this.stageOf(sample);
+    if (index >= 0) this.errorCount[index]++;
+  }
+
+  /**
+   * 阶段起点取该阶段首个请求的发起时间；降低并发的阶段不会立即发起请求，
+   * 因此起点略晚于真实切换时间。首阶段使用 run.startTime，空阶段借用下一阶段的起点。
+   */
+  stageTimes(): number[] {
+    const times = new Array<number>(this.firstStart.length);
+    let next = this.run.endTime;
+    for (let index = times.length - 1; index >= 0; index--) {
+      if (Number.isFinite(this.firstStart[index])) next = this.firstStart[index];
+      times[index] = index === 0 ? this.run.startTime : next;
+    }
+    return times;
+  }
+}
+
 /**
- * 按阶段的请求 id 范围归组，延迟包含排空结果；资源曲线仅覆盖正式测量。
+ * 从 CPU/内存快照构建正式测量窗口内的时间序列。QPS 按成功请求的完成时间落入的快照区间统计。
  */
-export function analyzeSampleGroup(input: {
-  startTime: number;
-  endTime: number;
-  samples: ConcurrencyBenchSample[];
-  intervalSamples: ConcurrencyBenchResultWithCPUAndMemory;
-  /** 返回 undefined 的样本不参与延迟、成功/失败数和 QPS。 */
-  groupBy?: (sample: ConcurrencyBenchSample) => string | undefined;
-}): AnalyzedSampleGroup {
-  const { samples, intervalSamples: run, groupBy, endTime, startTime } = input;
+function buildIntervalSamples(
+  run: ConcurrencyBenchResultWithCPUAndMemory,
+  successSamples: ConcurrencyBenchSample[],
+  stageTimes: number[],
+): IntervalSamples {
   const snapshots = run.intervalSampleData;
-  const stageIndices = run.stageSamples.map((stage) => stage.startIndex);
-  const boundaries = new Set(stageIndices);
-  const requestStarts = new Map<number, number>();
-  for (const sample of samples) {
-    if (boundaries.has(sample[3])) requestStarts.set(sample[3], sample[0]);
+  const timestamps = snapshots.map((snapshot) => snapshot.timestamp);
+  const completions = new Array<number>(Math.max(0, snapshots.length - 1)).fill(0);
+  for (const sample of successSamples) {
+    const index = upperBound(timestamps, sample[1]) - 1;
+    if (index >= 0 && index < completions.length) completions[index]++;
   }
-  const stageTimes = new Array<number>(stageIndices.length);
-  let nextTime = endTime;
-  for (let index = stageIndices.length - 1; index >= 0; index--) {
-    const stage = run.stageSamples[index];
-    // An empty request range has no reconstructible start time.
-    if (stage.startIndex < stage.endIndex) nextTime = requestStarts.get(stage.startIndex) ?? nextTime;
-    stageTimes[index] = index === 0 ? startTime : nextTime;
-  }
-  const times = snapshots.map((sample) => sample.timestamp);
-  const qpsCounts = new Array<number>(Math.max(0, times.length - 1)).fill(0);
-  const groups = new Map<string, ConcurrencyBenchSample[]>();
-  const stageSamples = stageTimes.map(() => [] as ConcurrencyBenchSample[]);
-  if (!groupBy) groups.set(sampleGroup.name, []);
-  for (const sample of sampleGroup.samples) {
-    const stageIndex = upperBound(stageIndices, sample[3]) - 1;
-    if (stageIndex < 0 || sample[3] >= run.stageSamples[stageIndex].endIndex) continue;
-    const key = groupBy ? groupBy(sample) : sampleGroup.name;
-    if (key === undefined) continue;
-    let group = groups.get(key);
-    if (!group) groups.set(key, group = []);
-    group.push(sample);
-    stageSamples[stageIndex].push(sample);
-    const intervalIndex = upperBound(times, sample[1]) - 1;
-    if (sample[2] && intervalIndex >= 0 && intervalIndex < qpsCounts.length) qpsCounts[intervalIndex]++;
-  }
-  const intervalSample: IntervalSamples = {
+  const result: IntervalSamples = {
     seconds: [],
     intervalSeconds: [],
+    concurrency: [],
+    qps: [],
     cpu: [],
     rss: [],
-    jsHeap: [],
     memoryExtended: [],
-    qps: [],
-    concurrency: [],
-    stages: [],
+    jsHeap: [],
   };
   for (let i = 1; i < snapshots.length; i++) {
     const previous = snapshots[i - 1];
     const current = snapshots[i];
+    if (current.timestamp <= run.startTime || previous.timestamp >= run.endTime) continue;
     const ms = current.timestamp - previous.timestamp;
-    const stage = upperBound(stageTimes, previous.timestamp) - 1;
-    intervalSample.seconds.push((current.timestamp - startTime) / 1000);
-    intervalSample.intervalSeconds.push(ms / 1000);
-    intervalSample.cpu.push((current.user + current.system - previous.user - previous.system) / (ms * 10));
-    intervalSample.rss.push(current.rss / 1024 ** 2);
-    intervalSample.jsHeap.push(current.heapUsed / 1024 ** 2);
-    intervalSample.memoryExtended.push(current.external / 1024 ** 2);
-    intervalSample.qps.push(qpsCounts[i - 1] / (ms / 1000));
-    intervalSample.concurrency.push(stage >= 0 ? run.stageSamples[stage].concurrency : 0);
+    const stage = upperBound(stageTimes, Math.max(previous.timestamp, run.startTime)) - 1;
+    result.seconds.push((current.timestamp - run.startTime) / 1000);
+    result.intervalSeconds.push(ms / 1000);
+    result.concurrency.push(run.stageSamples[stage].concurrency);
+    result.qps.push(completions[i - 1] / (ms / 1000));
+    result.cpu.push((current.user + current.system - previous.user - previous.system) / (ms * 10));
+    result.rss.push(current.rss / 1024 ** 2);
+    result.memoryExtended.push(current.external / 1024 ** 2);
+    result.jsHeap.push(current.heapUsed / 1024 ** 2);
   }
-  const average = (key: IntervalMetric, start: number, end: number) => {
-    let weighted = 0;
-    let elapsed = 0;
-    for (let i = 0; i < intervalSample.seconds.length; i++) {
-      const right = intervalSample.seconds[i];
-      const left = right - intervalSample.intervalSeconds[i];
-      const overlap = Math.max(0, Math.min(end, right) - Math.max(start, left));
-      weighted += intervalSample[key][i] * overlap;
-      elapsed += overlap;
-    }
-    return elapsed > 0 ? weighted / elapsed : null;
-  };
-  intervalSample.stages = run.stageSamples.map((stage, index): StageAnalysis => {
-    const startSeconds = (stageTimes[index] - startTime) / 1000;
-    const endSeconds = ((stageTimes[index + 1] ?? endTime) - startTime) / 1000;
-    const stats = statistics(stageSamples[index]);
+  return result;
+}
+
+/** [start, end] 秒窗口内按区间重叠时长加权的平均值。 */
+function weightedAverage(samples: IntervalSamples, metric: IntervalMetric, start: number, end: number) {
+  let weighted = 0;
+  let elapsed = 0;
+  for (let i = 0; i < samples.seconds.length; i++) {
+    const right = samples.seconds[i];
+    const left = right - samples.intervalSeconds[i];
+    const overlap = Math.max(0, Math.min(end, right) - Math.max(start, left));
+    weighted += samples[metric][i] * overlap;
+    elapsed += overlap;
+  }
+  return elapsed > 0 ? weighted / elapsed : null;
+}
+
+/**
+ * 分析一次并发基准：按阶段的请求 id 范围归组延迟（包含排空期间完成的请求），
+ * 资源曲线与阶段平均值只覆盖 run.startTime 到 run.endTime 的正式测量窗口。
+ */
+export function analyzeSampleGroup(input: {
+  run: ConcurrencyBenchResultWithCPUAndMemory;
+  successSamples: ConcurrencyBenchSample[];
+  failedSamples: ConcurrencyBenchSample[];
+  /** 报告中展示的名称，默认 run.name */
+  name?: string;
+}): AnalyzedSampleGroup {
+  const { run, successSamples, failedSamples, name = run.name } = input;
+
+  const buckets = new StageBuckets(run);
+  for (const sample of successSamples) buckets.addSuccess(sample);
+  for (const sample of failedSamples) buckets.addFailure(sample);
+  const stageTimes = buckets.stageTimes();
+
+  const intervalSample = buildIntervalSamples(run, successSamples, stageTimes);
+
+  const stages = run.stageSamples.map((stage, index): StageAnalysis => {
+    const startSeconds = (stageTimes[index] - run.startTime) / 1000;
+    const endSeconds = ((stageTimes[index + 1] ?? run.endTime) - run.startTime) / 1000;
+    const latency = latencyStatistics(buckets.latency[index], buckets.errorCount[index]);
+    const duration = endSeconds - startSeconds;
     return {
       index,
       concurrency: stage.concurrency,
       startSeconds,
       endSeconds,
-      statistics: stats,
+      latency,
       averages: {
-        cpu: average("cpu", startSeconds, endSeconds),
-        rss: average("rss", startSeconds, endSeconds),
-        jsHeap: average("jsHeap", startSeconds, endSeconds),
-        memoryExtended: average("memoryExtended", startSeconds, endSeconds),
         concurrency: stage.concurrency,
-        qps: endSeconds > startSeconds ? stats.successCount / (endSeconds - startSeconds) : null,
+        qps: duration > 0 ? latency.successCount / duration : null,
+        cpu: weightedAverage(intervalSample, "cpu", startSeconds, endSeconds),
+        rss: weightedAverage(intervalSample, "rss", startSeconds, endSeconds),
+        memoryExtended: weightedAverage(intervalSample, "memoryExtended", startSeconds, endSeconds),
+        jsHeap: weightedAverage(intervalSample, "jsHeap", startSeconds, endSeconds),
       },
     };
   });
+
+  const errorCount = buckets.errorCount.reduce((sum, value) => sum + value, 0);
   return {
+    name,
     run,
     intervalSample,
-    resultGroup: new Map([...groups].map(([name, samples]) => [name, statistics(samples)])),
+    stages,
+    latency: latencyStatistics(buckets.latency.flat(), errorCount),
   };
 }

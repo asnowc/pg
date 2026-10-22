@@ -52,9 +52,14 @@ async function run(): Promise<void> {
       results.push({ name: target.name, samples, result });
       await target.close(conn);
     }
-    results.map(({ name, result, samples }) => {
-      analyzeSampleGroup({ samples, intervalSamples: result, startTime: result.startTime, endTime: result.endTime });
+    const resultList = results.map(({ name, result, samples }) => {
+      return analyzeSampleGroup({
+        successSamples: samples,
+        failedSamples: [],
+        run: result,
+      });
     });
+    renderSvg({ path: path.join(RESULT_DIR, `${queryName}-${name}.svg`), results: resultList });
     console.log(`Results for query: ${queryName}`);
   }
   console.log(`Reports: ${RESULT_DIR}`);

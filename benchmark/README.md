@@ -29,7 +29,7 @@
 
 ```ts
 import { ConcurrencyBench } from "./benchmark/deps/bench/ConcurrencyBench.ts";
-import type { ConcurrencyBenchSample } from "./benchmark/deps/bench/types/sample.ts";
+import type { ConcurrencyBenchSample } from "./benchmark/deps/bench/types/bench_result.ts";
 
 const successSamples: ConcurrencyBenchSample[] = [];
 const failedSamples: ConcurrencyBenchSample[] = [];
@@ -83,9 +83,17 @@ console.log(result, successSamples.length, failedSamples.length);
 指向此脚本，不能据此认为该任务已完成适配。
 
 [文件收集器](deps/bench/collector/file_collector.ts)、 [分析器](deps/bench/analyzer/sample_group.ts) 和
-[报告编排](utils/resource-runner.ts) 仍有按旧四元组 `[startTime, endTime, success, id]` 读取样本的逻辑，
-不能直接消费当前三元组。文件格式和图表统计需要与成功/失败分流一起迁移， 迁移前不将旧的二进制格式、SVG
-输出和失败退出语义作为当前 API 的保证。
+[SVG 报告](deps/bench/reporter/SvgReporter.ts) 已按三元组与成功/失败分流重写：
+
+- `openFileCollector(filePath)` 为单个样本文件创建收集器，成功与失败样本应分别打开两个文件； `writeFileResult` /
+  `readFileResult` 单独保存和读取运行结果 JSON。样本文件头记录基准时间和精度，
+  默认以微秒存储相对时间。`writeFileSamples(filePath, samples)` 可把内存中的样本写成同样的格式。
+- `analyzeSampleGroup({ run, successSamples, failedSamples })` 按阶段的请求 id 范围归组延迟，
+  资源曲线和阶段平均值只覆盖正式测量窗口。
+- `renderSvg({ path, results, panels? })` 上半部分依次绘制并发、QPS、CPU、RSS、扩展内存、JS 堆曲线， 并在图表下方按
+  `panels[].ranking` 展示各并发阶段的平均值排行；下半部分按阶段列出 p50/p75/p90/p99、 均值与 RME。
+
+[报告编排](utils/resource-runner.ts) 尚未切换到上述新签名，仍按旧的 `(dir, name)` 约定和单收集器读取结果。
 
 [concurrency-fast.bench.ts](test/concurrency-fast.bench.ts) 已使用新的收集器参数，
 但当前把成功和失败样本存入同一数组；需要区分结果时应改用独立收集器。 该脚本当前配置为并发 `500`、预热 `100ms`、测量

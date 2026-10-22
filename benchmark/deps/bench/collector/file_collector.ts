@@ -2,130 +2,116 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { ConcurrencyBenchResultWithCPUAndMemory, ConcurrencyBenchSample } from "../types/bench_result.ts";
 
-export type StoredBenchResult = {
-  schemaVersion: 1;
-  sampleCount: number;
-  metadata: Record<string, unknown>;
-  result: ConcurrencyBenchResultWithCPUAndMemory;
-};
+/**
+ * 样本文件格式（小端）：
+ * - 文件头 12 字节：float64 baseTime（毫秒）+ uint32 precision（每毫秒的刻度数）
+ * - 记录 12 字节：uint32 start、uint32 end（相对 baseTime 的刻度）、uint32 id
+ */
+const HEADER_SIZE = 12;
+const RECORD_SIZE = 12;
+/** 单个写缓冲区容量 */
+const BUFFER_SIZE = 1024 * 1024;
+/** 待写入数据达到该长度时触发一次写入 */
+const CHUNK_SIZE = 64 * 1024;
 
-function validSample(sample: ConcurrencyBenchSample) {
-  return Number.isFinite(sample[0]) && sample[0] >= 0 &&
-    Number.isFinite(sample[1]) && sample[1] >= sample[0] && Number.isSafeInteger(sample[2]) && sample[2] >= 0;
+type SampleFileHeader = { baseTime: number; precision: number };
+
+function encodeHeader(header: SampleFileHeader) {
+  const bytes = new Uint8Array(HEADER_SIZE);
+  const view = new DataView(bytes.buffer);
+  view.setFloat64(0, header.baseTime, true);
+  view.setUint32(8, header.precision, true);
+  return bytes;
 }
 
-function paths(dir: string, name: string) {
-  if (!name || name === "." || name === ".." || /[/\\\0]/.test(name)) throw new Error("Invalid sample file name");
-  return { samples: path.join(dir, `${name}.samples.bin`), result: path.join(dir, `${name}.result.json`) };
+function decodeHeader(bytes: Uint8Array): SampleFileHeader {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, HEADER_SIZE);
+  return { baseTime: view.getFloat64(0, true), precision: view.getUint32(8, true) };
 }
 
-async function writeAll(fd: fs.FileHandle, data: Uint8Array) {
-  let offset = 0;
-  while (offset < data.byteLength) {
-    const { bytesWritten } = await fd.write(data, offset, data.byteLength - offset);
-    offset += bytesWritten;
+/** 单个写缓冲区：[0, flushOffset) 已写入文件，[flushOffset, writeOffset) 等待写入。 */
+class WriteBuffer {
+  readonly bytes = new Uint8Array(BUFFER_SIZE);
+  readonly view = new DataView(this.bytes.buffer);
+  writeOffset = 0;
+  flushOffset = 0;
+
+  get pending() {
+    return this.writeOffset - this.flushOffset;
+  }
+  get free() {
+    return this.bytes.byteLength - this.writeOffset;
+  }
+  /** 把未写入数据移到开头。调用时不能有进行中的写入。 */
+  compact() {
+    this.bytes.copyWithin(0, this.flushOffset, this.writeOffset);
+    this.writeOffset -= this.flushOffset;
+    this.flushOffset = 0;
   }
 }
 
-const BUFFER_SIZE = 1 * 1024 * 1024;
-const RECORD_SIZE = 13;
-const CHUNK_SIZE = 8 * 1024;
-class FileCollector {
-  private buffer: Uint8Array = new Uint8Array(BUFFER_SIZE);
-  private view = new DataView(this.buffer.buffer, this.buffer.byteOffset, this.buffer.byteLength);
-  private writeOffset = 0;
-
+export class FileCollector {
+  private current = new WriteBuffer();
+  /** 空间不足时被替换下来的缓冲区，写完后释放给 GC */
+  private retired: WriteBuffer[] = [];
+  private writing?: Promise<void>;
   private closing?: Promise<void>;
+  /** 已接收的样本数 */
   length = 0;
 
-  constructor(
-    private readonly fd: fs.FileHandle,
-    private readonly dir: string,
-    private readonly name: string,
-    /** 时间精度。0 为毫秒，1000 为微秒 */
-    private readonly precision: number,
-  ) {}
+  constructor(private readonly fd: fs.FileHandle, private readonly header: SampleFileHeader) {}
 
-  push(data: ConcurrencyBenchSample): void {
-    if (this.closing) throw new Error("FileCollector is closed");
-
-    const view = this.view;
-    view.setUint32(this.writeOffset, floor(data[0], this.precision));
-    this.writeOffset += 4;
-    view.setUint32(this.writeOffset, floor(data[1], this.precision));
-    this.writeOffset += 4;
-    view.setUint32(this.writeOffset, data[2]);
-    this.writeOffset += 4;
-
-    const cacheLength = this.buffer.byteLength - this.writeOffset;
-    if (cacheLength < RECORD_SIZE) {
-      this.change();
-    } else if (cacheLength > CHUNK_SIZE) {
-      this.checkWrite();
+  push(sample: ConcurrencyBenchSample): void {
+    if (this.current.free < RECORD_SIZE) {
+      this.retired.push(this.current);
+      this.current = new WriteBuffer();
     }
-  }
-  private change() {
-    this.buffer = new Uint8Array(BUFFER_SIZE);
-    this.view = new DataView(this.buffer.buffer, this.buffer.byteOffset, this.buffer.byteLength);
+    const { view, writeOffset } = this.current;
+    const { baseTime, precision } = this.header;
+    view.setUint32(writeOffset, Math.floor((sample[0] - baseTime) * precision), true);
+    view.setUint32(writeOffset + 4, Math.floor((sample[1] - baseTime) * precision), true);
+    view.setUint32(writeOffset + 8, sample[2], true);
+    this.current.writeOffset = writeOffset + RECORD_SIZE;
+    this.length++;
 
-    this.writeOffset = 0;
+    if (this.current.pending >= CHUNK_SIZE) this.scheduleWrite();
   }
-  private writing: Promise<void> | undefined;
-  private checkWrite() {
+
+  private scheduleWrite() {
     if (this.writing) return;
-    this.writing = this.startWrite().then(
-      () => {
-        this.writing = undefined;
-      },
-      () => {
-        this.writing = undefined;
-      },
-    );
+    this.writing = this.drain(CHUNK_SIZE).finally(() => {
+      this.writing = undefined;
+    });
   }
-  private async startWrite() {
-    const buffer = this.buffer;
-    const bufferSize = buffer.byteLength;
-    let written = 0;
-    while (this.writeOffset - written > CHUNK_SIZE) {
-      const { bytesWritten } = await this.fd.write(buffer.subarray(written, this.writeOffset));
-      written += bytesWritten;
-      if (written > bufferSize - this.writeOffset) {
-        buffer.copyWithin(0, written, this.writeOffset);
-        this.writeOffset -= written;
-        written = 0;
+
+  private async write(buffer: WriteBuffer) {
+    const { bytesWritten } = await this.fd.write(buffer.bytes, buffer.flushOffset, buffer.pending);
+    buffer.flushOffset += bytesWritten;
+  }
+
+  /**
+   * 先写完退役缓冲区，再按 threshold 写当前缓冲区；await 期间 push 可能替换当前缓冲区，
+   * 因此每轮都重新检查。
+   */
+  private async drain(threshold: number) {
+    while (true) {
+      while (this.retired.length) {
+        const buffer = this.retired[0];
+        while (buffer.pending > 0) await this.write(buffer);
+        this.retired.shift();
       }
-    }
-    if (written > 0) {
-      buffer.copyWithin(0, written, this.writeOffset);
-      this.writeOffset -= written;
-      written = 0;
+      const buffer = this.current;
+      if (buffer.pending < threshold) return;
+      await this.write(buffer);
+      if (buffer === this.current && buffer.flushOffset > buffer.free) buffer.compact();
     }
   }
 
-  async saveResult(
-    result: ConcurrencyBenchResultWithCPUAndMemory,
-    metadata: Record<string, unknown> = {},
-  ): Promise<void> {
-    const record: StoredBenchResult = {
-      schemaVersion: 1,
-      sampleCount: this.length,
-      metadata,
-      result,
-    };
-    await fs.writeFile(paths(this.dir, this.name).result, JSON.stringify(record, null, 2));
-  }
-  private async flush() {
-    let written = 0;
-    while (written < this.writeOffset) {
-      const { bytesWritten } = await this.fd.write(this.buffer.subarray(written, this.writeOffset));
-      written += bytesWritten;
-    }
-  }
   close(): Promise<void> {
     this.closing ??= (async () => {
       try {
         await this.writing;
-        if (this.writeOffset) await this.flush();
+        await this.drain(1);
       } finally {
         await this.fd.close();
       }
@@ -137,65 +123,95 @@ class FileCollector {
     return this.close();
   }
 }
-function floor(value: number, shift: number) {
-  return Math.floor(value * shift);
+
+export type FileCollectorOptions = {
+  /** 样本时间的基准（毫秒），默认打开文件时的 performance.now()；样本时间不得早于它。 */
+  baseTime?: number;
+  /** 时间精度：每毫秒的刻度数，默认 1000（微秒）。 */
+  precision?: number;
+};
+
+/** 新建样本文件，已存在时拒绝覆盖。调用方负责 await close/dispose。 */
+export async function openFileCollector(filePath: string, options: FileCollectorOptions = {}): Promise<FileCollector> {
+  const header = { baseTime: options.baseTime ?? performance.now(), precision: options.precision ?? 1000 };
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  const fd = await fs.open(filePath, "wx");
+  await fd.write(encodeHeader(header));
+  return new FileCollector(fd, header);
 }
 
-/**
- * 新建 name.samples.bin；同名文件已存在时拒绝覆盖。调用方负责 await close/dispose。
- */
-export async function openFileCollector(dir: string, name: string) {
-  const file = paths(dir, name).samples;
-  await fs.mkdir(dir, { recursive: true });
-  const fd = await fs.open(file, "wx+");
-  return new FileCollector(fd, dir, name, 1000);
-}
-
-/** 只读，不创建或修改原始文件；损坏或截断时抛错。 */
-export async function* iterateFileSamples(dir: string, name: string): AsyncGenerator<ConcurrencyBenchSample> {
-  const fd = await fs.open(paths(dir, name).samples, "r");
-  const buffer = new Uint8Array(CHUNK_SIZE);
+/** 顺序读取样本文件；文件截断时抛错。 */
+export async function* iterateFileSamples(filePath: string): AsyncGenerator<ConcurrencyBenchSample> {
+  const fd = await fs.open(filePath, "r");
   try {
-    let remaining = 0;
+    const headerBytes = new Uint8Array(HEADER_SIZE);
+    if ((await fd.read(headerBytes, 0, HEADER_SIZE)).bytesRead !== HEADER_SIZE) {
+      throw new Error("Truncated sample file header");
+    }
+    const { baseTime, precision } = decodeHeader(headerBytes);
+
+    const buffer = new Uint8Array(CHUNK_SIZE);
+    const view = new DataView(buffer.buffer);
+    let available = 0;
     while (true) {
-      const { bytesRead } = await fd.read(buffer, remaining, buffer.length - remaining);
-      const available = remaining + bytesRead;
+      const { bytesRead } = await fd.read(buffer, available, buffer.byteLength - available);
       if (bytesRead === 0) {
-        if (remaining !== 0) throw new Error("Truncated sample record");
-        break;
+        if (available !== 0) throw new Error("Truncated sample record");
+        return;
       }
+      available += bytesRead;
       let offset = 0;
-      while (offset + RECORD_SIZE <= available) {
-        const view = new DataView(buffer.buffer, buffer.byteOffset + offset, RECORD_SIZE);
-        const flag = view.getUint8(16);
-        const sample: ConcurrencyBenchSample = [
-          view.getFloat64(0, true),
-          view.getFloat64(8, true),
-          flag === 1,
-          view.getFloat64(17, true),
+      for (; offset + RECORD_SIZE <= available; offset += RECORD_SIZE) {
+        yield [
+          baseTime + view.getUint32(offset, true) / precision,
+          baseTime + view.getUint32(offset + 4, true) / precision,
+          view.getUint32(offset + 8, true),
         ];
-        if (flag > 1 || !validSample(sample)) throw new Error("Invalid sample record");
-        yield sample;
-        offset += RECORD_SIZE;
       }
-      remaining = available - offset;
       buffer.copyWithin(0, offset, available);
+      available -= offset;
     }
   } finally {
     await fd.close();
   }
 }
-export async function writeFileSamples(path: string, samples: ConcurrencyBenchSample[]): Promise<void> {
+
+/** 把内存中的样本写入新文件，基准时间取最早的开始时间。 */
+export async function writeFileSamples(
+  filePath: string,
+  samples: ConcurrencyBenchSample[],
+  options: Pick<FileCollectorOptions, "precision"> = {},
+): Promise<void> {
+  let baseTime = Infinity;
+  for (const sample of samples) baseTime = Math.min(baseTime, sample[0]);
+  await using collector = await openFileCollector(filePath, { ...options, baseTime: samples.length ? baseTime : 0 });
+  for (const sample of samples) collector.push(sample);
 }
 
-export async function readFileSamples(dir: string, name: string): Promise<ConcurrencyBenchSample[]> {
+export async function readFileSamples(filePath: string): Promise<ConcurrencyBenchSample[]> {
   const samples: ConcurrencyBenchSample[] = [];
-  for await (const sample of iterateFileSamples(dir, name)) samples.push(sample);
+  for await (const sample of iterateFileSamples(filePath)) samples.push(sample);
   return samples;
 }
 
-export async function readFileResult(dir: string, name: string): Promise<StoredBenchResult> {
-  const value: StoredBenchResult = JSON.parse(await fs.readFile(paths(dir, name).result, "utf8"));
+export type StoredBenchResult = {
+  schemaVersion: 1;
+  metadata: Record<string, unknown>;
+  result: ConcurrencyBenchResultWithCPUAndMemory;
+};
+
+export async function writeFileResult(
+  filePath: string,
+  result: ConcurrencyBenchResultWithCPUAndMemory,
+  metadata: Record<string, unknown> = {},
+): Promise<void> {
+  const record: StoredBenchResult = { schemaVersion: 1, metadata, result };
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, JSON.stringify(record, null, 2));
+}
+
+export async function readFileResult(filePath: string): Promise<StoredBenchResult> {
+  const value: StoredBenchResult = JSON.parse(await fs.readFile(filePath, "utf8"));
   if (value.schemaVersion !== 1) throw new Error("Unsupported benchmark result version");
   return value;
 }
