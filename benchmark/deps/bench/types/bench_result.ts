@@ -9,9 +9,7 @@ export type ConcurrencyBenchResult = {
   /** 并发数变更采样 */
   stageSamples: {
     concurrency: number;
-    /** 发起请求的 id 范围 [startIndex, endIndex)，预热 id 不在范围内。 */
-    startRequestIndex: number;
-    endRequestIndex: number;
+    /** 该档开始时间，单位为毫秒，使用 performance.now() 获取。该档结束于下一档开始或 endTime。 */
     startTime: number;
   }[];
   /** 总错误样本数 */
@@ -30,8 +28,8 @@ export type ConcurrencyBenchResultWithCPUAndMemory = ConcurrencyBenchResult & {
     timestamp: number;
   })[];
 };
-/** 时间为 performance.now() 的毫秒值；id 是任务内唯一的安全整数。 */
-export type ConcurrencyBenchSample = [startTime: number, endTime: number, id: number];
+/** 时间为 performance.now() 的毫秒值。 */
+export type ConcurrencyBenchSample = [startTime: number, endTime: number];
 
 export interface RequestRunnerContext {
   /** 当前实际的并发数 */

@@ -53,13 +53,13 @@ console.log(result, successSamples.length, failedSamples.length);
   降低目标并发时，已有请求继续执行，实际在途数可能暂时高于目标。
 - 最后一档计时结束后将目标并发设为 `0`，正常情况下等待所有在途调用完成后返回。 `duration`
   限制补发窗口，不包含最终排空；被测调用若一直不结束，基准也不会结束。
-- 样本为 `[startTime, endTime, id]`，时间来自 `performance.now()`，单位为毫秒。 id
-  在任务内递增，预热和正式请求共用序列。预热发起的请求即使在正式阶段完成，也不会传给收集器。
+- 样本为 `[startTime, endTime]`，时间来自 `performance.now()`，单位为毫秒。
+  预热发起的请求即使在正式阶段完成，也不会传给收集器。
   成功和失败结果分别进入对应收集器；失败样本不包含原始异常。
 - 返回值的 `warmup.iterations` 是预热期间发起的次数，不是预热结束时已完成的次数。 `warmup.duration`
   是预热的实际耗时，不包含单独的排空阶段。
-- `stageSamples` 保存每档目标并发及请求 id 范围 `[startIndex, endIndex)`。
-  范围按发起时间划分，不是收集器数组下标；跨档完成和最终排空的结果仍归原发起档。
+- `stageSamples` 保存每档目标并发及开始时间，每档结束于下一档开始或 `endTime`。
+  样本按发起时间归档；跨档完成和最终排空的结果仍归原发起档。
 - `intervalSampleData` 按指定间隔采集累计 CPU 使用量、内存占用和单调时间戳，
   覆盖预热、正式测量及最终排空。采集开始、正式测量开始和每档结束时立即补采并重新对齐定时器，
   使每个资源区间都落在单一阶段内；与边界相距不足采样间隔 1/10 的定时快照会被边界快照替换。
@@ -88,7 +88,7 @@ console.log(result, successSamples.length, failedSamples.length);
 - `openFileCollector(filePath)` 为单个样本文件创建收集器，成功与失败样本应分别打开两个文件； `writeFileResult` /
   `readFileResult` 单独保存和读取运行结果 JSON。样本文件头记录基准时间和精度，
   默认以微秒存储相对时间。`writeFileSamples(filePath, samples)` 可把内存中的样本写成同样的格式。
-- `analyzeSampleGroup({ run, successSamples, failedSamples })` 按阶段的请求 id 范围归组延迟，
+- `analyzeSampleGroup({ run, successSamples, failedSamples })` 按请求发起时间所在阶段归组延迟，
   资源曲线和阶段平均值只覆盖正式测量窗口。
 - `renderSvg({ path, results, panels? })` 上半部分依次绘制并发、QPS、CPU、RSS、扩展内存、JS 堆曲线， 并在图表下方按
   `panels[].ranking` 展示各并发阶段的平均值排行；下半部分按阶段列出 p50/p75/p90/p99、 均值与 RME。

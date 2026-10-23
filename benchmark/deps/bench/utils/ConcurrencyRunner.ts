@@ -40,9 +40,9 @@ export class ConcurrencyRunner extends Event implements RequestRunnerContext {
   errorCount = 0;
 
   /** 成功的采样回调 */
-  onSampleSuccess(data: ConcurrencyBenchSample) {}
+  onSampleSuccess(data: ConcurrencyBenchSample, requestIndex: number) {}
   /** 失败的采样回调 */
-  onSampleFailed(data: ConcurrencyBenchSample, error: unknown) {}
+  onSampleFailed(data: ConcurrencyBenchSample, requestIndex: number, error: unknown) {}
 
   private onClear() {
     this.emit("clear");
@@ -58,20 +58,20 @@ export class ConcurrencyRunner extends Event implements RequestRunnerContext {
     super();
   }
 
-  private onRequestError(data: ConcurrencyBenchSample, error: unknown) {
+  private onRequestError(data: ConcurrencyBenchSample, index: number, error: unknown) {
     const end = performance.now();
     this.errorCount++;
     this.currentConcurrency--;
     data[1] = end;
-    this.onSampleFailed(data, error);
+    this.onSampleFailed(data, index, error);
     this.onReduce(end);
   }
-  private onRequestSuccess(data: ConcurrencyBenchSample) {
+  private onRequestSuccess(data: ConcurrencyBenchSample, index: number) {
     const end = performance.now();
     this.successCount++;
     this.currentConcurrency--;
     data[1] = end;
-    this.onSampleSuccess(data);
+    this.onSampleSuccess(data, index);
 
     this.onReduce(end);
   }
@@ -92,10 +92,10 @@ export class ConcurrencyRunner extends Event implements RequestRunnerContext {
   private requestNext(start: number) {
     this.currentConcurrency++;
     const i = this.nextRequestIndex++;
-    const data: ConcurrencyBenchSample = [start, 0, i];
+    const data: ConcurrencyBenchSample = [start, 0];
     new Promise<void>((resolve) => resolve(this.fn.call(undefined, i))).then(
-      () => this.onRequestSuccess(data),
-      (e) => this.onRequestError(data, e),
+      () => this.onRequestSuccess(data, i),
+      (e) => this.onRequestError(data, i, e),
     ).catch((e) => {
       console.error("Unhandled error in callBenchFn", e);
       this.targetConcurrency = 0;

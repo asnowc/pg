@@ -7,10 +7,10 @@ const BUFFER_SIZE = 1024 * 1024;
 /**
  * 样本文件格式（大端）：
  * - 文件头 12 字节：uint32 precision（每毫秒的刻度数）+ uint64 timeOrigin（epoch 刻度）
- * - 记录 12 字节：uint32 start、uint32 end（相对 timeOrigin 的刻度）、uint32 id
+ * - 记录 8 字节：uint32 start、uint32 end（相对 timeOrigin 的刻度）
  */
 const HEADER_SIZE = 12;
-const RECORD_SIZE = 12;
+const RECORD_SIZE = 8;
 /** 待写入数据达到该长度时触发一次写入 */
 const CHUNK_SIZE = 64 * 1024;
 
@@ -56,7 +56,7 @@ class WriteBuffer {
 
 export class SampleCollector {
   private current = new WriteBuffer();
-  /** 当前缓冲区写满后暂存的样本字段，按 start、end、id 顺序排列。 */
+  /** 当前缓冲区写满后暂存的样本字段，按 start、end 顺序排列。 */
   private retired: number[] = [];
   private retiredOffset = 0;
   private writing?: Promise<void>;
@@ -76,12 +76,11 @@ export class SampleCollector {
     const start = Math.floor(sample[0] * precision);
     const end = Math.floor(sample[1] * precision);
     if (this.retiredOffset < this.retired.length || this.current.free < RECORD_SIZE) {
-      this.retired.push(start, end, sample[2]);
+      this.retired.push(start, end);
     } else {
       const { view, writeOffset } = this.current;
       view.setUint32(writeOffset, start, false);
       view.setUint32(writeOffset + 4, end, false);
-      view.setUint32(writeOffset + 8, sample[2], false);
       this.current.writeOffset = writeOffset + RECORD_SIZE;
     }
     this.length++;
@@ -108,9 +107,8 @@ export class SampleCollector {
       const { view, writeOffset } = this.current;
       view.setUint32(writeOffset, this.retired[this.retiredOffset], false);
       view.setUint32(writeOffset + 4, this.retired[this.retiredOffset + 1], false);
-      view.setUint32(writeOffset + 8, this.retired[this.retiredOffset + 2], false);
       this.current.writeOffset = writeOffset + RECORD_SIZE;
-      this.retiredOffset += 3;
+      this.retiredOffset += 2;
     }
     if (this.retiredOffset === this.retired.length) {
       this.retired.length = 0;
@@ -175,7 +173,6 @@ export async function* iterateFileSamples(filePath: string): AsyncGenerator<Conc
         yield [
           view.getUint32(offset, false) / precision,
           view.getUint32(offset + 4, false) / precision,
-          view.getUint32(offset + 8, false),
         ];
       }
       buffer.copyWithin(0, offset, available);

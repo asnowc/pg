@@ -29,3 +29,4 @@ export function getReportDirectory(meta: ImportMeta) {
 
   return path.join(OUTPUT_DIRECTORY, `${filename}-${Temporal.Now.instant().epochMilliseconds}`);
 }
+export type QueryName = keyof TestQueries<any>;

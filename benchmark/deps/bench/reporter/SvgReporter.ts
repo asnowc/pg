@@ -269,7 +269,7 @@ export async function renderSvg(input: SvgReportInput): Promise<void> {
     layout.top += ROW_HEIGHT;
   }
   layout.text(
-    "Warmup excluded; latency grouped by request id and includes drain. Resource curves exclude drain; no forced GC.",
+    "Warmup excluded; latency grouped by request start time and includes drain. Resource curves exclude drain; no forced GC.",
     { color: MUTED_COLOR },
   );
   layout.top += ROW_HEIGHT + 20;

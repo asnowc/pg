@@ -127,26 +127,22 @@ function floorIndex(values: number[], value: number) {
   return low - 1;
 }
 
-/** 按请求 id 将样本归入发起阶段，同时记录每个阶段最早的发起时间。 */
+/** 按请求发起时间将样本归入发起阶段。 */
 class StageBuckets {
   readonly latency: number[][];
   readonly errorCount: number[];
-  readonly firstStart: number[];
-  private readonly startIndices: number[];
+  private readonly startTimes: number[];
 
   constructor(private readonly run: ConcurrencyBenchResultWithCPUAndMemory) {
     const count = run.stageSamples.length;
-    this.startIndices = run.stageSamples.map((stage) => stage.startRequestIndex);
+    this.startTimes = run.stageSamples.map((stage) => stage.startTime);
     this.latency = Array.from({ length: count }, () => []);
     this.errorCount = new Array<number>(count).fill(0);
-    this.firstStart = new Array<number>(count).fill(Infinity);
   }
 
   private stageOf(sample: ConcurrencyBenchSample) {
-    const index = floorIndex(this.startIndices, sample[2]);
-    if (index < 0 || sample[2] >= this.run.stageSamples[index].endRequestIndex) return -1;
-    this.firstStart[index] = Math.min(this.firstStart[index], sample[0]);
-    return index;
+    if (sample[0] >= this.run.endTime) return -1;
+    return floorIndex(this.startTimes, sample[0]);
   }
 
   addSuccess(sample: ConcurrencyBenchSample) {
@@ -159,18 +155,8 @@ class StageBuckets {
     if (index >= 0) this.errorCount[index]++;
   }
 
-  /**
-   * 阶段起点取该阶段首个请求的发起时间；降低并发的阶段不会立即发起请求，
-   * 因此起点略晚于真实切换时间。首阶段使用 run.startTime，空阶段借用下一阶段的起点。
-   */
   stageTimes(): number[] {
-    const times = new Array<number>(this.firstStart.length);
-    let next = this.run.endTime;
-    for (let index = times.length - 1; index >= 0; index--) {
-      if (Number.isFinite(this.firstStart[index])) next = this.firstStart[index];
-      times[index] = index === 0 ? this.run.startTime : next;
-    }
-    return times;
+    return this.startTimes;
   }
 }
 
@@ -236,7 +222,7 @@ function weightedAverage(samples: IntervalSamples, metric: IntervalMetric, start
 }
 
 /**
- * 分析一次并发基准：按阶段的请求 id 范围归组延迟（包含排空期间完成的请求），
+ * 分析一次并发基准：按请求发起时间所在阶段归组延迟（包含排空期间完成的请求），
  * 资源曲线与阶段平均值只覆盖 run.startTime 到 run.endTime 的正式测量窗口。
  */
 export function analyzeSampleGroup(input: {

@@ -34,8 +34,8 @@ export class ConcurrencyBench {
    * 按配置顺序测量目标并发，正常情况下在最后一档停止补发、等待在途调用完成后返回。
    * 预热只使用第一档并发，结束时不排空；预热请求的结果不会传给收集器。
    *
-   * 正式请求按成功或失败分别向两个收集器投递 `[startTime, endTime, id]`，
-   * 时间单位为毫秒，id 在整个任务内递增。查询失败不终止测量，也不会使返回的 Promise 拒绝。
+   * 正式请求按成功或失败分别向两个收集器投递 `[startTime, endTime]`，
+   * 时间单位为毫秒。查询失败不终止测量，也不会使返回的 Promise 拒绝。
    * CPU/内存快照按 intervalSampleCPUAndMemory 指定的毫秒间隔采集，包含预热和最终排空；
    * 采集开始、正式测量开始和每档结束时会立即补采一次并重新对齐定时器。
    *
@@ -82,12 +82,12 @@ export class ConcurrencyBench {
           snapshot();
           console.log("waiting for task to clear");
         },
-        onSampleFailed: (value) => {
-          if (value[2] < warmupEndRequestIndex) return;
+        onSampleFailed: (value, index) => {
+          if (index < warmupEndRequestIndex) return;
           collectorFailed.push(value);
         },
-        onSampleSuccess: (value) => {
-          if (value[2] < warmupEndRequestIndex) return;
+        onSampleSuccess: (value, index) => {
+          if (index < warmupEndRequestIndex) return;
           collectorSuccess.push(value);
         },
       });
@@ -97,6 +97,10 @@ export class ConcurrencyBench {
       clearInterval(timer);
     }
   }
+}
+
+export interface IntervalBenchRunner {
+  (fn: (index: number) => Promise<void>): Promise<void>;
 }
 async function runBench(runner: ConcurrencyRunner, settings: BenchSetting, options: RunOptions) {
   const { onWarmupEnd, onSampleFailed, onSampleSuccess } = options;
@@ -119,35 +123,29 @@ async function runBench(runner: ConcurrencyRunner, settings: BenchSetting, optio
 
   const { stages } = settings;
   const runStartIndex = runner.nextRequestIndex;
+  const startTime = performance.now();
+  // 预热发起的请求开始时间早于 startTime，不传给收集器
   if (onSampleSuccess) {
-    runner.onSampleSuccess = (data) => {
-      if (data[2] < runStartIndex) return;
-      onSampleSuccess(data);
+    runner.onSampleSuccess = (data, requestIndex) => {
+      if (requestIndex < runStartIndex) return;
+      onSampleSuccess(data, requestIndex);
     };
   }
   if (onSampleFailed) {
-    runner.onSampleFailed = (data) => {
-      if (data[2] < runStartIndex) return;
-      onSampleFailed(data);
+    runner.onSampleFailed = (data, requestIndex) => {
+      if (requestIndex < runStartIndex) return;
+      onSampleFailed(data, requestIndex);
     };
   }
-  const startTime = performance.now();
   let i = 0;
   let stage = stages[i];
   const stageSamples: ConcurrencyBenchResult["stageSamples"] = [];
   while (stage) {
     const concurrency = stage.value;
-    const startIndex = runner.nextRequestIndex;
     options.onStageChange?.();
+    stageSamples.push({ concurrency, startTime: i === 0 ? startTime : performance.now() });
     runner.updateConcurrency(concurrency);
     await new Promise<void>((resolve) => setTimeout(resolve, stage.duration));
-    const endIndex = runner.nextRequestIndex;
-    stageSamples.push({
-      concurrency,
-      startRequestIndex: startIndex,
-      endRequestIndex: endIndex,
-      startTime: performance.now(),
-    });
     i++;
     stage = stages[i];
   }
@@ -168,8 +166,8 @@ async function runBench(runner: ConcurrencyRunner, settings: BenchSetting, optio
   };
 }
 type RunOptions = {
-  onSampleFailed?: (sample: ConcurrencyBenchSample) => void;
-  onSampleSuccess?: (sample: ConcurrencyBenchSample) => void;
+  onSampleFailed?: (sample: ConcurrencyBenchSample, index: number) => void;
+  onSampleSuccess?: (sample: ConcurrencyBenchSample, index: number) => void;
   onWarmupEnd?: () => Promise<void> | void;
   /** 每档测量时长结束、切换下一档之前同步调用。 */
   onStageChange?: () => void;
