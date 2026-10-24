@@ -25,11 +25,6 @@ export interface UserBenchConfig {
   /** 采样间隔，单位毫秒 */
   intervalSample: number;
   benchDataDir?: string;
-
-  /**
-   * 是否在每次基准运行前进行垃圾回收。
-   */
-  gc?: boolean;
   /** 运行结束后生成 SVG 报告时使用的显示选项，例如 `{ preset: "compact" }`。 */
   report?: SvgReportOptions;
 }
@@ -60,33 +55,36 @@ function createConcurrencyBench(config: UserBenchConfig): ConcurrencyBench {
   });
 }
 
-/** 按 config.gc 解析 gc 函数；显式要求 gc 但不可用时抛出。 */
-function resolveGc(config: Pick<UserBenchConfig, "gc">): (() => void) | undefined {
-  if (config.gc) {
-    if (!globalThis.gc) {
-      throw new Error("Garbage collection is not available. Run with --expose-gc (Deno: --v8-flags=--expose-gc).");
-    }
-    return globalThis.gc;
-  }
-  if (typeof config.gc === "undefined") return globalThis.gc;
-  return undefined;
+/**
+ * 系列之间的 gc 策略：
+ * - `before-each`：同进程运行且运行时暴露了 gc，每个系列测量前执行一次
+ * - `isolated`：每个系列在独立子进程中运行，无需手动 gc
+ * - `unavailable`：同进程运行但运行时未暴露 gc（Deno：`--v8-flags=--expose-gc`；Node：`--expose-gc`）
+ */
+export type GcMode = "before-each" | "isolated" | "unavailable";
+
+/** 同进程运行时的 gc 策略。 */
+function inProcessGcMode(): GcMode {
+  return typeof globalThis.gc === "function" ? "before-each" : "unavailable";
 }
 function resolveDataDir(config: UserBenchConfig) {
   return path.resolve(config.benchDataDir ?? "./.bench-data");
 }
-function manifestParams(config: UserBenchConfig): BenchManifestParams {
-  const { concurrency, duration, warmupDuration, intervalSample, gc } = config;
-  return { concurrency, duration, warmupDuration, intervalSample, gc };
+function manifestParams(config: UserBenchConfig, gc: GcMode): BenchManifestParams {
+  const { concurrency, duration, warmupDuration, intervalSample } = config;
+  // 是否手动 gc 会影响结果可比性，记录到清单
+  return { concurrency, duration, warmupDuration, intervalSample, gc: gc === "before-each" };
 }
 
 /**
  * 在当前进程内运行单个系列：初始化 -> 测量 -> 释放 -> 保存样本与结果，并输出系列内部日志，
  * 样本与结果保存到 config.benchDataDir。不输出标题和汇总，这些由 {@link runBenchSuite} 负责。
  * 初始化成功后才创建样本文件，避免失败时残留空样本文件导致重跑冲突。
+ * `gc` 为 true 且运行时暴露了 gc 时，在初始化之后、测量之前执行一次；在独立子进程中运行时无需开启。
  */
 export async function runBenchItem<Meta extends {} = {}>(
   config: UserBenchConfig,
-  options: { series: string; meta: Meta; getBenchItem: GetBenchItem<Meta> },
+  options: { series: string; meta: Meta; getBenchItem: GetBenchItem<Meta>; gc?: boolean },
 ): Promise<ConcurrencyBenchResultWithCPUAndMemory> {
   const { series: name, meta, getBenchItem } = options;
   const bench = createConcurrencyBench(config);
@@ -96,6 +94,12 @@ export async function runBenchItem<Meta extends {} = {}>(
   const setupStart = performance.now();
   const { close, fn } = await getBenchItem(name, meta);
   logger.info(`setup     ${formatMs(performance.now() - setupStart)}`);
+  // 在初始化之后、测量之前回收，避免前一系列与初始化产生的垃圾计入测量
+  if (options.gc && globalThis.gc) {
+    const gcStart = performance.now();
+    globalThis.gc();
+    logger.info(`gc        ${formatMs(performance.now() - gcStart)}`);
+  }
 
   let result: ConcurrencyBenchResultWithCPUAndMemory;
   try {
@@ -129,22 +133,24 @@ export async function runBenchItem<Meta extends {} = {}>(
  * （同进程或子进程），runItem 需把样本与结果保存到 config.benchDataDir 并返回运行结果。
  * 开始前检查结果目录已有清单的参数是否一致，所有系列结束后一次性写入清单，只登记成功的系列。
  * 单个系列失败只记录到汇总表，不会中断其余系列，也不会使返回的 Promise 拒绝。
+ * `gc` 描述 runItem 的 gc 策略，仅用于输出头部信息和记录清单。
  */
 export async function runBenchSuite(
   config: UserBenchConfig,
   options: {
     series: string[];
     meta?: unknown;
+    gc: GcMode;
     runItem: (series: string) => Promise<ConcurrencyBenchResultWithCPUAndMemory>;
   },
 ): Promise<void> {
-  const { series, meta, runItem } = options;
+  const { series, meta, gc, runItem } = options;
   const outputDir = resolveDataDir(config);
   const collector = new BenchCollector(outputDir);
-  const manifestInfo = { benchName: config.benchName, params: manifestParams(config), meta };
+  const manifestInfo = { benchName: config.benchName, params: manifestParams(config, gc), meta };
   await collector.assertManifestCompatible(manifestInfo);
 
-  printBenchHeader({ ...config, series, meta });
+  printBenchHeader({ ...config, series, meta, gc });
   const startTime = performance.now();
   const summaries: SeriesSummary[] = [];
   for (const [index, name] of series.entries()) {
@@ -165,7 +171,10 @@ export async function runBenchSuite(
   await collector.saveManifest(manifestInfo, series);
 }
 
-/** 在当前进程内依次运行所有系列，结束后输出汇总表。单个系列失败不会中断其余系列。 */
+/**
+ * 在当前进程内依次运行所有系列，结束后输出汇总表。单个系列失败不会中断其余系列。
+ * 运行时暴露了 gc 时，每个系列测量前执行一次。
+ */
 export async function runUserBench<Meta extends {} = {}>(
   config: UserBenchConfig,
   options: {
@@ -174,21 +183,15 @@ export async function runUserBench<Meta extends {} = {}>(
     getBenchItem: GetBenchItem<Meta>;
   },
 ): Promise<void> {
-  const gc = resolveGc(config);
   const { series, meta, getBenchItem } = options;
   const outputDir = resolveDataDir(config);
+  const gc = inProcessGcMode();
 
   await runBenchSuite(config, {
     series,
     meta,
-    runItem: (name) => {
-      if (gc) {
-        const start = performance.now();
-        gc();
-        createBenchLogger().info(`gc        ${formatMs(performance.now() - start)}`);
-      }
-      return runBenchItem(config, { series: name, meta, getBenchItem });
-    },
+    gc,
+    runItem: (name) => runBenchItem(config, { series: name, meta, getBenchItem, gc: gc === "before-each" }),
   });
   try {
     const svg = await genResultSvgFromResultDir(outputDir, { report: config.report });

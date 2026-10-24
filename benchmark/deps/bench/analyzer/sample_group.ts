@@ -1,7 +1,11 @@
-import type { ConcurrencyBenchResultWithCPUAndMemory, ConcurrencyBenchSample } from "../types/bench_result.ts";
+import type {
+  ConcurrencyBenchResultWithCPUAndMemory,
+  ConcurrencyBenchSample,
+  ConcurrencyBenchSnapshot,
+} from "../types/bench_result.ts";
 
 /** `inFlight` 为快照时刻实际在途的操作数（采样值），不是目标并发。 */
-export type IntervalMetric = "inFlight" | "ops" | "cpu" | "rss" | "memoryExtended" | "jsHeap";
+export type IntervalMetric = "inFlight" | "ops" | "cpu" | "rss" | "memoryExtended" | "arrayBuffers" | "jsHeap";
 
 /** 正式测量窗口内的资源时间序列，每个下标对应一个快照区间。 */
 export type IntervalSamples = Record<IntervalMetric, number[]> & {
@@ -169,10 +173,11 @@ function buildIntervalSamples(
   run: ConcurrencyBenchResultWithCPUAndMemory,
   successSamples: ConcurrencyBenchSample[],
 ): IntervalSamples {
-  const snapshots = run.snapshot;
-  const timestamps = snapshots.map((snapshot) => snapshot.timestamp);
+  const snapshot = run.snapshot;
+  const timestamps = snapshot.timestamp;
+  const count = timestamps.length;
   // completions[i] 统计完成时间落在 [timestamps[i], timestamps[i + 1]) 的成功操作
-  const completions = new Array<number>(Math.max(0, snapshots.length - 1)).fill(0);
+  const completions = new Array<number>(Math.max(0, count - 1)).fill(0);
   for (const sample of successSamples) {
     const index = floorIndex(timestamps, sample[1]);
     if (index >= 0 && index < completions.length) completions[index]++;
@@ -185,41 +190,45 @@ function buildIntervalSamples(
     cpu: [],
     rss: [],
     memoryExtended: [],
+    arrayBuffers: [],
     jsHeap: [],
   };
-  for (let i = 1; i < snapshots.length; i++) {
-    const previous = snapshots[i - 1];
-    const current = snapshots[i];
-    if (current.timestamp <= run.startTime || previous.timestamp >= run.endTime) continue;
-    const ms = current.timestamp - previous.timestamp;
+  const { user, system } = snapshot;
+  for (let i = 1; i < count; i++) {
+    const previousTime = timestamps[i - 1];
+    const currentTime = timestamps[i];
+    if (currentTime <= run.startTime || previousTime >= run.endTime) continue;
+    const ms = currentTime - previousTime;
     if (ms <= 0) continue;
-    result.seconds.push((current.timestamp - run.startTime) / 1000);
+    result.seconds.push((currentTime - run.startTime) / 1000);
     result.intervalSeconds.push(ms / 1000);
-    result.inFlight.push(snapshotMetric(current, "inFlight"));
+    result.inFlight.push(snapshotMetric(snapshot, i, "inFlight"));
     result.ops.push(completions[i - 1] / (ms / 1000));
-    result.cpu.push((current.user + current.system - previous.user - previous.system) / (ms * 10));
-    result.rss.push(snapshotMetric(current, "rss"));
-    result.memoryExtended.push(snapshotMetric(current, "memoryExtended"));
-    result.jsHeap.push(snapshotMetric(current, "jsHeap"));
+    result.cpu.push((user[i] + system[i] - user[i - 1] - system[i - 1]) / (ms * 10));
+    result.rss.push(snapshotMetric(snapshot, i, "rss"));
+    result.memoryExtended.push(snapshotMetric(snapshot, i, "memoryExtended"));
+    result.arrayBuffers.push(snapshotMetric(snapshot, i, "arrayBuffers"));
+    result.jsHeap.push(snapshotMetric(snapshot, i, "jsHeap"));
   }
   return result;
 }
 
-type Snapshot = ConcurrencyBenchResultWithCPUAndMemory["snapshot"][number];
 /** 快照时刻的瞬时值指标；`ops` 与 `cpu` 是区间平均值，不属于此类。 */
-export type InstantMetric = "inFlight" | "rss" | "memoryExtended" | "jsHeap";
+export type InstantMetric = "inFlight" | "rss" | "memoryExtended" | "arrayBuffers" | "jsHeap";
 
-/** 从单个快照读取瞬时值指标，内存单位为 MiB。 */
-export function snapshotMetric(snapshot: Snapshot, metric: InstantMetric): number {
+/** 读取第 `index` 次快照的瞬时值指标，内存单位为 MiB。 */
+export function snapshotMetric(snapshot: ConcurrencyBenchSnapshot, index: number, metric: InstantMetric): number {
   switch (metric) {
     case "inFlight":
-      return snapshot.currentConcurrency;
+      return snapshot.currentConcurrency[index];
     case "rss":
-      return snapshot.rss / 1024 ** 2;
+      return snapshot.rss[index] / 1024 ** 2;
     case "memoryExtended":
-      return snapshot.external / 1024 ** 2;
+      return snapshot.external[index] / 1024 ** 2;
+    case "arrayBuffers":
+      return snapshot.arrayBuffers[index] / 1024 ** 2;
     case "jsHeap":
-      return snapshot.heapUsed / 1024 ** 2;
+      return snapshot.heapUsed[index] / 1024 ** 2;
   }
 }
 
@@ -274,6 +283,7 @@ export function analyzeSampleGroup(input: {
         cpu: weightedAverage(intervalSample, "cpu", startSeconds, endSeconds),
         rss: weightedAverage(intervalSample, "rss", startSeconds, endSeconds),
         memoryExtended: weightedAverage(intervalSample, "memoryExtended", startSeconds, endSeconds),
+        arrayBuffers: weightedAverage(intervalSample, "arrayBuffers", startSeconds, endSeconds),
         jsHeap: weightedAverage(intervalSample, "jsHeap", startSeconds, endSeconds),
       },
     };

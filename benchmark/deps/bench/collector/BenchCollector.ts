@@ -1,12 +1,31 @@
 import os from "node:os";
 import process from "node:process";
-import { ConcurrencyBenchResultWithCPUAndMemory, ConcurrencyBenchSample } from "../types/bench_result.ts";
+import type {
+  ConcurrencyBenchResultWithCPUAndMemory,
+  ConcurrencyBenchSample,
+  ConcurrencyBenchSnapshot,
+} from "../types/bench_result.ts";
 import { openFileCollector, readFileSamples, writeFileSamples } from "./SampleCollector.ts";
 import fs from "node:fs/promises";
 
 /** 结果目录中的清单文件名，目录结构见 {@link SampleCollector}。 */
 export const MANIFEST_FILE_NAME = "manifest.json";
-
+export function createSnapshot(): ConcurrencyBenchSnapshot {
+  return {
+    user: [],
+    system: [],
+    rss: [],
+    heapTotal: [],
+    heapUsed: [],
+    external: [],
+    arrayBuffers: [],
+    currentConcurrency: [],
+    nextOperationIndex: [],
+    successCount: [],
+    errorCount: [],
+    timestamp: [],
+  };
+}
 /** 读写单个基准测试结果目录，目录结构见 {@link SampleCollector}。 */
 export class BenchCollector {
   static replaceName(name: string) {
@@ -43,7 +62,7 @@ export class BenchCollector {
   ) {
     const filePath = this.getResultFilePath(name);
     const record: StoredBenchResult = { schemaVersion: 1, metadata, result: data };
-    await fs.writeFile(filePath, JSON.stringify(record, null, 2));
+    await fs.writeFile(filePath, JSON.stringify(record));
   }
   async getBenchResult(name: string): Promise<StoredBenchResult> {
     const data = await fs.readFile(this.getResultFilePath(name), { encoding: "utf8" });
@@ -112,6 +131,7 @@ export type BenchManifestParams = {
   duration: number;
   warmupDuration?: number;
   intervalSample: number;
+  /** 同进程运行的系列是否在测量前手动执行了 gc；命令行在独立子进程中运行时为 false */
   gc?: boolean;
 };
 export type BenchRuntimeEnvironment = {

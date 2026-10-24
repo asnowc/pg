@@ -52,10 +52,8 @@ export function fileExists(filePath: string): Promise<boolean> {
   return fs.access(filePath).then(() => true, () => false);
 }
 
-/** 读取分析缓存；文件不存在或为旧结构（吞吐字段名为 `qps`，或缺少采样的在途数 `inFlight`）时返回 undefined，以便重新分析。 */
+/** 读取分析缓存；文件不存在时返回 undefined。 */
 async function readAnalysisCache(filePath: string): Promise<AnalyzedSampleGroup | undefined> {
   if (!await fileExists(filePath)) return undefined;
-  const analysis = JSON.parse(await fs.readFile(filePath, "utf-8")) as AnalyzedSampleGroup;
-  const { intervalSample } = analysis;
-  return Array.isArray(intervalSample?.ops) && Array.isArray(intervalSample.inFlight) ? analysis : undefined;
+  return JSON.parse(await fs.readFile(filePath, "utf-8")) as AnalyzedSampleGroup;
 }

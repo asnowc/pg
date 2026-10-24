@@ -8,8 +8,8 @@ type Meta = { poolSize: number; queryName: QueryName };
 
 export const BENCH_CONFIG: UserBenchConfig = {
   benchName: "PostgreSQL client query",
-  duration: 2000,
-  concurrency: [100, 250, 500],
+  duration: 1200,
+  concurrency: [25, 100, 200, 400],
   intervalSample: 500,
   warmupDuration: 100,
   benchDataDir: RESULT_DIR,
@@ -22,9 +22,9 @@ const queryNames: QueryName[] = [
 ];
 export const SERIES: Library[] = [
   "@asla/pg",
-  // "@asla/pg-node",
+  "@asla/pg-node",
   "postgres",
-  // "pg",
+  "pg",
   // "fake2",
 ];
 export const META: Meta = { poolSize: 4, queryName: "select" };

@@ -23,10 +23,27 @@ export type ConcurrencyBenchResult = {
   /** 排空完成时间，单位为毫秒，使用 performance.now() 获取 */
   clearTime: number;
 };
+/**
+ * 列式存储的快照：各字段数组等长，下标 i 对应第 i 次快照，按时间升序。
+ * `timestamp` 为 performance.now() 的毫秒值。
+ */
+export type ConcurrencyBenchSnapshot = {
+  user: number[];
+  system: number[];
+  rss: number[];
+  heapTotal: number[];
+  heapUsed: number[];
+  external: number[];
+  arrayBuffers: number[];
+  currentConcurrency: number[];
+  nextOperationIndex: number[];
+  successCount: number[];
+  errorCount: number[];
+  timestamp: number[];
+};
+
 export type ConcurrencyBenchResultWithCPUAndMemory = ConcurrencyBenchResult & {
-  snapshot: (NodeJS.CpuUsage & NodeJS.MemoryUsage & OperationRunnerContext & {
-    timestamp: number;
-  })[];
+  snapshot: ConcurrencyBenchSnapshot;
 };
 /** 时间为 performance.now() 的毫秒值。 */
 export type ConcurrencyBenchSample = [startTime: number, endTime: number];

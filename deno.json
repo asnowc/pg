@@ -12,7 +12,8 @@
     "publishDry": "deno publish --dry-run --allow-dirty",
     "bundle": "deno bundle src/mod.ts -o dist/mod.js",
     "bench": "deno run -A benchmark/deps/bench-cli.ts",
-    "bench:pg-client": "deno task bench run benchmark/test/postgresql-client.bench.ts",
+    "bench:pg-client": "deno task bench run -d 4000 benchmark/test/postgresql-client.bench.ts",
+    "bench:vs-old": "deno task bench run -d 4000 benchmark/test/postgresql-client.bench.ts",
     "transpile": "deno transpile src/**/*.ts --outdir dist --declaration"
   },
   "imports": {

@@ -28,7 +28,7 @@ export function addSvgReportOptions(command: Command): Command {
       "comma separated sections: environment,summary,throughput,distribution,latency,timeline,notes",
       list,
     )
-    .option("--metrics <list>", "timeline metrics: inFlight,ops,cpu,rss,memoryExtended,jsHeap", list)
+    .option("--metrics <list>", "timeline metrics: inFlight,ops,cpu,rss,memoryExtended,arrayBuffers,jsHeap", list)
     .option("--rankings", "show per-stage rankings below throughput and timeline charts")
     .option("--no-rankings", "hide per-stage rankings")
     .option("--latency-columns <list>", "latency table columns: min,p50,p75,p90,p95,p99,p995,p999,max,mean,rme", list)

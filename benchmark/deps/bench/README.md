@@ -57,6 +57,9 @@ if (import.meta.main) {
 - `close` 在系列结束后调用，负责释放连接、连接池等资源；测量失败时也会调用。
 - `META` 会记录到清单并传给 `getBenchItem`，用于描述影响结果的业务参数。
 - `runUserBench` 在当前进程中依次运行所有系列；需要隔离 JIT、GC 与资源占用时使用命令行，每个系列运行在独立子进程中。
+- 同进程运行（`runUserBench`）且运行时暴露了 gc（Deno：`--v8-flags=--expose-gc`；Node：`--expose-gc`）时，
+  每个系列在初始化之后、测量之前执行一次 gc；未暴露时不执行。命令行的每个系列在新进程中运行，无需手动 gc。
+  运行日志的头部会显示 gc 策略，是否执行了 gc 也会记录到结果清单与报告的环境信息。
 
 ## 命令行
 
@@ -80,11 +83,11 @@ bench-cli run my.bench.ts -s timer-1ms -c 100,250 -d 2000 -w 100 -o results/tmp
 | `-w, --warmup <ms>`        | 预热时长                                     |
 | `-i, --interval <ms>`      | CPU/内存采样间隔                             |
 | `-m, --meta <json>`        | 合并到 `META` 的 JSON 对象                   |
-| `--gc`                     | 暴露 GC，并在每个系列开始前执行一次          |
 | `--no-report`              | 只保存结果，不生成 SVG                       |
 
 另支持下文的 [SVG 显示选项](#svg-显示选项)，与 `BENCH_CONFIG.report` 合并。
 
+- 每个系列在新进程中运行，系列之间互不影响，不需要手动 gc。
 - 输出目录中已有同名系列的结果时拒绝运行，避免覆盖。
 - 同一结果目录可分多次追加不同系列，但测试名称、参数或 meta 不一致时拒绝运行，保证结果可比。
 - 单个系列失败只记录在汇总表中，不会中断其余系列；清单只登记成功的系列。
@@ -113,7 +116,7 @@ bench-cli report results/my-bench --sections summary,latency --latency-columns p
 | -------------------------- | ----------------------------------------------------------------------------------- |
 | `-p, --preset <name>`      | `default`、`compact`、`throughput`、`latency`、`resource`                           |
 | `--sections <list>`        | `environment,summary,throughput,distribution,latency,timeline,notes`                |
-| `--metrics <list>`         | 资源曲线：`inFlight,ops,cpu,rss,memoryExtended,jsHeap`                              |
+| `--metrics <list>`         | 资源曲线：`inFlight,ops,cpu,rss,memoryExtended,arrayBuffers,jsHeap`                 |
 | `--rankings/--no-rankings` | 是否在吞吐柱状图与资源曲线下方显示各并发档排行                                      |
 | `--latency-columns <list>` | 延迟明细列：`min,p50,p75,p90,p95,p99,p995,p999,max,mean,rme`                        |
 | `--latency-sort <field>`   | 延迟明细的排序与倍数依据，默认 `mean`                                               |
@@ -124,15 +127,15 @@ bench-cli report results/my-bench --sections summary,latency --latency-columns p
 
 报告区块按以下顺序渲染，选项只决定是否显示：
 
-| 区块           | 内容                                                                                                                                                                                                                            |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `environment`  | 运行时、机器、测试参数、meta 与创建时间                                                                                                                                                                                         |
-| `summary`      | 整个测量窗口的汇总：操作数、错误数、错误率、ops/s、mean/p50/p99、CPU 均值、RSS 峰值                                                                                                                                             |
-| `throughput`   | 各并发档 ops/s 分组柱状图                                                                                                                                                                                                       |
-| `distribution` | 各并发档延迟百分位曲线；数值跨度达到 20 倍时使用对数纵轴                                                                                                                                                                        |
-| `latency`      | 各并发档延迟明细；RME 为 95% 均值置信区间的相对半宽                                                                                                                                                                             |
-| `timeline`     | `metrics` 指定的资源时间曲线；时间从预热开始计时，横轴起点为预热时长，虚线标记档位边界。ops/s 与 CPU 为区间平均值，以阶梯线覆盖各采样区间；在途数与内存为快照时刻的瞬时值，以阶梯线保持到下一个快照，从正式测量开始时的快照画起 |
-| `notes`        | 附注与统计口径                                                                                                                                                                                                                  |
+| 区块           | 内容                                                                                                                                                                                                                                                                                                |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `environment`  | 运行时、机器、测试参数、meta 与创建时间                                                                                                                                                                                                                                                             |
+| `summary`      | 整个测量窗口的汇总：操作数、错误数、错误率、ops/s、mean/p50/p99、CPU 均值、RSS 峰值                                                                                                                                                                                                                 |
+| `throughput`   | 各并发档 ops/s 分组柱状图                                                                                                                                                                                                                                                                           |
+| `distribution` | 各并发档延迟百分位曲线；数值跨度达到 20 倍时使用对数纵轴                                                                                                                                                                                                                                            |
+| `latency`      | 各并发档延迟明细；RME 为 95% 均值置信区间的相对半宽                                                                                                                                                                                                                                                 |
+| `timeline`     | `metrics` 指定的资源时间曲线；时间从预热开始计时，横轴起点为预热时长，虚线标记档位边界。均以折线绘制。ops/s 与 CPU 为区间平均值，绘制在各采样区间结束时刻；在途数与内存为快照时刻的瞬时值，从正式测量开始时的快照画起。Deno 的 `arrayBuffers` 恒为 0（计入 external），此时省略该曲线并在附注中说明 |
+| `notes`        | 附注与统计口径                                                                                                                                                                                                                                                                                      |
 
 - 所有排行与表格统一按数值从高到低排序，`vs lowest` 为该值相对同表最低值的倍数。
 - 每个指标在标题右侧标注越高越好还是越低越好，阅读倍数时需结合该提示。
@@ -153,7 +156,7 @@ bench-cli report results/my-bench --sections summary,latency --latency-columns p
 | `compact`    | 环境、汇总、吞吐柱状图与延迟分布，适合放入文档或 PR    |
 | `throughput` | 环境、汇总、吞吐柱状图与在途数/吞吐曲线                |
 | `latency`    | 环境、汇总、延迟分布与完整延迟明细（按 p99 排序）      |
-| `resource`   | 环境与 CPU/RSS/扩展内存/JS 堆曲线                      |
+| `resource`   | 环境与 CPU/RSS/扩展内存/ArrayBuffer/JS 堆曲线          |
 
 在代码中使用时，显式选项覆盖预设：
 
@@ -171,13 +174,13 @@ await renderSvg({ path: "summary.svg", results, sections: ["summary", "throughpu
 
 ## 结果目录
 
-| 文件                   | 内容                                                                   |
-| ---------------------- | ---------------------------------------------------------------------- |
-| `manifest.json`        | 测试名称、参数、meta、运行环境，以及已成功生成结果的系列               |
-| `<series>.sample.bin`  | 成功操作的样本（二进制，默认微秒精度）                                 |
-| `<series>.result.json` | 档位起止时间、成功/失败总数与 CPU/内存快照                             |
-| `<series>.report.json` | 生成报告时缓存的分析结果，可删除后重新生成；旧结构的缓存会自动重新分析 |
-| `report.svg`           | 所有系列的对比报告                                                     |
+| 文件                   | 内容                                                                             |
+| ---------------------- | -------------------------------------------------------------------------------- |
+| `manifest.json`        | 测试名称、参数、meta、运行环境，以及已成功生成结果的系列                         |
+| `<series>.sample.bin`  | 成功操作的样本（二进制，默认微秒精度）                                           |
+| `<series>.result.json` | 档位起止时间、成功/失败总数与 CPU/内存快照（列式：每个字段一个按时间排列的数组） |
+| `<series>.report.json` | 生成报告时缓存的分析结果，可删除后重新生成                                       |
+| `report.svg`           | 所有系列的对比报告                                                               |
 
 `<series>` 为系列名中的空白、`/`、`\`、`:` 替换为 `_` 后的文件名。
 

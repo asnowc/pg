@@ -22,7 +22,6 @@ export type RunOptions = SvgReportCliOptions & {
   warmup?: number;
   interval?: number;
   meta?: Record<string, unknown>;
-  gc?: boolean;
   report: boolean;
 };
 
@@ -39,6 +38,7 @@ export async function runCommand(file: string, options: RunOptions): Promise<boo
   await runBenchSuite(config, {
     series,
     meta,
+    gc: "isolated",
     runItem: async (name) => {
       await spawnBenchItem({ file: fileUrl, series: name, config, meta });
       return (await collector.getBenchResult(name)).result;
@@ -70,7 +70,6 @@ async function resolveRunPlan(file: string, options: RunOptions) {
     duration: options.duration ?? base.duration,
     warmupDuration: options.warmup ?? base.warmupDuration,
     intervalSample: options.interval ?? base.intervalSample,
-    gc: options.gc || base.gc,
     benchDataDir: outputDir,
     report: { ...base.report, ...toSvgReportOptions(options) },
   };
@@ -115,12 +114,12 @@ async function loadBenchModule(fileUrl: string): Promise<BenchModule<any>> {
 const CHILD_ENTRY = fileURLToPath(new URL("./run_in_process.ts", import.meta.url));
 const isDeno = typeof (globalThis as { Deno?: unknown }).Deno !== "undefined";
 
-/** 启动 run_in_process.ts 子进程执行单个系列；子进程输出直接继承到当前终端。 */
+/**
+ * 启动 run_in_process.ts 子进程执行单个系列；子进程输出直接继承到当前终端。
+ * 每个系列都在新进程中运行，不需要手动 gc。
+ */
 export function spawnBenchItem(task: ChildTask): Promise<void> {
-  const exposeGc = task.config.gc === true;
-  const args = isDeno
-    ? ["run", "-A", ...(exposeGc ? ["--v8-flags=--expose-gc"] : []), CHILD_ENTRY]
-    : [...process.execArgv, ...(exposeGc ? ["--expose-gc"] : []), CHILD_ENTRY];
+  const args = isDeno ? ["run", "-A", CHILD_ENTRY] : [...process.execArgv, CHILD_ENTRY];
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, args, {
       stdio: "inherit",

@@ -32,16 +32,3 @@ export function loadLibrary(name: string): Promise<PoolQueryTest<any>> {
 }
 
 export type Library = typeof libraries[number];
-export function integer(minimum: number) {
-  return (value: string) => {
-    const number = Number(value);
-    if (!/^\d+$/.test(value) || !Number.isSafeInteger(number) || number < minimum) {
-      throw new Error(`Expected a integer >= ${minimum}, received ${JSON.stringify(value)}`);
-    }
-    return number;
-  };
-}
-
-export function filename(name: string): string {
-  return name.replace(/^@/, "").replace(/[\\/]/g, "-");
-}

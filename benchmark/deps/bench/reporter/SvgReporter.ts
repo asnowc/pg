@@ -36,6 +36,7 @@ const INTERVAL_METRICS: readonly IntervalMetric[] = [
   "cpu",
   "rss",
   "memoryExtended",
+  "arrayBuffers",
   "jsHeap",
 ];
 
@@ -67,8 +68,8 @@ export type SvgReportOptions = {
   labels?: Partial<SvgLabels>;
   /** 显示的区块，渲染顺序固定为 {@link SVG_SECTIONS} 的顺序。 */
   sections?: readonly SvgSection[];
-  /** `timeline` 区块中绘制的资源曲线，按给定顺序渲染。旧名称 `qps` 视为 `ops`，`concurrency` 视为 `inFlight`。 */
-  metrics?: readonly (IntervalMetric | "qps" | "concurrency")[];
+  /** `timeline` 区块中绘制的资源曲线，按给定顺序渲染。 */
+  metrics?: readonly IntervalMetric[];
   /**
    * 是否在吞吐柱状图和资源曲线下方显示各并发档的平均值排行。
    * 所有排行统一按数值从高到低排序，倍数为相对同表最低值的比值。
@@ -81,16 +82,10 @@ export type SvgReportOptions = {
   /** `distribution` 区块横轴上的百分位点，不能包含 `rme`。 */
   distribution?: readonly LatencyField[];
 };
-type PresetOptions =
-  & {
-    readonly [K in Exclude<keyof SvgReportOptions, "preset" | "labels" | "metrics">]-?: NonNullable<
-      SvgReportOptions[K]
-    >;
-  }
-  & { readonly metrics: readonly IntervalMetric[] };
+type PresetOptions = {
+  readonly [K in Exclude<keyof SvgReportOptions, "preset" | "labels">]-?: NonNullable<SvgReportOptions[K]>;
+};
 export type ResolvedSvgReportOptions = PresetOptions & { readonly labels: SvgLabels };
-
-const LEGACY_METRICS: Partial<Record<string, IntervalMetric>> = { qps: "ops", concurrency: "inFlight" };
 
 const ALL_PERCENTILES: readonly LatencyField[] = ["p50", "p75", "p90", "p95", "p99", "p995", "p999"];
 const DEFAULT_LATENCY_COLUMNS: readonly LatencyField[] = ["p50", "p90", "p99", "p999", "max", "mean", "rme"];
@@ -136,7 +131,7 @@ const svgReportPresets: Readonly<Record<SvgPreset, PresetOptions>> = {
   /** 资源：CPU 与各类内存曲线及其排行 */
   resource: {
     sections: ["environment", "timeline", "notes"],
-    metrics: ["cpu", "rss", "memoryExtended", "jsHeap"],
+    metrics: ["cpu", "rss", "memoryExtended", "arrayBuffers", "jsHeap"],
     rankings: true,
     latencyColumns: DEFAULT_LATENCY_COLUMNS,
     latencySortBy: "mean",
@@ -163,7 +158,7 @@ export function resolveSvgReportOptions(options: SvgReportOptions = {}): Resolve
   const resolved: ResolvedSvgReportOptions = {
     labels: { ...DEFAULT_LABELS, ...options.labels },
     sections: options.sections ?? base.sections,
-    metrics: options.metrics?.map((metric) => (LEGACY_METRICS[metric] ?? metric) as IntervalMetric) ?? base.metrics,
+    metrics: options.metrics ?? base.metrics,
     rankings: options.rankings ?? base.rankings,
     latencyColumns: options.latencyColumns ?? base.latencyColumns,
     latencySortBy: options.latencySortBy ?? base.latencySortBy,
@@ -198,6 +193,7 @@ const METRIC_INFO: Record<IntervalMetric, MetricInfo> = {
   cpu: { title: "CPU (% of one logical core)", better: "lower" },
   rss: { title: "Process RSS (MiB)", better: "lower" },
   memoryExtended: { title: "External memory (MiB)", better: "lower" },
+  arrayBuffers: { title: "ArrayBuffer memory (MiB)", better: "lower" },
   jsHeap: { title: "JS heap used (MiB)", better: "lower" },
 };
 
@@ -571,19 +567,17 @@ function distributionSection({ layout, results, colors, options }: RenderContext
 
 const isInstantMetric = (metric: IntervalMetric): metric is InstantMetric => metric !== "ops" && metric !== "cpu";
 
-/** 正式测量开始时的快照（不晚于 startTime 的最后一个快照），用于绘制瞬时值曲线的起点。 */
-function startSnapshot(result: AnalyzedSampleGroup) {
-  let found: AnalyzedSampleGroup["run"]["snapshot"][number] | undefined;
-  for (const snapshot of result.run.snapshot) {
-    if (snapshot.timestamp > result.run.startTime) break;
-    found = snapshot;
-  }
+/** 正式测量开始时的快照下标（不晚于 startTime 的最后一个快照），用于绘制瞬时值曲线的起点；没有时返回 -1。 */
+function startSnapshotIndex(result: AnalyzedSampleGroup): number {
+  const { timestamp } = result.run.snapshot;
+  let found = -1;
+  for (let i = 0; i < timestamp.length && timestamp[i] <= result.run.startTime; i++) found = i;
   return found;
 }
 
 /**
- * 全部以阶梯线绘制。区间平均值（ops、cpu）覆盖整个采样区间，从正式测量起点开始；
- * 瞬时值（在途数、内存）从各快照时刻保持到下一个快照，包含正式测量开始时的快照。
+ * 全部以折线绘制。区间平均值（ops、cpu）绘制在采样区间右端点；
+ * 瞬时值（在途数、内存）绘制在各快照时刻，包含正式测量开始时的快照。
  */
 function metricSeries(
   result: AnalyzedSampleGroup,
@@ -593,18 +587,13 @@ function metricSeries(
 ): LineSeriesOption {
   const { stages, intervalSample } = result;
   const points = intervalSample.seconds.map((seconds, i) => [seconds + warmupSeconds, intervalSample[metric][i]]);
-  const instant = isInstantMetric(metric);
-  if (instant) {
-    const start = startSnapshot(result);
-    if (start) points.unshift([warmupSeconds, snapshotMetric(start, metric)]);
-  } else if (points.length) {
-    points.unshift([warmupSeconds, points[0][1]]);
+  if (isInstantMetric(metric)) {
+    const start = startSnapshotIndex(result);
+    if (start >= 0) points.unshift([warmupSeconds, snapshotMetric(result.run.snapshot, start, metric)]);
   }
   return {
     name: result.name,
     type: "line",
-    // start：区间值从左端水平延伸到右端点；end：快照值保持到下一个快照
-    step: instant ? "end" : "start",
     // 在途数是离散采样值，显示采样点以免被误读为连续测量
     showSymbol: metric === "inFlight",
     symbolSize: 4,
@@ -714,8 +703,17 @@ function notesSection({ layout, options: { labels } }: RenderContext, notes: str
  * @throws 选项名称无效时抛出，见 {@link resolveSvgReportOptions}。
  */
 async function renderSvgString(input: Omit<SvgReportInput, "path">): Promise<string> {
-  const { results, notes = [], manifest, title = "Concurrency benchmark" } = input;
-  const options = resolveSvgReportOptions(input);
+  const { results, manifest, title = "Concurrency benchmark" } = input;
+  const notes = [...input.notes ?? []];
+  let options = resolveSvgReportOptions(input);
+  // Deno 的 memoryUsage() 恒报告 arrayBuffers 为 0（已计入 external），此时省略该曲线以免误读为零占用
+  if (
+    options.metrics.includes("arrayBuffers") && results.length &&
+    results.every((result) => result.intervalSample.arrayBuffers.every((value) => value === 0))
+  ) {
+    options = { ...options, metrics: options.metrics.filter((metric) => metric !== "arrayBuffers") };
+    notes.push("ArrayBuffer memory chart omitted: the runtime reported 0 (Deno counts it in external memory).");
+  }
   const sections = new Set(options.sections);
   const { init } = await import("echarts");
   const colors = results.map((_, index) => seriesColor(index));

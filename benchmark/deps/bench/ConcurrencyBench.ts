@@ -1,4 +1,5 @@
 import type { ConcurrencyBenchResultWithCPUAndMemory, ConcurrencyBenchSample } from "./types/bench_result.ts";
+import { createSnapshot } from "./collector/BenchCollector.ts";
 import { cpuUsage, memoryUsage } from "node:process";
 import { ConcurrencyRunner } from "./utils/ConcurrencyRunner.ts";
 import { BenchSetting, runBench, StageEndInfo, WarmupEndInfo } from "./utils/runBench.ts";
@@ -54,18 +55,24 @@ export class ConcurrencyBench {
     await fn(-1); // 测试调用
     const runner = new ConcurrencyRunner(fn);
 
-    const intervalSampleData: ConcurrencyBenchResultWithCPUAndMemory["snapshot"] = [];
+    const intervalSampleData = createSnapshot();
 
     const snapshot = () => {
-      intervalSampleData.push({
-        ...cpuUsage(),
-        ...memoryUsage(),
-        timestamp: performance.now(),
-        currentConcurrency: runner.currentConcurrency,
-        nextOperationIndex: runner.nextOperationIndex,
-        successCount: runner.successCount,
-        errorCount: runner.errorCount,
-      });
+      const { user, system } = cpuUsage();
+      const memory = memoryUsage();
+      const data = intervalSampleData;
+      data.timestamp.push(performance.now());
+      data.user.push(user);
+      data.system.push(system);
+      data.rss.push(memory.rss);
+      data.heapTotal.push(memory.heapTotal);
+      data.heapUsed.push(memory.heapUsed);
+      data.external.push(memory.external);
+      data.arrayBuffers.push(memory.arrayBuffers);
+      data.currentConcurrency.push(runner.currentConcurrency);
+      data.nextOperationIndex.push(runner.nextOperationIndex);
+      data.successCount.push(runner.successCount);
+      data.errorCount.push(runner.errorCount);
     };
     const timer = setInterval(snapshot, intervalSampleCPUAndMemory);
     let warmupEndOperationIndex: number = 0;

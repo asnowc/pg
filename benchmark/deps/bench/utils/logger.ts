@@ -1,5 +1,6 @@
 import type { ProgressEvent } from "../ConcurrencyBench.ts";
 import type { ConcurrencyBenchResultWithCPUAndMemory } from "../types/bench_result.ts";
+import type { GcMode } from "../run.ts";
 
 export type SeriesSummary = {
   name: string;
@@ -74,7 +75,9 @@ export function createBenchLogger(indent = "  "): BenchLogger {
     },
     drain(result) {
       // runBench 在停止补发后立即补采一次快照，其中的在途数即需要排空的操作数
-      const inFlight = result.snapshot.find((s) => s.timestamp >= result.endTime)?.currentConcurrency;
+      const { timestamp, currentConcurrency } = result.snapshot;
+      const index = timestamp.findIndex((time) => time >= result.endTime);
+      const inFlight = index < 0 ? undefined : currentConcurrency[index];
       const count = inFlight === undefined ? "" : `${formatCount(inFlight)} in-flight operations `;
       info(`drain     ${count}settled in ${formatMs(result.clearTime - result.endTime)}`);
     },
@@ -84,6 +87,12 @@ function pad(value: string | number, width: number) {
   return String(value).padEnd(width);
 }
 
+const GC_MODE_TEXT: Record<GcMode, string> = {
+  "before-each": "before each series",
+  isolated: "not needed (each series runs in a new process)",
+  unavailable: "unavailable (Deno: --v8-flags=--expose-gc, Node: --expose-gc)",
+};
+
 export function printBenchHeader(input: {
   benchName: string;
   series: string[];
@@ -92,6 +101,7 @@ export function printBenchHeader(input: {
   warmupDuration?: number;
   intervalSample: number;
   meta?: unknown;
+  gc: GcMode;
 }) {
   const concurrency = typeof input.concurrency === "number" ? [input.concurrency] : input.concurrency;
   console.log(`\nBenchmark: ${input.benchName}`);
@@ -99,6 +109,7 @@ export function printBenchHeader(input: {
   console.log(`  concurrency  ${concurrency.join(", ")} (${formatMs(input.duration)} each)`);
   console.log(`  warmup       ${formatMs(input.warmupDuration ?? 0)}`);
   console.log(`  sampling     every ${formatMs(input.intervalSample)}`);
+  console.log(`  gc           ${GC_MODE_TEXT[input.gc]}`);
   if (input.meta !== undefined) console.log(`  meta         ${JSON.stringify(input.meta)}`);
 }
 

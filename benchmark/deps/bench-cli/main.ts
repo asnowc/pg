@@ -9,7 +9,7 @@ import { addSvgReportOptions } from "./report_options.ts";
 /*
   基准测试命令行入口，不导出任何成员。每个系列在独立子进程中运行，避免不同客户端库之间的 JIT、GC 和资源相互干扰。
 
-  run <file>      运行基准测试文件，结束后生成 SVG 报告
+  run <file>      运行基准测试文件，结束后生成 SVG 报告；每个系列在新进程中运行，无需手动 gc
   report <dir>    为结果目录生成 SVG 报告；已有报告且未指定显示选项时跳过，--force 重新分析
   两个命令都支持 --preset/--sections/--metrics 等 SVG 显示选项
 */
@@ -30,7 +30,6 @@ function createCli(): Command {
       .option("-w, --warmup <ms>", "warmup duration", integer(0))
       .option("-i, --interval <ms>", "CPU/memory sampling interval", integer(1))
       .option("-m, --meta <json>", "JSON merged into the module META", jsonObject)
-      .option("--gc", "expose and run gc before each series")
       .option("--no-report", "skip SVG report generation"),
   ).action(async (file: string, options: RunOptions) => {
     if (!await runCommand(file, options)) process.exitCode = 1;
