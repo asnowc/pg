@@ -1,6 +1,17 @@
 import type { ProgressEvent } from "../ConcurrencyBench.ts";
-import type { SeriesSummary } from "../run.ts";
 import type { ConcurrencyBenchResultWithCPUAndMemory } from "../types/bench_result.ts";
+
+export type SeriesSummary = {
+  name: string;
+  success: number;
+  failed: number;
+  /** 正式测量时长（不含预热和排空），毫秒 */
+  duration: number;
+  /** 每秒成功操作数 */
+  ops: number;
+  /** 失败原因；存在时表示该系列未完成 */
+  error?: string;
+};
 
 const numberFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
@@ -41,30 +52,30 @@ export function createBenchLogger(indent = "  "): BenchLogger {
           const { concurrency, duration, iterations } = event.data;
           info(
             `warmup    c=${pad(concurrency, 6)} ${pad(formatMs(duration), 8)}` +
-              ` ${formatCount(iterations)} requests started`,
+              ` ${formatCount(iterations)} operations started`,
           );
           break;
         }
         case "stage-end": {
           const { index, total, concurrency, duration, success, failed } = event.data;
-          const qps = duration > 0 ? (success * 1000) / duration : 0;
+          const ops = duration > 0 ? (success * 1000) / duration : 0;
           info(
             `stage ${index + 1}/${total}` +
               ` c=${pad(concurrency, 6)} ${pad(formatMs(duration), 8)}` +
-              ` ok ${pad(formatCount(success), 10)} qps ${formatCount(qps)}` +
+              ` ok ${pad(formatCount(success), 10)} ops/s ${formatCount(ops)}` +
               (failed ? `  fail ${formatCount(failed)}` : ""),
           );
           break;
         }
         case "first-error":
-          warn(`first failed request: ${errorMessage(event.data.error)}`);
+          warn(`first failed operation: ${errorMessage(event.data.error)}`);
           break;
       }
     },
     drain(result) {
-      // runBench 在停止补发后立即补采一次快照，其中的在途数即需要排空的请求数
+      // runBench 在停止补发后立即补采一次快照，其中的在途数即需要排空的操作数
       const inFlight = result.snapshot.find((s) => s.timestamp >= result.endTime)?.currentConcurrency;
-      const count = inFlight === undefined ? "" : `${formatCount(inFlight)} in-flight requests `;
+      const count = inFlight === undefined ? "" : `${formatCount(inFlight)} in-flight operations `;
       info(`drain     ${count}settled in ${formatMs(result.clearTime - result.endTime)}`);
     },
   };
@@ -80,7 +91,6 @@ export function printBenchHeader(input: {
   duration: number;
   warmupDuration?: number;
   intervalSample: number;
-  outputDir: string;
   meta?: unknown;
 }) {
   const concurrency = typeof input.concurrency === "number" ? [input.concurrency] : input.concurrency;
@@ -90,7 +100,6 @@ export function printBenchHeader(input: {
   console.log(`  warmup       ${formatMs(input.warmupDuration ?? 0)}`);
   console.log(`  sampling     every ${formatMs(input.intervalSample)}`);
   if (input.meta !== undefined) console.log(`  meta         ${JSON.stringify(input.meta)}`);
-  console.log(`  output       ${input.outputDir}`);
 }
 
 export function printSeriesTitle(index: number, total: number, name: string) {
@@ -98,12 +107,12 @@ export function printSeriesTitle(index: number, total: number, name: string) {
 }
 
 export function printSummary(rows: SeriesSummary[], elapsed: number) {
-  const header = ["series", "ok", "fail", "avg qps", "status"];
+  const header = ["series", "ok", "fail", "avg ops/s", "status"];
   const body = rows.map((row) => [
     row.name,
     formatCount(row.success),
     formatCount(row.failed),
-    formatCount(row.qps),
+    formatCount(row.ops),
     row.error ? `FAILED: ${row.error}` : "ok",
   ]);
   const widths = header.map((h, i) => Math.max(h.length, ...body.map((r) => (i === 4 ? 0 : r[i].length))));

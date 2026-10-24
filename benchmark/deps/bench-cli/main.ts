@@ -1,54 +1,53 @@
 import { Command } from "commander";
 import process from "node:process";
-import { spawn } from "node:child_process";
-import { UserBenchConfig } from "../bench.ts";
-import { startRunBenchItem } from "./run_in_process.ts";
+import { REPORT_SVG_NAME } from "../bench.ts";
+import { integer, integerList, jsonObject, list } from "./cli_args.ts";
+import { runCommand, type RunOptions } from "./run_command.ts";
+import { reportCommand, type ReportOptions } from "./report_command.ts";
+import { addSvgReportOptions } from "./report_options.ts";
 
-type Options = Partial<UserBenchConfig> & {
-  jsFile: string;
-  series: string[];
-};
-const RUN_IN_PROCESS = process.env["RUN_IN_PROCESS"];
-if (RUN_IN_PROCESS) {
-  // 基准测试进程
-  await startRunBenchItem(RUN_IN_PROCESS);
-} else {
-  // 主进程逻辑
-  const values = new Command()
-    .parse(process.argv, { from: "user" })
-    .opts<Options>();
+/*
+  基准测试命令行入口，不导出任何成员。每个系列在独立子进程中运行，避免不同客户端库之间的 JIT、GC 和资源相互干扰。
 
-  await runByProcess(values);
-}
-function integer(minimum: number) {
-  return (value: string) => {
-    const number = Number(value);
-    if (!/^\d+$/.test(value) || !Number.isSafeInteger(number) || number < minimum) {
-      throw new Error(`Expected a integer >= ${minimum}, received ${JSON.stringify(value)}`);
-    }
-    return number;
-  };
-}
-async function runByProcess(cliOptions: Options) {
-  const { jsFile, series, ...restOptions } = cliOptions;
-  for (const s of series) {
-    console.log(`\nRunning series: ${s}`);
-    await runBenchItemUseProcess(jsFile, JSON.stringify({ ...restOptions, series: s }));
-    console.log(`Finished series: ${s}`);
-  }
-}
-async function runBenchItemUseProcess(jsFile: string, optionsJsonText: string) {
-  await new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [import.meta.url, jsFile, optionsJsonText], {
-      stdio: "inherit",
-      env: { ...process.env, RUN_IN_PROCESS: "1" },
-    });
-    child.on("exit", (code) => {
-      if (code === 0) {
-        resolve(undefined);
-      } else {
-        reject(new Error(`Process exited with code ${code}`));
-      }
-    });
+  run <file>      运行基准测试文件，结束后生成 SVG 报告
+  report <dir>    为结果目录生成 SVG 报告；已有报告且未指定显示选项时跳过，--force 重新分析
+  两个命令都支持 --preset/--sections/--metrics 等 SVG 显示选项
+*/
+
+function createCli(): Command {
+  const program = new Command("bench-cli")
+    .description("Run concurrency benchmarks and generate SVG reports.")
+    .showHelpAfterError();
+
+  addSvgReportOptions(
+    program.command("run")
+      .description("Run a benchmark file; each series runs in its own child process.")
+      .argument("<file>", "benchmark module exporting default getBenchItem, BENCH_CONFIG and SERIES")
+      .option("-s, --series <names>", "comma separated series (default: SERIES of the module)", list)
+      .option("-o, --out <dir>", "output directory (default: BENCH_CONFIG.benchDataDir)")
+      .option("-c, --concurrency <list>", "comma separated concurrency stages", integerList(1))
+      .option("-d, --duration <ms>", "duration of each concurrency stage", integer(1))
+      .option("-w, --warmup <ms>", "warmup duration", integer(0))
+      .option("-i, --interval <ms>", "CPU/memory sampling interval", integer(1))
+      .option("-m, --meta <json>", "JSON merged into the module META", jsonObject)
+      .option("--gc", "expose and run gc before each series")
+      .option("--no-report", "skip SVG report generation"),
+  ).action(async (file: string, options: RunOptions) => {
+    if (!await runCommand(file, options)) process.exitCode = 1;
   });
+
+  addSvgReportOptions(
+    program.command("report")
+      .description(`Generate ${REPORT_SVG_NAME} for a result directory.`)
+      .argument("<dir>", "benchmark output directory")
+      .option("-o, --output <file>", `SVG output path relative to <dir> (default: ${REPORT_SVG_NAME})`)
+      .option("-f, --force", "re-analyze samples and overwrite the report even if it already exists"),
+  ).action((dir: string, options: ReportOptions) => reportCommand(dir, options));
+
+  return program;
 }
+
+await createCli().parseAsync(process.argv).catch((error: unknown) => {
+  console.error(`error: ${error instanceof Error ? error.message : String(error)}`);
+  process.exitCode = 1;
+});

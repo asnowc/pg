@@ -1,76 +1,25 @@
-import { BenchCollector, ConcurrencyBench, GetBenchItem, UserBenchConfig } from "../bench.ts";
-
 /*
-  该文件用于在进程内运行基准测试项，并收集基准测试结果。
-  */
-async function getBenchConfig() {
-  const jsFile = process.argv[2];
-  const config = JSON.parse(process.argv[3]) as {
-    config: Partial<UserBenchConfig>;
-    meta: Record<string, any>;
-  };
-  const { getBench, BENCH_CONFIG, META } = await loadBenchmarkFileConfig(jsFile);
+  bench-cli 子进程入口：运行主进程通过环境变量传入的单个系列。
+  日志由主进程的系列标题统领，这里只输出系列内部过程。不导出任何成员。
+*/
+import { type GetBenchItem, runBenchItem } from "../bench.ts";
+import { CHILD_TASK_ENV, ChildTask } from "./child_task.ts";
 
-  return {
-    getBench,
-    config: {
-      ...BENCH_CONFIG,
-      ...config.config,
-    },
-    meta: { ...META, ...config.meta },
-  };
+const task = readChildTask();
+let getBenchItem: GetBenchItem<any> | undefined;
+try {
+  const mod = await import(task.file) as Partial<{ default?: GetBenchItem<any> }>;
+  getBenchItem = mod.default;
+} catch (error) {
+  throw new Error(`Failed to import benchmark module: ${task.file}`, { cause: error });
 }
-
-export async function startRunBenchItem(itemName: string) {
-  const { config, getBench, meta } = await getBenchConfig();
-  const bench = new ConcurrencyBench({
-    concurrency: config.concurrency,
-    warmupDuration: config.warmupDuration,
-    duration: config.duration,
-    name: config.benchName,
-  });
-  const benchDataDir = config.benchDataDir ?? "./.bench-data";
-
-  const { close, fn } = await getBench(itemName, meta);
-  const collector = new BenchCollector(benchDataDir);
-  await using sampleCollector = await collector.openSampleCollector(itemName);
-
-  const result = await bench.runWidthCpuAndMemory({
-    fn,
-    intervalSampleCPUAndMemory: config.intervalSample,
-    collectorSuccess: {
-      push: (sample) => {
-        sampleCollector.push(sample);
-      },
-    },
-    collectorFailed: {
-      push: () => {
-        console.log("Failed sample");
-      },
-    },
-  });
-  await close();
-
-  await Promise.allSettled([
-    collector.saveBenchResult(itemName, result),
-  ]);
+if (!getBenchItem) {
+  throw new Error(`Benchmark module does not export a default GetBenchItem function: ${task.file}`);
 }
-async function loadBenchmarkFileConfig(jsFile: string) {
-  const { default: getBench, BENCH_CONFIG, SERIES, META } = await import(jsFile) as BenchModule<any>;
-  if (typeof getBench !== "function") {
-    throw new Error("Default export is not a function");
-  }
-  if (typeof BENCH_CONFIG !== "object") {
-    throw new Error("BENCH_CONFIG is not exported");
-  }
-  if (!Array.isArray(SERIES)) {
-    throw new Error("SERIES is not exported or not an array");
-  }
-  return { getBench, BENCH_CONFIG, SERIES, META };
-}
-interface BenchModule<Meta extends {} = {}> {
-  default: GetBenchItem<Meta>;
-  BENCH_CONFIG: UserBenchConfig;
-  SERIES: string[];
-  META?: Meta;
+await runBenchItem(task.config, { series: task.series, meta: task.meta, getBenchItem });
+
+function readChildTask(): ChildTask {
+  const taskJson = process.env[CHILD_TASK_ENV];
+  if (!taskJson) throw new Error(`Missing ${CHILD_TASK_ENV}`);
+  return JSON.parse(taskJson) as ChildTask;
 }

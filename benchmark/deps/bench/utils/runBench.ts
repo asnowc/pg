@@ -1,4 +1,4 @@
-import type { ConcurrencyBenchResult, ConcurrencyBenchSample, RequestRunnerContext } from "../types/bench_result.ts";
+import type { ConcurrencyBenchResult, ConcurrencyBenchSample, OperationRunnerContext } from "../types/bench_result.ts";
 import { ConcurrencyRunner } from "./ConcurrencyRunner.ts";
 
 export type ConcurrencyStage = { value: number; duration: number };
@@ -11,7 +11,7 @@ export type BenchSetting = {
 
 export async function runBench(runner: ConcurrencyRunner, settings: BenchSetting, options: RunOptions) {
   const { onWarmupEnd, onSampleFailed, onSampleSuccess } = options;
-  let runStartSnapshot: RequestRunnerContext;
+  let runStartSnapshot: OperationRunnerContext;
   let warmupResult: { concurrency: number; iterations: number; duration: number };
   if (settings.warmupDuration <= 0 || settings.warmupConcurrency <= 0) {
     warmupResult = { concurrency: 0, iterations: 0, duration: 0 };
@@ -23,26 +23,26 @@ export async function runBench(runner: ConcurrencyRunner, settings: BenchSetting
     const endTime = performance.now();
     warmupResult = {
       concurrency: warmupConcurrency,
-      iterations: runner.nextRequestIndex,
+      iterations: runner.nextOperationIndex,
       duration: endTime - startTime,
     };
   }
   if (onWarmupEnd) await onWarmupEnd(warmupResult);
 
   const { stages } = settings;
-  const runStartIndex = runner.nextRequestIndex;
+  const runStartIndex = runner.nextOperationIndex;
   const startTime = performance.now();
-  // 预热发起的请求开始时间早于 startTime，不传给收集器
+  // 预热发起的操作开始时间早于 startTime，不传给收集器
   if (onSampleSuccess) {
-    runner.onSampleSuccess = (data, requestIndex) => {
-      if (requestIndex < runStartIndex) return;
-      onSampleSuccess(data, requestIndex);
+    runner.onSampleSuccess = (data, operationIndex) => {
+      if (operationIndex < runStartIndex) return;
+      onSampleSuccess(data, operationIndex);
     };
   }
   if (onSampleFailed) {
-    runner.onSampleFailed = (data, requestIndex, error) => {
-      if (requestIndex < runStartIndex) return;
-      onSampleFailed(data, requestIndex, error);
+    runner.onSampleFailed = (data, operationIndex, error) => {
+      if (operationIndex < runStartIndex) return;
+      onSampleFailed(data, operationIndex, error);
     };
   }
   let i = 0;
@@ -53,6 +53,7 @@ export async function runBench(runner: ConcurrencyRunner, settings: BenchSetting
     const concurrency = stage.value;
     stageSamples.push({ concurrency, startTime: i === 0 ? startTime : performance.now() });
     runner.updateConcurrency(concurrency);
+    options.onStageStart?.(i);
     await new Promise<void>((resolve) => setTimeout(resolve, stage.duration));
     options.onStageEnd?.({
       index: i,
@@ -86,6 +87,8 @@ type RunOptions = {
   onSampleFailed?: (sample: ConcurrencyBenchSample, index: number, error: unknown) => void;
   onSampleSuccess?: (sample: ConcurrencyBenchSample, index: number) => void;
   onWarmupEnd?: (info: WarmupEndInfo) => Promise<void> | void;
+  /** 档位开始并已按新目标补发后同步调用，此时在途数已反映新档位。 */
+  onStageStart?: (index: number) => void;
   onStageEnd?: (info: StageEndInfo) => void;
   /** 最后一档结束、开始排空前调用。 */
   onRunEnd?: () => Promise<void> | void;

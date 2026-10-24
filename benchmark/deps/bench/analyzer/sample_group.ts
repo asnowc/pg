@@ -1,6 +1,7 @@
 import type { ConcurrencyBenchResultWithCPUAndMemory, ConcurrencyBenchSample } from "../types/bench_result.ts";
 
-export type IntervalMetric = "concurrency" | "qps" | "cpu" | "rss" | "memoryExtended" | "jsHeap";
+/** `inFlight` 为快照时刻实际在途的操作数（采样值），不是目标并发。 */
+export type IntervalMetric = "inFlight" | "ops" | "cpu" | "rss" | "memoryExtended" | "jsHeap";
 
 /** 正式测量窗口内的资源时间序列，每个下标对应一个快照区间。 */
 export type IntervalSamples = Record<IntervalMetric, number[]> & {
@@ -35,7 +36,7 @@ export type StageAnalysis = {
   endSeconds: number;
   /** 阶段内按区间时长加权的平均值；无快照覆盖时为 null。 */
   averages: Record<IntervalMetric, number | null>;
-  /** 该阶段发起的请求的延迟，包含在后续阶段或排空期间完成的请求。 */
+  /** 该阶段发起的操作的延迟，包含在后续阶段或排空期间完成的操作。 */
   latency: LatencyStatistics;
 };
 
@@ -44,7 +45,7 @@ export type AnalyzedSampleGroup = {
   run: ConcurrencyBenchResultWithCPUAndMemory;
   intervalSample: IntervalSamples;
   stages: StageAnalysis[];
-  /** 全部正式请求的延迟 */
+  /** 全部正式操作的延迟 */
   latency: LatencyStatistics;
 };
 
@@ -127,7 +128,7 @@ function floorIndex(values: number[], value: number) {
   return low - 1;
 }
 
-/** 按请求发起时间将样本归入发起阶段。 */
+/** 按操作发起时间将样本归入发起阶段。 */
 class StageBuckets {
   readonly latency: number[][];
   readonly errorCount: number[];
@@ -161,16 +162,16 @@ class StageBuckets {
 }
 
 /**
- * 从 CPU/内存快照构建正式测量窗口内的时间序列。QPS 按成功请求的完成时间落入的快照区间统计。
+ * 从 CPU/内存快照构建正式测量窗口内的时间序列。ops（每秒成功操作数）按成功操作的完成时间落入的快照区间统计；
+ * inFlight 取区间右端快照时刻实际在途的操作数。
  */
 function buildIntervalSamples(
   run: ConcurrencyBenchResultWithCPUAndMemory,
   successSamples: ConcurrencyBenchSample[],
-  stageTimes: number[],
 ): IntervalSamples {
   const snapshots = run.snapshot;
   const timestamps = snapshots.map((snapshot) => snapshot.timestamp);
-  // completions[i] 统计完成时间落在 [timestamps[i], timestamps[i + 1]) 的成功请求
+  // completions[i] 统计完成时间落在 [timestamps[i], timestamps[i + 1]) 的成功操作
   const completions = new Array<number>(Math.max(0, snapshots.length - 1)).fill(0);
   for (const sample of successSamples) {
     const index = floorIndex(timestamps, sample[1]);
@@ -179,8 +180,8 @@ function buildIntervalSamples(
   const result: IntervalSamples = {
     seconds: [],
     intervalSeconds: [],
-    concurrency: [],
-    qps: [],
+    inFlight: [],
+    ops: [],
     cpu: [],
     rss: [],
     memoryExtended: [],
@@ -192,19 +193,34 @@ function buildIntervalSamples(
     if (current.timestamp <= run.startTime || previous.timestamp >= run.endTime) continue;
     const ms = current.timestamp - previous.timestamp;
     if (ms <= 0) continue;
-    // 按区间中点归属阶段；快照与阶段边界不对齐时，比按左端点归属更接近真实阶段
-    const middle = (Math.max(previous.timestamp, run.startTime) + Math.min(current.timestamp, run.endTime)) / 2;
-    const stage = Math.max(0, floorIndex(stageTimes, middle));
     result.seconds.push((current.timestamp - run.startTime) / 1000);
     result.intervalSeconds.push(ms / 1000);
-    result.concurrency.push(run.stageSamples[stage].concurrency);
-    result.qps.push(completions[i - 1] / (ms / 1000));
+    result.inFlight.push(snapshotMetric(current, "inFlight"));
+    result.ops.push(completions[i - 1] / (ms / 1000));
     result.cpu.push((current.user + current.system - previous.user - previous.system) / (ms * 10));
-    result.rss.push(current.rss / 1024 ** 2);
-    result.memoryExtended.push(current.external / 1024 ** 2);
-    result.jsHeap.push(current.heapUsed / 1024 ** 2);
+    result.rss.push(snapshotMetric(current, "rss"));
+    result.memoryExtended.push(snapshotMetric(current, "memoryExtended"));
+    result.jsHeap.push(snapshotMetric(current, "jsHeap"));
   }
   return result;
+}
+
+type Snapshot = ConcurrencyBenchResultWithCPUAndMemory["snapshot"][number];
+/** 快照时刻的瞬时值指标；`ops` 与 `cpu` 是区间平均值，不属于此类。 */
+export type InstantMetric = "inFlight" | "rss" | "memoryExtended" | "jsHeap";
+
+/** 从单个快照读取瞬时值指标，内存单位为 MiB。 */
+export function snapshotMetric(snapshot: Snapshot, metric: InstantMetric): number {
+  switch (metric) {
+    case "inFlight":
+      return snapshot.currentConcurrency;
+    case "rss":
+      return snapshot.rss / 1024 ** 2;
+    case "memoryExtended":
+      return snapshot.external / 1024 ** 2;
+    case "jsHeap":
+      return snapshot.heapUsed / 1024 ** 2;
+  }
 }
 
 /** [start, end] 秒窗口内按区间重叠时长加权的平均值。 */
@@ -222,7 +238,7 @@ function weightedAverage(samples: IntervalSamples, metric: IntervalMetric, start
 }
 
 /**
- * 分析一次并发基准：按请求发起时间所在阶段归组延迟（包含排空期间完成的请求），
+ * 分析一次并发基准：按操作发起时间所在阶段归组延迟（包含排空期间完成的操作），
  * 资源曲线与阶段平均值只覆盖 run.startTime 到 run.endTime 的正式测量窗口。
  */
 export function analyzeSampleGroup(input: {
@@ -239,7 +255,7 @@ export function analyzeSampleGroup(input: {
   for (const sample of failedSamples) buckets.addFailure(sample);
   const stageTimes = buckets.stageTimes();
 
-  const intervalSample = buildIntervalSamples(run, successSamples, stageTimes);
+  const intervalSample = buildIntervalSamples(run, successSamples);
 
   const stages = run.stageSamples.map((stage, index): StageAnalysis => {
     const startSeconds = (stageTimes[index] - run.startTime) / 1000;
@@ -253,8 +269,8 @@ export function analyzeSampleGroup(input: {
       endSeconds,
       latency,
       averages: {
-        concurrency: stage.concurrency,
-        qps: duration > 0 ? latency.successCount / duration : null,
+        inFlight: weightedAverage(intervalSample, "inFlight", startSeconds, endSeconds),
+        ops: duration > 0 ? latency.successCount / duration : null,
         cpu: weightedAverage(intervalSample, "cpu", startSeconds, endSeconds),
         rss: weightedAverage(intervalSample, "rss", startSeconds, endSeconds),
         memoryExtended: weightedAverage(intervalSample, "memoryExtended", startSeconds, endSeconds),

@@ -1,4 +1,4 @@
-import type { ConcurrencyBenchSample, RequestRunnerContext } from "../types/bench_result.ts";
+import type { ConcurrencyBenchSample, OperationRunnerContext } from "../types/bench_result.ts";
 
 class Event {
   private listeners: Map<string, Map<(...args: any[]) => void, boolean>> = new Map();
@@ -31,26 +31,26 @@ class Event {
   }
 }
 
-export class ConcurrencyRunner extends Event implements RequestRunnerContext {
+export class ConcurrencyRunner extends Event implements OperationRunnerContext {
   /** 预期的并发数 */
   targetConcurrency = 0;
   currentConcurrency = 0;
-  nextRequestIndex = 0;
+  nextOperationIndex = 0;
   successCount = 0;
   errorCount = 0;
   getStateSnapshot() {
     return {
       targetConcurrency: this.targetConcurrency,
       currentConcurrency: this.currentConcurrency,
-      nextRequestIndex: this.nextRequestIndex,
+      nextOperationIndex: this.nextOperationIndex,
       successCount: this.successCount,
       errorCount: this.errorCount,
     };
   }
   /** 成功的采样回调 */
-  onSampleSuccess(data: ConcurrencyBenchSample, requestIndex: number) {}
+  onSampleSuccess(data: ConcurrencyBenchSample, operationIndex: number) {}
   /** 失败的采样回调 */
-  onSampleFailed(data: ConcurrencyBenchSample, requestIndex: number, error: unknown) {}
+  onSampleFailed(data: ConcurrencyBenchSample, operationIndex: number, error: unknown) {}
 
   private onClear() {
     this.emit("clear");
@@ -66,7 +66,7 @@ export class ConcurrencyRunner extends Event implements RequestRunnerContext {
     super();
   }
 
-  private onRequestError(data: ConcurrencyBenchSample, index: number, error: unknown) {
+  private onOperationError(data: ConcurrencyBenchSample, index: number, error: unknown) {
     const end = performance.now();
     this.errorCount++;
     this.currentConcurrency--;
@@ -74,7 +74,7 @@ export class ConcurrencyRunner extends Event implements RequestRunnerContext {
     this.onSampleFailed(data, index, error);
     this.onReduce(end);
   }
-  private onRequestSuccess(data: ConcurrencyBenchSample, index: number) {
+  private onOperationSuccess(data: ConcurrencyBenchSample, index: number) {
     const end = performance.now();
     this.successCount++;
     this.currentConcurrency--;
@@ -85,7 +85,7 @@ export class ConcurrencyRunner extends Event implements RequestRunnerContext {
   }
   private onReduce(end: number) {
     if (this.currentConcurrency < this.targetConcurrency) {
-      this.requestNext(end);
+      this.startNextOperation(end);
     } else if (this.currentConcurrency === 0) {
       this.onClear();
     }
@@ -94,17 +94,17 @@ export class ConcurrencyRunner extends Event implements RequestRunnerContext {
     this.targetConcurrency = value;
     const start = performance.now();
     while (this.currentConcurrency < this.targetConcurrency) {
-      this.requestNext(start);
+      this.startNextOperation(start);
     }
     return;
   }
-  private requestNext(start: number) {
+  private startNextOperation(start: number) {
     this.currentConcurrency++;
-    const i = this.nextRequestIndex++;
+    const i = this.nextOperationIndex++;
     const data: ConcurrencyBenchSample = [start, 0];
     new Promise<unknown>((resolve) => resolve(this.fn.call(undefined, i))).then(
-      () => this.onRequestSuccess(data, i),
-      (e) => this.onRequestError(data, i, e),
+      () => this.onOperationSuccess(data, i),
+      (e) => this.onOperationError(data, i, e),
     ).catch((e) => {
       console.error("Unhandled error in callBenchFn", e);
       this.targetConcurrency = 0;

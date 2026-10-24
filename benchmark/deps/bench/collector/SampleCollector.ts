@@ -54,6 +54,25 @@ class WriteBuffer {
   }
 }
 
+/**
+ * 把操作样本 `[startTime, endTime]` 以二进制流式写入一个样本文件（`<series>.sample.bin`）。
+ * 由 {@link openFileCollector} 创建，`push` 只写入内存缓冲，累积到一定数量后异步写入磁盘；
+ * 调用方必须 `await close()` 或使用 `await using`，否则末尾样本可能未写入。
+ *
+ * 样本文件格式（大端）：
+ * - 文件头 12 字节：uint32 precision（每毫秒的刻度数，默认 1000）+ uint64 timeOrigin（epoch 刻度）
+ * - 之后每条记录 8 字节：uint32 start、uint32 end，为 `performance.now()` 乘以 precision 后的刻度
+ *
+ * 一个基准测试结果目录（`benchDataDir`）包含：
+ * - `manifest.json`：清单。记录测试名称、测试参数、meta、运行环境，以及已成功生成结果的系列；
+ *   报告只包含清单中登记的系列。在所有系列运行结束后一次性写入
+ * - `<series>.sample.bin`：该系列所有成功操作的样本，即本类写出的文件
+ * - `<series>.result.json`：该系列的运行结果，包含各并发档位起止时间、成功/失败总数及 CPU/内存快照
+ * - `<series>.report.json`：生成报告时缓存的分析结果，可删除后重新生成
+ * - `report.svg`：所有系列的对比报告
+ *
+ * 其中 `<series>` 为系列名中的空白、`/`、`\`、`:` 替换为 `_` 后的文件名。
+ */
 export class SampleCollector {
   private current = new WriteBuffer();
   /** 当前缓冲区写满后暂存的样本字段，按 start、end 顺序排列。 */
@@ -70,12 +89,16 @@ export class SampleCollector {
     encodeHeaderInto(this.current.view, header);
     this.current.writeOffset = HEADER_SIZE;
   }
-
+  private isWriteSlow: boolean = false;
   push(sample: ConcurrencyBenchSample): void {
     const { precision } = this;
     const start = Math.floor(sample[0] * precision);
     const end = Math.floor(sample[1] * precision);
     if (this.retiredOffset < this.retired.length || this.current.free < RECORD_SIZE) {
+      if (!this.isWriteSlow) {
+        this.isWriteSlow = true;
+        console.warn("Write is slow, buffering samples in memory.");
+      }
       this.retired.push(start, end);
     } else {
       const { view, writeOffset } = this.current;

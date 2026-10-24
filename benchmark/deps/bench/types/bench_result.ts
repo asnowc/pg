@@ -24,20 +24,20 @@ export type ConcurrencyBenchResult = {
   clearTime: number;
 };
 export type ConcurrencyBenchResultWithCPUAndMemory = ConcurrencyBenchResult & {
-  snapshot: (NodeJS.CpuUsage & NodeJS.MemoryUsage & RequestRunnerContext & {
+  snapshot: (NodeJS.CpuUsage & NodeJS.MemoryUsage & OperationRunnerContext & {
     timestamp: number;
   })[];
 };
 /** 时间为 performance.now() 的毫秒值。 */
 export type ConcurrencyBenchSample = [startTime: number, endTime: number];
 
-export interface RequestRunnerContext {
+export interface OperationRunnerContext {
   /** 当前实际的并发数 */
   currentConcurrency: number;
-  /** 下一个请求的索引 */
-  nextRequestIndex: number;
-  /** 成功的请求数 */
+  /** 下一个操作的索引 */
+  nextOperationIndex: number;
+  /** 成功的操作数 */
   successCount: number;
-  /** 失败的请求数 */
+  /** 失败的操作数 */
   errorCount: number;
 }
