@@ -1,10 +1,7 @@
-import type {
-  ConcurrencyBenchResult,
-  ConcurrencyBenchResultWithCPUAndMemory,
-  ConcurrencyBenchSample,
-} from "./types/bench_result.ts";
+import type { ConcurrencyBenchResultWithCPUAndMemory, ConcurrencyBenchSample } from "./types/bench_result.ts";
 import { cpuUsage, memoryUsage } from "node:process";
 import { ConcurrencyRunner } from "./utils/ConcurrencyRunner.ts";
+import { BenchSetting, runBench, StageEndInfo, WarmupEndInfo } from "./utils/runBench.ts";
 export type ConcurrencyStage = { value: number; duration: number };
 
 export type BenchInput = {
@@ -46,13 +43,15 @@ export class ConcurrencyBench {
    * @since 0.2.5
    */
   async runWidthCpuAndMemory(options: {
-    fn: (index: number) => Promise<void>;
+    fn: (index: number) => Promise<unknown>;
     intervalSampleCPUAndMemory: number;
     collectorSuccess: BenchSampleCollector;
     collectorFailed: BenchSampleCollector;
+    /** 进度回调，省略时不输出任何日志。 */
+    onProgress?: (event: ProgressEvent) => void;
   }): Promise<ConcurrencyBenchResultWithCPUAndMemory> {
-    const { fn, intervalSampleCPUAndMemory, collectorSuccess, collectorFailed } = options;
-
+    const { fn, intervalSampleCPUAndMemory, collectorSuccess, collectorFailed, onProgress } = options;
+    await fn(-1); // 测试调用
     const runner = new ConcurrencyRunner(fn);
 
     const intervalSampleData: ConcurrencyBenchResultWithCPUAndMemory["snapshot"] = [];
@@ -69,21 +68,27 @@ export class ConcurrencyBench {
       });
     };
     const timer = setInterval(snapshot, intervalSampleCPUAndMemory);
-
+    const hasWarmup = this.settings.warmupDuration > 0;
     let warmupEndRequestIndex: number = 0;
+    let errorReported = false;
     try {
       const result = await runBench(runner, this.settings, {
-        onWarmupEnd: () => {
+        onWarmupEnd: (info) => {
           warmupEndRequestIndex = runner.nextRequestIndex;
-          console.log("run start");
-        },
-        onStageChange: snapshot,
-        onRunEnd: () => {
           snapshot();
-          console.log("waiting for task to clear");
+          if (hasWarmup) onProgress?.({ type: "warmup-end", data: info });
         },
-        onSampleFailed: (value, index) => {
+        onStageEnd: (info) => {
+          snapshot();
+          onProgress?.({ type: "stage-end", data: info });
+        },
+        onRunEnd: snapshot,
+        onSampleFailed: (value, index, error) => {
           if (index < warmupEndRequestIndex) return;
+          if (!errorReported) {
+            errorReported = true;
+            onProgress?.({ type: "first-error", data: { error } });
+          }
           collectorFailed.push(value);
         },
         onSampleSuccess: (value, index) => {
@@ -91,7 +96,6 @@ export class ConcurrencyBench {
           collectorSuccess.push(value);
         },
       });
-      console.log("run complete");
       return { ...result, snapshot: intervalSampleData };
     } finally {
       clearInterval(timer);
@@ -102,77 +106,15 @@ export class ConcurrencyBench {
 export interface IntervalBenchRunner {
   (fn: (index: number) => Promise<void>): Promise<void>;
 }
-async function runBench(runner: ConcurrencyRunner, settings: BenchSetting, options: RunOptions) {
-  const { onWarmupEnd, onSampleFailed, onSampleSuccess } = options;
 
-  let warmupResult: { iterations: number; duration: number };
-  if (settings.warmupDuration <= 0 || settings.warmupConcurrency <= 0) {
-    warmupResult = { iterations: 0, duration: 0 };
-  } else {
-    const { warmupDuration, warmupConcurrency } = settings;
-    const startTime = performance.now();
-    runner.updateConcurrency(warmupConcurrency);
-    await new Promise<void>((resolve) => setTimeout(resolve, warmupDuration));
-    const endTime = performance.now();
-    warmupResult = {
-      iterations: runner.nextRequestIndex,
-      duration: endTime - startTime,
-    };
-  }
-  if (onWarmupEnd) await onWarmupEnd();
-
-  const { stages } = settings;
-  const runStartIndex = runner.nextRequestIndex;
-  const startTime = performance.now();
-  // 预热发起的请求开始时间早于 startTime，不传给收集器
-  if (onSampleSuccess) {
-    runner.onSampleSuccess = (data, requestIndex) => {
-      if (requestIndex < runStartIndex) return;
-      onSampleSuccess(data, requestIndex);
-    };
-  }
-  if (onSampleFailed) {
-    runner.onSampleFailed = (data, requestIndex) => {
-      if (requestIndex < runStartIndex) return;
-      onSampleFailed(data, requestIndex);
-    };
-  }
-  let i = 0;
-  let stage = stages[i];
-  const stageSamples: ConcurrencyBenchResult["stageSamples"] = [];
-  while (stage) {
-    const concurrency = stage.value;
-    options.onStageChange?.();
-    stageSamples.push({ concurrency, startTime: i === 0 ? startTime : performance.now() });
-    runner.updateConcurrency(concurrency);
-    await new Promise<void>((resolve) => setTimeout(resolve, stage.duration));
-    i++;
-    stage = stages[i];
-  }
-  runner.targetConcurrency = 0;
-  const endTime = performance.now();
-  await runner.waitClear();
-  const clearTime = performance.now();
-  return {
-    stageSamples,
-    warmup: warmupResult,
-    totalFailedSamples: runner.errorCount,
-    totalSuccessSamples: runner.successCount,
-
-    startTime,
-    endTime,
-    clearTime,
-    name: settings.name,
-  };
-}
-type RunOptions = {
-  onSampleFailed?: (sample: ConcurrencyBenchSample, index: number) => void;
-  onSampleSuccess?: (sample: ConcurrencyBenchSample, index: number) => void;
-  onWarmupEnd?: () => Promise<void> | void;
-  /** 每档测量时长结束、切换下一档之前同步调用。 */
-  onStageChange?: () => void;
-  onRunEnd?: () => Promise<void> | void;
-};
+/**
+ * runWidthCpuAndMemory 的进度事件。stage-end 的 success/failed 为该档期间完成的请求数；
+ * first-error 只在第一个正式请求失败时触发一次。排空信息可在返回结果中由 endTime/clearTime 得到。
+ */
+export type ProgressEvent =
+  | { type: "warmup-end"; data: WarmupEndInfo }
+  | { type: "stage-end"; data: StageEndInfo }
+  | { type: "first-error"; data: { error: unknown } };
 
 function normalize(input: BenchInput): BenchSetting {
   const { duration = 3000, warmupDuration = 0 } = input;
@@ -186,9 +128,3 @@ function normalize(input: BenchInput): BenchSetting {
   }
   return { name: input.name ?? "", stages, warmupDuration, warmupConcurrency: stages[0].value };
 }
-type BenchSetting = {
-  name: string;
-  warmupDuration: number;
-  warmupConcurrency: number;
-  stages: ConcurrencyStage[];
-};

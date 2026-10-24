@@ -38,7 +38,15 @@ export class ConcurrencyRunner extends Event implements RequestRunnerContext {
   nextRequestIndex = 0;
   successCount = 0;
   errorCount = 0;
-
+  getStateSnapshot() {
+    return {
+      targetConcurrency: this.targetConcurrency,
+      currentConcurrency: this.currentConcurrency,
+      nextRequestIndex: this.nextRequestIndex,
+      successCount: this.successCount,
+      errorCount: this.errorCount,
+    };
+  }
   /** 成功的采样回调 */
   onSampleSuccess(data: ConcurrencyBenchSample, requestIndex: number) {}
   /** 失败的采样回调 */
@@ -54,7 +62,7 @@ export class ConcurrencyRunner extends Event implements RequestRunnerContext {
     return new Promise<void>((resolve) => this.once("clear", resolve));
   }
 
-  constructor(private fn: (index: number) => Promise<void>) {
+  constructor(private fn: (index: number) => Promise<unknown>) {
     super();
   }
 
@@ -88,12 +96,13 @@ export class ConcurrencyRunner extends Event implements RequestRunnerContext {
     while (this.currentConcurrency < this.targetConcurrency) {
       this.requestNext(start);
     }
+    return;
   }
   private requestNext(start: number) {
     this.currentConcurrency++;
     const i = this.nextRequestIndex++;
     const data: ConcurrencyBenchSample = [start, 0];
-    new Promise<void>((resolve) => resolve(this.fn.call(undefined, i))).then(
+    new Promise<unknown>((resolve) => resolve(this.fn.call(undefined, i))).then(
       () => this.onRequestSuccess(data, i),
       (e) => this.onRequestError(data, i, e),
     ).catch((e) => {

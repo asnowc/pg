@@ -4,7 +4,7 @@ export * from "./bench/analyzer/sample_group.ts";
 export * from "./bench/reporter/SvgReporter.ts";
 export * from "./bench/collector/BenchCollector.ts";
 export * from "./bench/collector/SampleCollector.ts";
-
+export * from "./bench/run.ts";
 declare global {
   var gc: undefined | (() => void);
 }

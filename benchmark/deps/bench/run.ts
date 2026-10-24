@@ -19,40 +19,52 @@ export interface UserBenchConfig {
    */
   gc?: boolean;
 }
-export interface GetBenchItem<Meta extends {}, T extends { name: string }> {
-  (target: T, meta: Meta): Promise<{
-    fn: () => Promise<unknown>;
-    close: () => Promise<unknown>;
+export interface GetBenchItem<Meta extends {} = {}> {
+  (info: string, meta: Meta): Promise<{
+    fn: () => Promise<any>;
+    close: () => Promise<any>;
   }>;
 }
-export async function runUserBench<Meta extends {}, T extends { name: string }>(
-  options: UserBenchConfig & {
-    series: T[];
+
+export async function runUserBench<Meta extends {} = {}>(
+  config: UserBenchConfig,
+  options: {
+    series: string[];
     meta: Meta;
-    getBenchItem: GetBenchItem<Meta, T>;
+    getBenchItem: GetBenchItem<Meta>;
   },
 ) {
-  const { series, meta, getBenchItem, benchDataDir = "./.bench-data" } = options;
+  let gc: (() => void) | undefined;
+  if (config.gc) {
+    if (!globalThis.gc) {
+      throw new Error("Garbage collection is not available. Run with --expose-gc.");
+    }
+    gc = globalThis.gc;
+  } else if (typeof config.gc === "undefined") {
+    gc = globalThis.gc;
+  }
+  const { series, meta, getBenchItem } = options;
+  const benchDataDir = config.benchDataDir ?? "./.bench-data";
   const bench = new ConcurrencyBench({
-    concurrency: options.concurrency,
-    warmupDuration: options.warmupDuration,
-    duration: options.duration,
-    name: options.benchName,
+    concurrency: config.concurrency,
+    warmupDuration: config.warmupDuration,
+    duration: config.duration,
+    name: config.benchName,
   });
   const collector = new BenchCollector(benchDataDir);
-  for (const target of series) {
-    await using sampleCollector = await collector.openSampleCollector(target.name);
+  for (const benchItemName of series) {
+    await using sampleCollector = await collector.openSampleCollector(benchItemName);
 
     console.log("\n");
-    if (globalThis.gc) {
+    if (gc) {
       console.log("gc");
-      globalThis.gc?.();
+      gc();
     }
-    const { close, fn } = await getBenchItem(target.name, meta);
-    console.log("running benchmark for", `${target.name}-${options.benchName}`);
+    const { close, fn } = await getBenchItem(benchItemName, meta);
+    console.log("running benchmark for", `${benchItemName}`);
     const result = await bench.runWidthCpuAndMemory({
       fn,
-      intervalSampleCPUAndMemory: options.intervalSample,
+      intervalSampleCPUAndMemory: config.intervalSample,
       collectorSuccess: {
         push: (sample) => {
           sampleCollector.push(sample);
@@ -67,7 +79,7 @@ export async function runUserBench<Meta extends {}, T extends { name: string }>(
     await close();
 
     await Promise.allSettled([
-      collector.saveBenchResult(target.name, result),
+      collector.saveBenchResult(benchItemName, result),
     ]);
   }
 }
