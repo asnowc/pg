@@ -10,11 +10,10 @@
     "ci:test": "deno x vitest run",
     "test:coverage": "deno x vitest run --coverage",
     "publishDry": "deno publish --dry-run --allow-dirty",
-    "bundle": "deno bundle src/mod.ts -o dist/mod.js",
+    "build": "deno bundle src/mod.ts -o dist/mod.js",
     "bench": "deno run -A benchmark/deps/bench-cli.ts",
     "bench:pg-client": "deno task bench run -d 4000 benchmark/test/postgresql-client.bench.ts",
-    "bench:vs-old": "deno task bench run -d 4000 benchmark/test/postgresql-client.bench.ts",
-    "transpile": "deno transpile src/**/*.ts --outdir dist --declaration"
+    "bench:vs-old": "deno task bench run -d 4000 -s @asla/pg-prev,@asla/pg benchmark/test/postgresql-client.bench.ts"
   },
   "imports": {
     "#abstract": "./src/abstract/mod.ts",

@@ -23,7 +23,6 @@ import type {
 } from "@/interface/Query.ts";
 import { sqlStatementToSqlEncoder } from "./private/sql_statement.ts";
 import QueryReaderImpl from "./private/QueryReader.ts";
-import { TransactionImpl } from "./private/TransactionImpl.ts";
 
 class QueryOperation
   implements

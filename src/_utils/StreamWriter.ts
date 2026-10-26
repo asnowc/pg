@@ -64,10 +64,6 @@ export class BufferWriter {
     }
     return totalWritten;
   }
-  async callOnce() {
-    this.writeOffset -= await this.callWrite(this.buffer.subarray(0, this.writeOffset));
-  }
-
   /**
    * 写入数据；达到阈值时发送缓冲数据，未达到阈值的尾部数据留在缓冲区，直到后续写入或 flush()。
    */
@@ -131,19 +127,32 @@ export abstract class BufferWriterQueue<T extends {}> {
 
   /** 正在进行的写入操作的 Promise，如果没有正在进行的写入，则为 undefined */
   private pendingWrite?: Promise<void>;
+  private pendingFlush?: NodeJS.Timeout;
 
+  private onWriteOk = () => {
+    if (this.#head) {
+      this.startWriteLoop();
+      return;
+    }
+    if (this.writeOffset > 0) {
+      this.pendingFlush = setTimeout(() => {
+        this.pendingFlush = undefined;
+        this.pendingWrite = this.flush().then(this.onWriteOk, this.onWriteError);
+      }, 0);
+    }
+    this.pendingWrite = undefined;
+    this.onClear?.();
+  };
+  private onWriteError = (error: unknown) => {
+    this.clear();
+    this.onError(error);
+  };
   private startWriteLoop() {
-    this.pendingWrite = this.handleWriteLoop().then(() => {
-      if (this.#head) {
-        this.startWriteLoop();
-      } else {
-        this.pendingWrite = undefined;
-        this.onClear?.();
-      }
-    }, (error) => {
-      this.clear();
-      this.onError(error);
-    });
+    if (this.pendingFlush) {
+      clearTimeout(this.pendingFlush);
+      this.pendingFlush = undefined;
+    }
+    this.pendingWrite = this.handleWriteLoop().then(this.onWriteOk, this.onWriteError);
   }
 
   private async handleWriteLoop() {

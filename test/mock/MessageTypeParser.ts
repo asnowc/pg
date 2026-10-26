@@ -88,6 +88,7 @@ export class MessageTest extends EventEmitter {
       }, 8 * 1024),
       this.readQueue,
       async () => {},
+      () => {},
       () => this.emit("writeFree", this.messageTypes),
     );
     this.readQueue.init(this.parsers, this.writeQueue);

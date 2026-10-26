@@ -9,12 +9,20 @@ export function loadLibrary(name: string): Promise<PoolQueryTest<any>> {
       return import("../client/fake2.ts").then((mod) => mod.poolQueryTest);
     case "@asla/pg": {
       return import("./init-asla-pg-test.ts").then(
-        async ({ initTest }) => initTest(await import("@asla/pg")).poolQueryTest,
+        async ({ initTest }) => initTest(await import("@asla/pg"), "@asla/pg(deno)", false).poolQueryTest,
       );
     }
     case "@asla/pg-node": {
       return import("./init-asla-pg-test.ts").then(
-        async ({ initTest }) => initTest(await import("@asla/pg-prev")).poolQueryTest,
+        async ({ initTest }) => initTest(await import("@asla/pg"), "@asla/pg(node)", true).poolQueryTest,
+      );
+    }
+    case "@asla/pg-prev": {
+      return import("./init-asla-pg-test.ts").then(
+        async ({ initTest }) => {
+          const mod: any = await import("@asla/pg-prev");
+          return initTest(mod, "@asla/pg-prev", false).poolQueryTest;
+        },
       );
     }
     case "pg": {
