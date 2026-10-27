@@ -53,10 +53,10 @@ deno run -A deps/bench-cli/main.ts report results/tmp -p compact -o report.compa
 
 meta 参数：
 
-| 参数        | 说明                                                                                                     |
-| ----------- | -------------------------------------------------------------------------------------------------------- |
-| `poolSize`  | 每个系列的连接池大小                                                                                     |
-| `queryName` | `select`（无参数）、`selectArg`（单参数）、`selectArgs`（多种类型参数）、`selectWhere`（系统表条件查询） |
+| 参数        | 说明                                                                    |
+| ----------- | ----------------------------------------------------------------------- |
+| `poolSize`  | 每个系列的连接池大小                                                    |
+| `queryName` | `select`（无参数）、`selectArg`（单参数）、`selectArgs`（多种类型参数） |
 
 新增客户端时，在 [client/](client/) 中实现 `PoolQueryTest`，并在 [resource-runner.ts](utils/resource-runner.ts)
 中登记系列名。各客户端应执行语义相同的查询并读取完整结果，避免比较结果被省略的解码或不同的查询协议影响。

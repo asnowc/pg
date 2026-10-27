@@ -42,9 +42,6 @@ export function initTest(
       ${JSON.stringify([{ some: "json" }, { array: "object" }])}::jsonb as json
     `).rows();
     },
-    selectWhere: async (client) => {
-      await client.query(sql`select * from pg_catalog.pg_type where typname = ${"bool"}`).rows();
-    },
   };
   const connInfo: ConnectHandler<PgConnection> = {
     name,

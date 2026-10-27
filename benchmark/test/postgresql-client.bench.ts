@@ -15,10 +15,9 @@ export const BENCH_CONFIG: UserBenchConfig = {
   benchDataDir: RESULT_DIR,
 };
 const queryNames: QueryName[] = [
-  "select",
-  // "selectArg",
+  // "select",
+  "selectArg",
   // "selectArgs",
-  // "selectWhere",
 ];
 export const SERIES: Library[] = [
   "@asla/pg",

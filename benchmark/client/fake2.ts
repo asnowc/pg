@@ -48,9 +48,6 @@ const queries: TestQueries<Pool> = {
   selectArgs: async (client) => {
     await client.query("select 1 as x");
   },
-  selectWhere: async (client) => {
-    await client.query("select 1 as x");
-  },
 };
 
 export const poolQueryTest: PoolQueryTest<Pool> = {

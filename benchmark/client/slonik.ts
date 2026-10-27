@@ -28,9 +28,6 @@ const queries: TestQueries<Conn | DatabasePool> = {
       ${sql.json([{ some: "json" }, { array: "object" }])}::jsonb as json
     `);
   },
-  selectWhere: async (client) => {
-    await client.query(sql.unsafe`select * from pg_catalog.pg_type where typname = ${"bool"}`);
-  },
 };
 type Conn = {
   query: DatabasePoolConnection["query"];

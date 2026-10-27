@@ -30,9 +30,6 @@ const queries: TestQueries<Sql> = {
       ${sql.json([{ some: "json" }, { array: "object" }])} as json
     `;
   },
-  selectWhere: async (sql) => {
-    await sql`select * from pg_catalog.pg_type where typname = ${"bool"}`;
-  },
 };
 export const connInfo: ConnectHandler<Conn> = {
   name: LIB_NAME,

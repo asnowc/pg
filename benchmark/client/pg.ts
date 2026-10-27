@@ -37,9 +37,6 @@ const queries: TestQueries<Client | Pool> = {
       ],
     );
   },
-  selectWhere: async (client) => {
-    await client.query("select * from pg_catalog.pg_type where typname = $1", ["bool"]);
-  },
 };
 const connInfo: ConnectHandler<Client> = {
   name: LIB_NAME,
