@@ -13,20 +13,32 @@ export interface JsDataVariableEncoder<T = unknown> extends EncoderCommon<T> {
   encodeInto(buffer: Uint8Array, offset: number, value: T): number;
 }
 /** @public */
-export type JsDataEncoder<T = unknown> = JsDataFixedEncoder<T> | JsDataVariableEncoder<T>;
+export type JsDataEncoder<T = unknown> = JsDataFixedEncoder<T> | JsDataVariableEncoder<T> | JsDataEncoderDefined<T>;
 
-//TODO: 待定
-interface JsDataStreamEncoder<T = unknown> extends EncoderCommon<T> {
-  calculateByteLength(value: T): StreamEncoder;
+export interface JsDataEncoderDefined<T = unknown> {
+  oid: number | ((value: T) => number);
+  encodeToText(value: T, oid: number): string;
+  calculateByteLength(value: T, oid: number): StreamEncoder;
+}
+export interface JsDataFixedLengthEncoderDefined<T = unknown> extends StreamEncoder {
+  oid: number | ((value: T) => number);
+  encodeToText(value: T, oid: number): string;
 }
 
-type StreamEncoder = {
+export type StreamEncoder = {
   readonly byteLength: number;
   /**
-   * @returns 返回累计编码的大小。当这个值等于 byteLength 时，表示编码完成。否则应继续调用 encodeInto 进行编码。
+   * @returns `true` if encoding is complete, `false` otherwise.
    */
-  encodeInto(buffer: Uint8Array, offset: number): number;
+  encodeInto(writer: WriterBuffer): boolean;
 };
 
 /** @public */
 export type JsDataEncoderMap = ReadonlyMap<object | string | number, JsDataEncoder<never>>;
+
+export interface WriterBuffer {
+  readonly buffer: Uint8Array;
+  readonly view: DataView;
+  writeOffset: number;
+  get writableLength(): number;
+}

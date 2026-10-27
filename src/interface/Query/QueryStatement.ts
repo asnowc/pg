@@ -1,32 +1,6 @@
 import type { PgDataDecodeContext, PgDataDecoderMap } from "@/interface/pg_data_decoder.ts";
 import type { FieldInfo } from "./QueryReader.ts";
 
-/**
- * @public
- */
-export interface TypedSqlStatementEncoder<T = unknown> {
-  /**
-   * typeID -> ColumnParser
-   */
-  typeDecoders?: PgDataDecoderMap;
-  columnDecoders?: ColumnDecoderMap | ColumnDecoderGetter;
-  /** 计算 Parse 消息的字节长度。不包含头部信息的字节长度 */
-  calculateParseByteLength(): number;
-  /** 将 Parse 消息编码到指定的 Uint8Array 中 */
-  encodeParseInto(data: Uint8Array, offset: number): number;
-
-  /** 计算 Bind 消息的字节长度。不包含头部信息的字节长度 */
-  calculateBindByteLength(): number;
-  /** 将 Bind 消息编码到指定的 Uint8Array 中 */
-  encodeBindInto(data: Uint8Array, offset: number): number;
-
-  calculateQueryByteLength(): number;
-  /** 将 Query 消息编码到指定的 Uint8Array 中 */
-  encodeQueryInto(data: Uint8Array, offset: number): number;
-
-  __infer?(input: T): never;
-}
-
 /** @public */
 export type TypedSqlStatement<T = unknown> = {
   /** 单条 SQL 语句片段 */

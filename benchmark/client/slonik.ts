@@ -10,6 +10,8 @@ const poolInfo = {
   closePool: (pool) => pool.end(),
 } satisfies PoolHandler<DatabasePool>;
 
+const BUFFER_DATA = Buffer.from("awesome");
+const JSON_DATA = [{ some: "json" }, { array: "object" }];
 const queries: TestQueries<Conn | DatabasePool> = {
   select: async (client) => {
     await client.query(sql.unsafe`select 1 as x`);
@@ -24,8 +26,8 @@ const queries: TestQueries<Conn | DatabasePool> = {
       ${sql.date(new Date())}::timestamp with time zone as timestamp,
       ${null} as null,
       ${false}::bool as boolean,
-      ${sql.binary(Buffer.from("awesome"))}::bytea as bytea,
-      ${sql.json([{ some: "json" }, { array: "object" }])}::jsonb as json
+      ${sql.binary(BUFFER_DATA)}::bytea as bytea,
+      ${sql.json(JSON_DATA)}::jsonb as json
     `);
   },
 };

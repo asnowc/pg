@@ -12,6 +12,9 @@ export const poolInfo: PoolHandler<Sql> = {
 type Conn = postgres.ReservedSql<{}> & {
   __pool: Sql;
 };
+
+const BUFFER_DATA = Buffer.from("awesome");
+const JSON_DATA = [{ some: "json" }, { array: "object" }];
 const queries: TestQueries<Sql> = {
   select: async (sql) => {
     await sql`select 1 as x`;
@@ -26,8 +29,8 @@ const queries: TestQueries<Sql> = {
       ${new Date()} as timestamp,
       ${null} as null,
       ${false} as boolean,
-      ${Buffer.from("awesome")} as bytea,
-      ${sql.json([{ some: "json" }, { array: "object" }])} as json
+      ${BUFFER_DATA} as bytea,
+      ${sql.json(JSON_DATA)} as json
     `;
   },
 };

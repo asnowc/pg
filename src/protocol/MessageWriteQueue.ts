@@ -1,4 +1,4 @@
-import type { TransactionMode, TypedSqlStatementEncoder } from "@/interface/Query.ts";
+import type { TransactionMode } from "@/interface/Query.ts";
 import { throwRewrittenError } from "@/_utils/error.ts";
 import {
   BeginTransactionTask,
@@ -19,7 +19,7 @@ import {
   encodeTerminateMessage,
 } from "./encode.ts";
 import { BufferWriter, BufferWriterQueue } from "@/_utils/StreamWriter.ts";
-import { createTypeSqlStatementEncoder } from "@/sql/SqlStatementEncoder.ts";
+import { InternalTextSqlStatementEncoder } from "@/codec/StatementEncoder.ts";
 import { QueryReadQueue } from "./MessageReadQueue.ts";
 import { FRAME } from "./static_frame.ts";
 
@@ -139,12 +139,12 @@ export class QueryWriteQueue extends BufferWriterQueue<QueryTask> {
   }
 
   private async writeBeginTransactionTask(item: BeginTransactionTask): Promise<void> {
-    const statement = createTypeSqlStatementEncoder("BEGIN" + (item.mode ? " ISOLATION LEVEL " + item.mode : ""));
+    const statement = new InternalTextSqlStatementEncoder("BEGIN" + (item.mode ? " ISOLATION LEVEL " + item.mode : ""));
     this.readQueue.push({ type: ReceiverType.StartTransaction });
     await this.writeExtended(statement);
   }
   private async writeEndTransactionTask(type: "COMMIT" | "ROLLBACK"): Promise<void> {
-    const statement = createTypeSqlStatementEncoder(type);
+    const statement = new InternalTextSqlStatementEncoder(type);
     this.readQueue.push({ type: ReceiverType.EndTransaction });
     this.readQueue.enqueueSync();
     await this.writeExtended(statement);
