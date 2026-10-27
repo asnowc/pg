@@ -7,13 +7,7 @@ import type {
 } from "@/interface/Connection.ts";
 import { eachLink, LinkList } from "@/_utils/LinkList.ts";
 import { PgPoolConnection } from "./PgConnection.ts";
-import {
-  QueryOptions,
-  QueryReader,
-  SingleQueryOperation,
-  SqlStatement,
-  TypedSqlStatementEncoder,
-} from "@/interface/Query.ts";
+import { QueryOptions, QueryReader, SingleQueryOperation, SqlStatement, TypedSqlStatement } from "@/interface/Query.ts";
 import { sqlStatementToSqlEncoder } from "./private/sql_statement.ts";
 import QueryReaderImpl from "./private/QueryReader.ts";
 
@@ -190,7 +184,7 @@ export class PgPool implements SingleQueryOperation, AsyncDisposable {
   [Symbol.asyncDispose](): Promise<void> {
     return this.close();
   }
-  query<T>(queryable: SqlStatement<T> | TypedSqlStatementEncoder<T>, options?: QueryOptions): QueryReader<T> {
+  query<T>(queryable: SqlStatement | TypedSqlStatement<T>, options?: QueryOptions): QueryReader<T> {
     const encoder = sqlStatementToSqlEncoder(queryable, options);
     return new QueryReaderImpl<T>(async () => {
       const session = await this.#getSession();

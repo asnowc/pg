@@ -2,8 +2,10 @@
  * 字节流读取器。执行读取操作前需要确保有足够的可读字节。
  */
 export interface StreamReader {
+  readonly buffer: Uint8Array;
+  get readableEnd(): number;
   /** 当前读取偏移量，即下一个读取操作将从该偏移量开始 */
-  get readerReadOffset(): number;
+  readableStart: number;
   /** 可读取的字节长度 */
   get readableLength(): number;
   readInt8(): number;
@@ -20,13 +22,13 @@ export interface StreamReader {
    */
   readBinary(size: number): Uint8Array;
   /** 复制指定长度的字节，不会影响原始缓冲区的数据 */
-  copyBinary(size: number): Uint8Array;
+  slice(size: number): Uint8Array;
 }
 
 export class BufferReader implements StreamReader {
   constructor(buffer: Uint8Array, dataSize: number = 0) {
     this.buffer = buffer;
-    this.readerBufferWriteOffset = dataSize;
+    this.readableEnd = dataSize;
     this.#dataView = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
   }
   #dataView: DataView;
@@ -34,25 +36,25 @@ export class BufferReader implements StreamReader {
   /** 已读取的偏移量，即下一个读取操作将从该偏移量开始 */
   #readOffset: number = 0;
   /** 已写入的偏移量，即下一个写入操作将从该偏移量开始 */
-  readerBufferWriteOffset: number;
-  get readerReadOffset(): number {
+  readableEnd: number;
+  get readableStart(): number {
     return this.#readOffset;
   }
 
   /** 将数据推入缓冲区，返回实际写入缓冲区的字节数 */
   pushReaderBufferData(chunk: Uint8Array): number {
-    const availableLength = this.buffer.byteLength - this.readerBufferWriteOffset;
+    const availableLength = this.buffer.byteLength - this.readableEnd;
     const writtenLength = Math.min(chunk.byteLength, availableLength);
-    this.buffer.set(chunk.subarray(0, writtenLength), this.readerBufferWriteOffset);
-    this.readerBufferWriteOffset += writtenLength;
+    this.buffer.set(chunk.subarray(0, writtenLength), this.readableEnd);
+    this.readableEnd += writtenLength;
     return writtenLength;
   }
   getIdleFreeReaderBuffer(): Uint8Array {
-    return this.buffer.subarray(this.readerBufferWriteOffset);
+    return this.buffer.subarray(this.readableEnd);
   }
 
   get readableLength(): number {
-    return this.readerBufferWriteOffset - this.#readOffset;
+    return this.readableEnd - this.#readOffset;
   }
 
   readInt8(): number {
@@ -100,12 +102,10 @@ export class BufferReader implements StreamReader {
     this.#readOffset = start + size;
     return this.buffer.subarray(start, this.#readOffset);
   }
-  copyBinary(size: number): Uint8Array {
+  slice(size: number): Uint8Array {
     const start = this.#readOffset;
     this.#readOffset = start + size;
-    const buffer = new Uint8Array(size);
-    buffer.set(this.buffer.subarray(start, this.#readOffset));
-    return buffer;
+    return this.buffer.slice(start, this.#readOffset);
   }
 
   /**
@@ -115,9 +115,9 @@ export class BufferReader implements StreamReader {
     if (this.#readOffset === 0) {
       return;
     }
-    const unreadLength = this.readerBufferWriteOffset - this.#readOffset;
-    this.buffer.copyWithin(0, this.#readOffset, this.readerBufferWriteOffset);
-    this.readerBufferWriteOffset = unreadLength;
+    const unreadLength = this.readableEnd - this.#readOffset;
+    this.buffer.copyWithin(0, this.#readOffset, this.readableEnd);
+    this.readableEnd = unreadLength;
     this.#readOffset = 0;
   }
 }

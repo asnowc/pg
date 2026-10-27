@@ -36,7 +36,7 @@ export class QueryReadQueue extends CountLinkList<ResultReceiver> {
     }
   }
   private initQueryMessageListener(parsers: MessageParsers, queryWrite: QueryWriteQueue) {
-    parsers.set(BackendMessageCode.DataRow, (body) => this.getResultReceiver().dataRow(body));
+    parsers.set(BackendMessageCode.DataRow, (reader, remaining) => this.getResultReceiver().dataRow(reader, remaining));
     parsers.set(BackendMessageCode.EmptyQueryResponse, () => {
       this.getResultReceiver(); // 确保有一个当前的结果接收器
     });
@@ -44,7 +44,7 @@ export class QueryReadQueue extends CountLinkList<ResultReceiver> {
       this.getResultReceiver(); // 确保有一个当前的结果接收器
     });
 
-    parsers.set(BackendMessageCode.CommandComplete, (body) => {
+    parsers.setFullParser(BackendMessageCode.CommandComplete, (body) => {
       const current = this.popResultReceiver();
       current.commandComplete(body);
       current.resolve(current);
@@ -56,7 +56,7 @@ export class QueryReadQueue extends CountLinkList<ResultReceiver> {
       }
       current.resolve(current);
     });
-    parsers.set(BackendMessageCode.ErrorResponse, (body) => {
+    parsers.setFullParser(BackendMessageCode.ErrorResponse, (body) => {
       const next = this.head;
       if (!next) throw new InternalError("Unexpected ErrorResponse: no query available");
       this.shift();
@@ -73,13 +73,12 @@ export class QueryReadQueue extends CountLinkList<ResultReceiver> {
         queryWrite.clearWriteQueueForSync(); // queue has no SYNC, so we need to clear the write queue and send a SYNC immediately
       }
     });
-
-    parsers.set(BackendMessageCode.RowDescription, (body) => {
-      this.getResultReceiver().rowDescription(body);
+    parsers.set(BackendMessageCode.RowDescription, (reader, remaining) => {
+      return this.getResultReceiver().rowDescription(reader, remaining);
     });
 
     // 匹配 SYNC
-    parsers.set(BackendMessageCode.ReadyForQuery, (body) => {
+    parsers.setFullParser(BackendMessageCode.ReadyForQuery, (body) => {
       const current = this.head;
       if (!current || current.type !== ReceiverType.Sync) {
         throw new InternalError("ReadyForQuery message  not matched with SYNC");
@@ -125,11 +124,11 @@ export class QueryReadQueue extends CountLinkList<ResultReceiver> {
   }
 
   private initLifecycleMessageListener(parser: MessageParsers) {
-    parser.set(BackendMessageCode.ParameterStatus, (data) => {
+    parser.setFullParser(BackendMessageCode.ParameterStatus, (data) => {
       const { name, value } = decodeParameterStatus(data);
       this.parameters[name] = value;
     });
-    parser.set(BackendMessageCode.NotificationResponse, (data) => {
+    parser.setFullParser(BackendMessageCode.NotificationResponse, (data) => {
       const message = decodeNotification(data);
       const asyncData = {
         type: AsyncMessageType.Notification,
@@ -138,7 +137,7 @@ export class QueryReadQueue extends CountLinkList<ResultReceiver> {
         payload: message.payload,
       };
     });
-    parser.set(BackendMessageCode.NoticeResponse, (data) => {
+    parser.setFullParser(BackendMessageCode.NoticeResponse, (data) => {
       const message = decodeNotice(data);
       const asyncData = { type: AsyncMessageType.Notice, fields: message.fields, info: message.info };
     });

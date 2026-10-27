@@ -30,7 +30,7 @@ export class DenoConnBufferStream extends BufferReader implements ConnectionStre
     let size: number | null;
     do {
       this.gc();
-      const chunk = this.buffer.subarray(this.readerBufferWriteOffset);
+      const chunk = this.buffer.subarray(this.readableEnd);
       if (chunk.byteLength === 0) {
         throw new InternalError("The BufferReader did not read any data when the onData method was called");
       }
@@ -38,7 +38,7 @@ export class DenoConnBufferStream extends BufferReader implements ConnectionStre
       if (size === null) return onEnd();
       if (size === 0) continue;
 
-      this.readerBufferWriteOffset += size;
+      this.readableEnd += size;
       isEnd = onData();
     } while (!isEnd);
   }

@@ -1,6 +1,10 @@
 import { ConnectHandler, PoolHandler, PoolQueryTest, QueryTest, TestQueries } from "./common.ts";
 import { DB_CONNECT_INFO } from "../utils/db.ts";
 import type { PgConnection, PgPool } from "@asla/pg";
+
+const BUFFER_DATA = Buffer.from("awesome");
+const JSON_DATA = [{ some: "json" }, { array: "object" }];
+
 export function initTest(
   {
     createSqlBuilder,
@@ -23,7 +27,6 @@ export function initTest(
       password: DB_CONNECT_INFO.password,
     });
   }
-
   const queries: TestQueries<PgConnection | PgPool> = {
     select: async (client) => {
       await client.query("select 1 as x").rows();
@@ -38,8 +41,8 @@ export function initTest(
       ${new Date()}::timestamp with time zone as timestamp,
       ${null} as null,
       ${false}::bool as boolean,
-      ${Buffer.from("awesome")}::bytea as bytea,
-      ${JSON.stringify([{ some: "json" }, { array: "object" }])}::jsonb as json
+      ${BUFFER_DATA}::bytea as bytea,
+      ${JSON.stringify(JSON_DATA)}::jsonb as json
     `).rows();
     },
   };

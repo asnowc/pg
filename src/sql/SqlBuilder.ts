@@ -1,5 +1,5 @@
 import type { JsDataEncoderMap } from "@/interface/js_data_encoder.ts";
-import { TemplateSqlStatementEncoder } from "./SqlStatementEncoder.ts";
+import { TypedSqlStatementEncoder } from "./SqlStatementEncoder.ts";
 
 /**
  * @example
@@ -13,7 +13,7 @@ import { TemplateSqlStatementEncoder } from "./SqlStatementEncoder.ts";
  * @public
  */
 export interface SqlGenerator extends SqlGeneratorPrototype {
-  <T = unknown>(chunks: TemplateStringsArray, ...args: unknown[]): TemplateSqlStatementEncoder;
+  <T = unknown>(chunks: TemplateStringsArray, ...args: unknown[]): TypedSqlStatementEncoder;
   raw(value: string): String;
 }
 interface SqlGeneratorPrototype {
@@ -38,8 +38,8 @@ interface SqlGeneratorPrototype {
  * @public
  */
 export function createSqlBuilder(chunksOrMap: JsDataEncoderMap): SqlGenerator {
-  function sqlBuilder<T = unknown>(chunks: TemplateStringsArray, ...args: unknown[]): TemplateSqlStatementEncoder {
-    return new TemplateSqlStatementEncoder(chunks, args, chunksOrMap as JsDataEncoderMap);
+  function sqlBuilder<T = unknown>(chunks: TemplateStringsArray, ...args: unknown[]): TypedSqlStatementEncoder {
+    return new TypedSqlStatementEncoder(chunks, args, chunksOrMap as JsDataEncoderMap);
   }
   sqlBuilder.raw = sqlGeneratorPrototype.raw;
   return sqlBuilder;

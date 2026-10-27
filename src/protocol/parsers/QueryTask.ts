@@ -1,4 +1,4 @@
-import type { TransactionMode, TypedSqlStatementEncoder } from "@/interface/Query.ts";
+import type { TransactionMode, TypedSqlStatement } from "@/interface/Query.ts";
 import { QueryResultParser, SampleQueryResultParser } from "./QueryResultParser.ts";
 
 export type QueryTask =
@@ -10,14 +10,14 @@ export type QueryTask =
 
 export interface ExtendedQueryTask {
   type: QueryAction.ExtendedQuery;
-  statement: TypedSqlStatementEncoder;
+  statement: TypedSqlStatement;
   resolve: (result: QueryResultParser) => void;
   reject: (reason: unknown) => void;
 }
 
 export interface SimpleQueryTask {
   type: QueryAction.SimpleQuery;
-  statement: TypedSqlStatementEncoder;
+  statement: TypedSqlStatement;
   resolve: (result: SampleQueryResultParser) => void;
   reject: (reason: unknown) => void;
 }

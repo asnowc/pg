@@ -19,7 +19,7 @@ import type {
   Transaction,
   TransactionMode,
   TransactionQueryOperation,
-  TypedSqlStatementEncoder,
+  TypedSqlStatement,
 } from "@/interface/Query.ts";
 import { sqlStatementToSqlEncoder } from "./private/sql_statement.ts";
 import QueryReaderImpl from "./private/QueryReader.ts";
@@ -37,7 +37,7 @@ class QueryOperation
   }
 
   #session: PgSession;
-  query<T>(queryable: SqlStatement<T> | TypedSqlStatementEncoder<T>, options?: QueryOptions): QueryReader<T> {
+  query<T>(queryable: SqlStatement | TypedSqlStatement<T>, options?: QueryOptions): QueryReader<T> {
     const encoder = sqlStatementToSqlEncoder(queryable, options);
     return new QueryReaderImpl(() => {
       const promise = this.#session.extendedQuery<T>(encoder);
@@ -49,13 +49,13 @@ class QueryOperation
   begin(mode?: TransactionMode): Transaction {
     throw new Error("Not implemented");
   }
-  open<T>(queryable: SqlStatement<T>, options?: CursorOpenOptions): Promise<Cursor<T>> {
+  open<T>(queryable: SqlStatement | TypedSqlStatement<T>, options?: CursorOpenOptions): Promise<Cursor<T>> {
     throw new Error("Not implemented");
   }
-  copyFrom(queryable: SqlStatement<unknown>, options?: CopyFromOptions): CopyFromHandle {
+  copyFrom(queryable: SqlStatement | TypedSqlStatement, options?: CopyFromOptions): CopyFromHandle {
     throw new Error("Not implemented");
   }
-  copyTo(queryable: SqlStatement<unknown>, options?: CopyToOptions): ReadableStream<Uint8Array> {
+  copyTo(queryable: SqlStatement | TypedSqlStatement, options?: CopyToOptions): ReadableStream<Uint8Array> {
     throw new Error("Not implemented");
   }
 

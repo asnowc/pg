@@ -4,16 +4,16 @@ import { inet, macaddr } from "./decoder/network.ts";
 import { bigint, boolean, float, numeric, signedInteger, unsignedBigint, unsignedInteger } from "./decoder/numeric.ts";
 import { date, time, timestamp, timestamptz, timetz } from "./decoder/datetime.ts";
 import { bit, bytea, text, uuid } from "./decoder/text.ts";
-import type { PgDataDecoder, PgDataDecoderMap } from "@/interface/pg_data_decoder.ts";
+import type { PgDataDecoder } from "@/interface/pg_data_decoder.ts";
 const voidDecoder: PgDataDecoder = {
   decodeText: (value: string) => undefined,
   decodeBinary: (value: Uint8Array) => undefined,
 };
 /** @public */
-export const PG_DATA_DECODER_V1: PgDataDecoderMap = createDataDecoderV1();
+export const PG_DATA_DECODER_V1: ReadonlyMap<number, PgDataDecoder> = createDataDecoderV1();
 
 /** @__NO_SIDE_EFFECTS__ */
-function createDataDecoderV1(): PgDataDecoderMap {
+function createDataDecoderV1(): ReadonlyMap<number, PgDataDecoder> {
   const map = new Map<number, PgDataDecoder>();
   map.set(PgOid.BOOL, boolean);
   map.set(PgOid.BYTEA, bytea);

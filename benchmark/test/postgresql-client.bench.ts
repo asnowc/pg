@@ -26,7 +26,7 @@ export const SERIES: Library[] = [
   "pg",
   // "fake2",
 ];
-export const META: Meta = { poolSize: 4, queryName: "select" };
+export const META: Meta = { poolSize: 4, queryName: "selectArgs" };
 
 const getBatch: GetBenchItem<Meta> = async function getBatch(name: string, meta: Meta) {
   const { poolSize, queryName } = meta;

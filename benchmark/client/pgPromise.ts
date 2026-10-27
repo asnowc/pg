@@ -23,6 +23,8 @@ type ConnInfo = {
   query: Pool["query"] | Connection["query"];
   close: () => Promise<void>;
 };
+const BUFFER_DATA = Buffer.from("awesome");
+const JSON_DATA = [{ some: "json" }, { array: "object" }];
 const queries: TestQueries<ConnInfo | Pool> = {
   select: async (client) => {
     await client.query("select 1 as x");
@@ -40,15 +42,7 @@ const queries: TestQueries<ConnInfo | Pool> = {
         $5::bool as boolean,
         $6::bytea as bytea,
         $7::jsonb as json`,
-      [
-        1337,
-        "wat",
-        new Date().toISOString(),
-        null,
-        false,
-        Buffer.from("awesome"),
-        JSON.stringify([{ some: "json" }, { array: "object" }]),
-      ],
+      [1337, "wat", new Date().toISOString(), null, false, BUFFER_DATA, JSON.stringify(JSON_DATA)],
     );
   },
 };

@@ -22,10 +22,10 @@ export async function startAuthentication(
   let backendKey: PgBackendKeyData | undefined;
   let negotiateProtocolVersion: { newestMinorVersion: number; unsupportedOptions: string[] } | undefined;
 
-  parser.set(BackendMessageCode.BackendKeyData, (data) => {
+  parser.setFullParser(BackendMessageCode.BackendKeyData, (data) => {
     backendKey = decodeBackendKeyData(data);
   });
-  parser.set(BackendMessageCode.NegotiateProtocolVersion, (data) => {
+  parser.setFullParser(BackendMessageCode.NegotiateProtocolVersion, (data) => {
     negotiateProtocolVersion = decodeNegotiateProtocolVersion(data);
   });
 
@@ -38,7 +38,7 @@ export async function startAuthentication(
       () => conn.closeWrite(),
       reject,
     );
-    parser.set(BackendMessageCode.Authentication, (data) => {
+    parser.setFullParser(BackendMessageCode.Authentication, (data) => {
       const reader = new BufferReader(data, data.byteLength);
       const code = reader.readUInt32BE();
       if (code === AuthCode.OK) return;
@@ -55,11 +55,11 @@ export async function startAuthentication(
       parser.next(conn);
       return isDone;
     }, () => reject(new UnexpectedEOFError()));
-    parser.set(BackendMessageCode.ErrorResponse, (data) => {
+    parser.setFullParser(BackendMessageCode.ErrorResponse, (data) => {
       const errorMessage = decodeError(data);
       throw new PgAuthenticationError(errorMessage.fields.message);
     });
-    parser.set(BackendMessageCode.ReadyForQuery, (data) => {
+    parser.setFullParser(BackendMessageCode.ReadyForQuery, (data) => {
       const statusCode = data[0];
       if (statusCode !== PgTransactionStatus.Idle) {
         throw new PgProtocolError("Unexpected transaction status: " + statusCode);

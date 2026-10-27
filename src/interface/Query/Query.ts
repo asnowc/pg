@@ -1,5 +1,5 @@
 import type { QueryReader, SampleQueryReader } from "./QueryReader.ts";
-import type { SqlStatement, SqlStatements, TypedSqlStatement, TypedSqlStatementEncoder } from "./QueryStatement.ts";
+import type { SqlStatement, SqlStatements, TypedSqlStatement } from "./QueryStatement.ts";
 import type { QueryCommonOptions } from "./_internal.ts";
 
 /**
@@ -8,7 +8,7 @@ import type { QueryCommonOptions } from "./_internal.ts";
  * @public
  * @since 0.3.0
  */
-export type QueryOptions = QueryCommonOptions & Pick<TypedSqlStatement, "typeDecoders" | "columnDecoders">;
+export type QueryOptions = QueryCommonOptions;
 
 /**
  * 支持扩展查询的操作。
@@ -29,8 +29,7 @@ export interface SingleQueryOperation {
    * const rows = await conn.query(sql).getRows();
    * ```
    */
-  query<T>(queryable: SqlStatement<T>, options?: QueryOptions): QueryReader<T>;
-  query<T>(queryable: TypedSqlStatementEncoder<T>, options?: QueryOptions): QueryReader<T>;
+  query<T>(queryable: TypedSqlStatement<T> | SqlStatement, options?: QueryOptions): QueryReader<T>;
 }
 export interface PipelineQueryOperation {
   /**
@@ -47,8 +46,7 @@ export interface PipelineQueryOperation {
    * ]);
    * ```
    */
-  pipeline<T>(queryable: SqlStatement<T>, options?: QueryOptions): QueryReader<T>;
-  pipeline<T>(queryable: TypedSqlStatementEncoder<T>, options?: QueryOptions): QueryReader<T>;
+  pipeline<T>(queryable: TypedSqlStatement<T> | SqlStatement, options?: QueryOptions): QueryReader<T>;
 }
 
 /**

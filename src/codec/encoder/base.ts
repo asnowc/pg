@@ -10,11 +10,18 @@ export const stringEncoder: JsDataEncoder<string> = {
   encodeInto: (buffer, offset, value) => encodeUTF16StringInto(value, buffer.subarray(offset)),
 };
 export const numberEncoder: JsDataEncoder<number> = {
-  oid: getNumberOid,
+  oid: PgOid.INT4,
   encodeToText: String,
-  calculateByteLength: (value) => getNumberOid(value) === PgOid.INT4 ? 4 : 8,
+  byteLength: 4,
   encodeInto(buffer, offset, value) {
-    if (getNumberOid(value) === PgOid.INT4) return encodeInt32BE(buffer, offset, value);
+    return encodeInt32BE(buffer, offset, value);
+  },
+};
+export const floatEncoder: JsDataEncoder<number> = {
+  oid: PgOid.FLOAT8,
+  encodeToText: String,
+  byteLength: 8,
+  encodeInto(buffer, offset, value) {
     new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength).setFloat64(offset, value);
     return 8;
   },
@@ -37,10 +44,6 @@ export const bytesEncoder: JsDataEncoder<Uint8Array> = {
     return value.byteLength;
   },
 };
-
-function getNumberOid(value: number): number {
-  return Number.isInteger(value) ? PgOid.INT4 : PgOid.FLOAT8;
-}
 
 function toHex(value: Uint8Array): string {
   return Array.from(value, (byte) => byte.toString(16).padStart(2, "0")).join("");

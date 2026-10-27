@@ -3,7 +3,7 @@ import { QueryWriteQueue } from "./MessageWriteQueue.ts";
 import { AuthenticationResult } from "./auth.ts";
 import { MessageParsers } from "./parsers/MessageParser.ts";
 import { ConnectionStream } from "@/_utils/ConnectionStream.ts";
-import type { TransactionMode, TypedSqlStatementEncoder } from "@/interface/Query.ts";
+import type { SqlStatement, TransactionMode, TypedSqlStatement } from "@/interface/Query.ts";
 import type { QueryResultParser } from "./parsers/QueryResultParser.ts";
 import { BufferWriter } from "@/_utils/StreamWriter.ts";
 import { EventEmitter, Listener } from "@/_utils/EventEmitter.ts";
@@ -96,7 +96,7 @@ export class PgSession<T = unknown> extends EventEmitter {
   rollbackTransaction(): void {
     return this.writeQueue.rollbackTransaction();
   }
-  extendedQuery<T>(statement: TypedSqlStatementEncoder): Promise<QueryResultParser<T>> {
+  extendedQuery<T>(statement: TypedSqlStatement<T>): Promise<QueryResultParser<T>> {
     return this.writeQueue.extendedQuery<T>(statement);
   }
   sync(): void {

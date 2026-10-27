@@ -6,8 +6,6 @@ import type {
   SqlStatement,
   Transaction,
   TransactionMode,
-  TypedSqlStatement,
-  TypedSqlStatementEncoder,
 } from "@/interface/Query.ts";
 import QueryReaderImpl from "./QueryReader.ts";
 import { sqlStatementToSqlEncoder } from "./sql_statement.ts";
@@ -22,17 +20,14 @@ export class TransactionImpl implements Transaction {
     return this.ended;
   }
 
-  query<T>(
-    queryable: SqlStatement<T> | TypedSqlStatementEncoder<T>,
-    options?: QueryOptions & Pick<TypedSqlStatement, "typeDecoders" | "columnDecoders">,
-  ): IQueryReader<T> {
+  query<T>(queryable: SqlStatement, options?: QueryOptions): IQueryReader<T> {
     const encoder = sqlStatementToSqlEncoder(queryable, options);
     return new QueryReaderImpl<T>(async () => {
       throw new Error("Not implemented");
     });
   }
 
-  open<T>(_queryable: SqlStatement<T>, _options?: CursorOpenOptions): Promise<Cursor<T>> {
+  open<T>(_queryable: SqlStatement, _options?: CursorOpenOptions): Promise<Cursor<T>> {
     throw new Error("Not implemented");
   }
 

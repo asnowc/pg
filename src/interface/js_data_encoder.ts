@@ -1,32 +1,48 @@
-type EncoderCommon<T = unknown> = {
+export interface JsDataFixedEncoder<T = unknown> {
   oid: number | ((value: T) => number);
   encodeToText(value: T, oid: number): string;
-};
-/** @public */
-export interface JsDataFixedEncoder<T = unknown> extends EncoderCommon<T> {
   readonly byteLength: number;
   encodeInto(buffer: Uint8Array, offset: number, value: T): number;
 }
-/** @public */
-export interface JsDataVariableEncoder<T = unknown> extends EncoderCommon<T> {
+export interface JsDataVariableEncoder<T = unknown> {
+  oid: number | ((value: T) => number);
+  encodeToText(value: T, oid: number): string;
   calculateByteLength(value: T): number;
   encodeInto(buffer: Uint8Array, offset: number, value: T): number;
 }
 /** @public */
 export type JsDataEncoder<T = unknown> = JsDataFixedEncoder<T> | JsDataVariableEncoder<T>;
-
-//TODO: 待定
-interface JsDataStreamEncoder<T = unknown> extends EncoderCommon<T> {
+export type JsDataEncoder2 = JsDataEncoderDefined<unknown> | JsDataFixedLengthEncoderDefined<unknown>;
+/** @public */
+export interface JsDataEncoderDefined<T = unknown> {
+  oid: number;
+  encodeToText(value: T): string;
   calculateByteLength(value: T): StreamEncoder;
 }
+/** @public */
+export interface JsDataFixedLengthEncoderDefined<T = unknown> extends StreamEncoder {
+  oid: number;
+  encodeToText(value: T): string;
+}
 
-type StreamEncoder = {
+export type StreamEncoder = {
   readonly byteLength: number;
   /**
-   * @returns 返回累计编码的大小。当这个值等于 byteLength 时，表示编码完成。否则应继续调用 encodeInto 进行编码。
+   * @returns `true` if encoding is complete, `false` otherwise.
    */
-  encodeInto(buffer: Uint8Array, offset: number): number;
+  encodeInto(writer: WriterBuffer): boolean;
 };
 
-/** @public */
+/**  改为 JsDataEncoderGetter */
 export type JsDataEncoderMap = ReadonlyMap<object | string | number, JsDataEncoder<never>>;
+
+export interface WriterBuffer {
+  /** The underlying buffer where data is written. */
+  readonly buffer: Uint8Array;
+  /** A DataView for convenient reading and writing of different data types. */
+  readonly view: DataView;
+  /** The current offset in the buffer where the next write will occur. */
+  writeOffset: number;
+  /** The number of bytes available for writing in the buffer. */
+  get writableLength(): number;
+}

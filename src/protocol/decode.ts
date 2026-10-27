@@ -1,9 +1,11 @@
 import { BackendMessageCode, NOTICE_STANDARD_FIELD_MAP, PgFormat, PgTransactionStatus } from "./const.ts";
-import type { PgErrorFields, PgFieldDescription } from "./messages.ts";
+import type { PgErrorFields } from "./messages.ts";
 import { decodeUTF16String, findCStringTerminator } from "@/_utils/string.ts";
 import { decodeInt16BE, decodeInt32BE, decodeUInt16BE, decodeUInt32BE } from "@/_utils/number.ts";
 import { PgProtocolError } from "@/_utils/error.ts";
-
+import { getFormat } from "./decoder/_common.ts";
+export * from "./decoder/DataRowDecoder.ts";
+export * from "./decoder/RowDescriptionDecoder.ts";
 // 启动消息
 
 export function decodeNegotiateProtocolVersion(data: Uint8Array) {
@@ -61,25 +63,6 @@ export function decodeParameterStatus(body: Uint8Array) {
   return { name, value };
 }
 
-// 数据
-
-export function decodeDataRow(data: Uint8Array) {
-  const count = decodeUInt16BE(data, 0);
-  let offset = 2;
-  const values: (Uint8Array | null)[] = new Array(count);
-  let length: number;
-  for (let index = 0; index < count; index++) {
-    length = decodeInt32BE(data, offset);
-    offset += 4;
-    if (length === -1) {
-      values[index] = null;
-      continue;
-    } else if (length < 0) throw new Error("invalid value length");
-    values[index] = data.subarray(offset, offset + length);
-    offset += length;
-  }
-  return values;
-}
 export function decodeParameterDescription(data: Uint8Array) {
   const count = decodeUInt16BE(data, 0);
   let offset = 2;
@@ -89,31 +72,6 @@ export function decodeParameterDescription(data: Uint8Array) {
     offset += 4;
   }
   return dataTypeOids;
-}
-export function decodeRowDescription(data: Uint8Array): PgFieldDescription[] {
-  const count = decodeUInt16BE(data, 0);
-  let offset = 2;
-  const fields: PgFieldDescription[] = new Array(count);
-  for (let index = 0; index < count; index++) {
-    const item: Partial<PgFieldDescription> = {};
-    const nameEnd = findCStringTerminator(data, offset);
-    item.name = decodeUTF16String(data.subarray(offset, nameEnd));
-    offset = nameEnd + 1;
-    item.tableOID = decodeUInt32BE(data, offset);
-    offset += 4;
-    item.columnAttribute = decodeInt16BE(data, offset);
-    offset += 2;
-    item.typeOID = decodeUInt32BE(data, offset);
-    offset += 4;
-    item.typeSize = decodeInt16BE(data, offset);
-    offset += 2;
-    item.typeModifier = decodeInt32BE(data, offset);
-    offset += 4;
-    item.format = getFormat(decodeInt16BE(data, offset));
-    offset += 2;
-    fields[index] = item as PgFieldDescription;
-  }
-  return fields;
 }
 
 // 状态
@@ -199,11 +157,4 @@ function decodeNoticeResponse(body: Uint8Array) {
     throw new PgProtocolError("Invalid PostgreSQL notice response: missing required field");
   }
   return { fields: fields as unknown as PgErrorFields, info: unknown };
-}
-
-function getFormat(format: number): PgFormat {
-  if (format !== PgFormat.text && format !== PgFormat.binary) {
-    throw new PgProtocolError(`Invalid PostgreSQL format code: ${format}`);
-  }
-  return format;
 }

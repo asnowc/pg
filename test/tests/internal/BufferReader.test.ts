@@ -32,7 +32,7 @@ test("从非零 byteOffset 缓冲区读取大小端整数", () => {
   view.setUint32(10, 3456789012);
   view.setBigInt64(14, -123456789n);
   view.setBigUint64(22, 12345678901234567890n);
-  reader.readerBufferWriteOffset = 30;
+  reader.readableEnd = 30;
 
   expect(reader.readInt8()).toBe(-1);
   expect(reader.readUInt8()).toBe(255);
@@ -49,7 +49,7 @@ test("readBinary 借用缓冲区，copyBinary 保留独立副本", () => {
   const reader = new BufferReader(new Uint8Array(4));
   reader.pushReaderBufferData(Uint8Array.of(1, 2, 3, 4));
   const borrowed = reader.readBinary(2);
-  const copied = reader.copyBinary(2);
+  const copied = reader.slice(2);
   reader.buffer[0] = 9;
   reader.buffer[2] = 9;
   expect(borrowed).toEqual(Uint8Array.of(9, 2));
