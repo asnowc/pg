@@ -1,28 +1,28 @@
-type EncoderCommon<T = unknown> = {
+export interface JsDataFixedEncoder<T = unknown> {
   oid: number | ((value: T) => number);
   encodeToText(value: T, oid: number): string;
-};
-/** @public */
-export interface JsDataFixedEncoder<T = unknown> extends EncoderCommon<T> {
   readonly byteLength: number;
   encodeInto(buffer: Uint8Array, offset: number, value: T): number;
 }
-/** @public */
-export interface JsDataVariableEncoder<T = unknown> extends EncoderCommon<T> {
+export interface JsDataVariableEncoder<T = unknown> {
+  oid: number | ((value: T) => number);
+  encodeToText(value: T, oid: number): string;
   calculateByteLength(value: T): number;
   encodeInto(buffer: Uint8Array, offset: number, value: T): number;
 }
 /** @public */
-export type JsDataEncoder<T = unknown> = JsDataFixedEncoder<T> | JsDataVariableEncoder<T> | JsDataEncoderDefined<T>;
-
+export type JsDataEncoder<T = unknown> = JsDataFixedEncoder<T> | JsDataVariableEncoder<T>;
+export type JsDataEncoder2 = JsDataEncoderDefined<unknown> | JsDataFixedLengthEncoderDefined<unknown>;
+/** @public */
 export interface JsDataEncoderDefined<T = unknown> {
-  oid: number | ((value: T) => number);
-  encodeToText(value: T, oid: number): string;
-  calculateByteLength(value: T, oid: number): StreamEncoder;
+  oid: number;
+  encodeToText(value: T): string;
+  calculateByteLength(value: T): StreamEncoder;
 }
+/** @public */
 export interface JsDataFixedLengthEncoderDefined<T = unknown> extends StreamEncoder {
-  oid: number | ((value: T) => number);
-  encodeToText(value: T, oid: number): string;
+  oid: number;
+  encodeToText(value: T): string;
 }
 
 export type StreamEncoder = {
@@ -34,11 +34,20 @@ export type StreamEncoder = {
 };
 
 /** @public */
+export interface JsDataEncoderGetter<T = unknown> {
+  getEncoder(value: T): JsDataEncoder2;
+}
+
+/**  改为 JsDataEncoderGetter */
 export type JsDataEncoderMap = ReadonlyMap<object | string | number, JsDataEncoder<never>>;
 
 export interface WriterBuffer {
+  /** The underlying buffer where data is written. */
   readonly buffer: Uint8Array;
+  /** A DataView for convenient reading and writing of different data types. */
   readonly view: DataView;
+  /** The current offset in the buffer where the next write will occur. */
   writeOffset: number;
+  /** The number of bytes available for writing in the buffer. */
   get writableLength(): number;
 }

@@ -1,4 +1,9 @@
-import type { JsDataEncoder, JsDataEncoderMap } from "@/interface/js_data_encoder.ts";
+import type {
+  JsDataEncoder,
+  JsDataEncoder2,
+  JsDataEncoderGetter,
+  JsDataEncoderMap,
+} from "@/interface/js_data_encoder.ts";
 import { booleanEncoder, bytesEncoder, numberEncoder, stringEncoder } from "./encoder/base.ts";
 import {
   dateEncoder,
@@ -22,21 +27,24 @@ export function setJsDataTypeFlag<T extends object>(obj: T, flag: string | numbe
   Reflect.set(obj, DATA_TYPE_KEY, flag);
   return obj;
 }
+function getObjectDataEncoder<C, T extends object>(map: ReadonlyMap<any, C>, data: T): C | undefined {
+  const flag = Reflect.get(data, DATA_TYPE_KEY) as string | number | undefined;
+  if (flag !== undefined) return map.get(flag);
+  let encoder: C | undefined;
+  let constructor = data.constructor;
+  while (constructor) {
+    encoder = map.get(constructor);
+    if (encoder) return encoder;
+    constructor = Object.getPrototypeOf(constructor);
+  }
+  return undefined;
+}
 
 /** @public */
 export function getJsDataEncoderSafe<T>(map: JsDataEncoderMap, data: T): JsDataEncoder<T> | undefined {
   if (data === null) throw new TypeError(`null cannot be encoded`);
   if (typeof data === "object") {
-    const flag = Reflect.get(data, DATA_TYPE_KEY) as string | number | undefined;
-    if (flag !== undefined) return map.get(flag) as JsDataEncoder<T> | undefined;
-    let encoder: JsDataEncoder<never> | undefined;
-    let constructor = data.constructor;
-    while (constructor) {
-      encoder = map.get(constructor);
-      if (encoder) return encoder as unknown as JsDataEncoder<T>;
-      constructor = Object.getPrototypeOf(constructor);
-    }
-    return undefined;
+    return getObjectDataEncoder(map, data) as JsDataEncoder<T> | undefined;
   }
   return map.get(typeof data) as JsDataEncoder<T> | undefined;
 }
@@ -66,4 +74,46 @@ function createJsDataEncoderV1(): JsDataEncoderMap {
   map.set(Temporal.Instant, instantEncoder);
   map.set(Date, dateEncoder);
   return map;
+}
+class DefaultJsDataEncoderGetter implements JsDataEncoderGetter {
+  #map: Map<object, JsDataEncoder2>;
+  constructor() {
+    this.#map = new Map();
+  }
+  getObjectType(value: object): JsDataEncoder2 | undefined {
+    return getObjectDataEncoder(this.#map, value);
+  }
+  get(value: unknown): JsDataEncoder2 | undefined {
+    switch (typeof value) {
+      case "number":
+        //TODO
+        break;
+      case "string":
+        //TODO
+        break;
+      case "boolean":
+        //TODO
+        break;
+      case "bigint":
+        //TODO
+        break;
+      case "object":
+        if (value === null) throw new TypeError(`null cannot be encoded`);
+        return this.getObjectType(value);
+      default:
+        return undefined;
+    }
+  }
+  set(key: object, encoder: JsDataEncoder2): void {
+    this.#map.set(key, encoder);
+  }
+  getEncoder(data: unknown): JsDataEncoder2 {
+    const encoder = this.get(data);
+    if (!encoder) {
+      const type = typeof data;
+      const dataType = type === "object" && data ? (data as {}).constructor.name : type;
+      throw new TypeError(`No JS data encoder for ${dataType}`);
+    }
+    return encoder;
+  }
 }

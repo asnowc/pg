@@ -1,5 +1,5 @@
 import { getJsDataEncoder } from "@/codec/js_data_encoder.ts";
-import type { JsDataEncoderMap } from "@/interface/js_data_encoder.ts";
+import type { JsDataEncoder, JsDataEncoderMap } from "@/interface/js_data_encoder.ts";
 import { calcUTF16ByteLength, encodeUTF16StringInto } from "@/_utils/string.ts";
 import { encodeInt16BE, encodeInt32BE } from "@/_utils/number.ts";
 
@@ -7,9 +7,9 @@ export class InternalTemplateSqlStatementEncoder {
   constructor(chunks: readonly string[], args: unknown[], encoderMap: JsDataEncoderMap) {
     this.#chunks = chunks;
     this.#args = args;
-    this.#encoderMap = encoderMap ?? new Map();
+    this.#argEncoders = this.#args.map((arg) => getJsDataEncoder(encoderMap, arg));
   }
-  #encoderMap: JsDataEncoderMap;
+  #argEncoders: JsDataEncoder[];
   #args: unknown[];
   #chunks: ReadonlyArray<string>;
   calculateParseByteLength(): number {
@@ -43,7 +43,7 @@ export class InternalTemplateSqlStatementEncoder {
         args.push(null);
         continue;
       }
-      const encoder = getJsDataEncoder(this.#encoderMap, value);
+      const encoder = this.#argEncoders[index];
       const oid = typeof encoder.oid === "function" ? encoder.oid(value) : encoder.oid;
       args.push(encoder.encodeToText(value, oid));
     }
@@ -77,7 +77,7 @@ export class InternalTemplateSqlStatementEncoder {
     if (this.#stringified) return this.#stringified;
     const args = this.#args;
     const chunks = this.#chunks;
-    const encoderMap = this.#encoderMap;
+    const encoderMap = this.#argEncoders;
     let template = chunks[0];
 
     let arg: unknown;
@@ -85,7 +85,7 @@ export class InternalTemplateSqlStatementEncoder {
       arg = args[i - 1];
       if (arg === null) template += "NULL";
       else {
-        const encoder = getJsDataEncoder(encoderMap, arg);
+        const encoder = encoderMap[i - 1];
         const oid = typeof encoder.oid === "function" ? encoder.oid(arg) : encoder.oid;
         template += encoder.encodeToText(arg, oid);
       }
@@ -109,7 +109,12 @@ export class InternalTextSqlStatementEncoder {
     const sqlByteLength = calcUTF16ByteLength(this.#sqlStatement);
     return 1 + sqlByteLength + 1 + 2 + (this.#args?.length ?? 0) * 4;
   }
+
   encodeParseInto(data: Uint8Array, offset: number): number {
+    // https://postgres.ac.cn/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-PARSE
+    // arg count 表示前端希望预先指定的参数数量，可以为0.
+    // | statement name | statement text |arg count | arg OIDs...
+    // |   C string     |   C string     |  int16   |  int32[]
     data[offset++] = 0;
     offset += encodeUTF16StringInto(this.#sqlStatement, data.subarray(offset));
     data[offset++] = 0;
@@ -126,6 +131,13 @@ export class InternalTextSqlStatementEncoder {
     return byteLength;
   }
   encodeBindInto(data: Uint8Array, offset: number): number {
+    // https://postgres.ac.cn/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-BIND
+    // | portal name | statement name | format code count| format codes... | parameter value count | parameter values... | result column count | result codes...|
+    // | C string    | C string       | int16            | int16[]         | int16                 | value[]             | int16               | int16[]        |
+
+    // value:
+    // | value length |   value       |
+    // |  int32       |  value length |
     data[offset++] = 0;
     data[offset++] = 0;
     offset += encodeInt16BE(data, offset, 0);
