@@ -2,7 +2,6 @@ import type { FieldInfo, TypedSqlStatement } from "@/interface/Query.ts";
 import {
   decodeCommandComplete,
   decodeDataRow,
-  decodeRowDescription,
   DescribeTarget,
   encodeBindMessage,
   encodeDescribeMessage,
@@ -44,8 +43,8 @@ export class QueryResultParser<T = unknown> {
       this.reject(error);
     }
   }
-  rowDescription(body: Uint8Array) {
-    this.descriptions = decodeRowDescription(body);
+  rowDescription(body: PgFieldDescription[]) {
+    this.descriptions = body;
     this.fields = this.descriptions.map((description, index) => ({ ...description, index }));
   }
   commandComplete(body: Uint8Array) {

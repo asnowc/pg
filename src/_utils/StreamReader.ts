@@ -2,9 +2,10 @@
  * 字节流读取器。执行读取操作前需要确保有足够的可读字节。
  */
 export interface StreamReader {
+  readonly buffer: Uint8Array;
   get readableEnd(): number;
   /** 当前读取偏移量，即下一个读取操作将从该偏移量开始 */
-  get readableStart(): number;
+  readableStart: number;
   /** 可读取的字节长度 */
   get readableLength(): number;
   readInt8(): number;
@@ -21,7 +22,7 @@ export interface StreamReader {
    */
   readBinary(size: number): Uint8Array;
   /** 复制指定长度的字节，不会影响原始缓冲区的数据 */
-  copyBinary(size: number): Uint8Array;
+  slice(size: number): Uint8Array;
 }
 
 export class BufferReader implements StreamReader {
@@ -101,12 +102,10 @@ export class BufferReader implements StreamReader {
     this.#readOffset = start + size;
     return this.buffer.subarray(start, this.#readOffset);
   }
-  copyBinary(size: number): Uint8Array {
+  slice(size: number): Uint8Array {
     const start = this.#readOffset;
     this.#readOffset = start + size;
-    const buffer = new Uint8Array(size);
-    buffer.set(this.buffer.subarray(start, this.#readOffset));
-    return buffer;
+    return this.buffer.slice(start, this.#readOffset);
   }
 
   /**

@@ -5,7 +5,12 @@ import { decodeInt16BE, decodeInt32BE, decodeUInt16BE, decodeUInt32BE } from "@/
 import { PgProtocolError } from "@/_utils/error.ts";
 import { StreamReader } from "@/_utils/StreamReader.ts";
 interface StreamDecoder<T> {
-  <T>(reader: StreamReader, initialValue?: T): T;
+  next(reader: StreamReader): T | undefined;
+  reset(): void;
+}
+interface MessageParser<T> {
+  next(reader: StreamReader, remainingByteLength: number): T | undefined;
+  reset(): void;
 }
 // 启动消息
 
@@ -93,31 +98,77 @@ export function decodeParameterDescription(data: Uint8Array) {
   }
   return dataTypeOids;
 }
-export const decodeRowDescription:
-export function decodeRowDescription(data: Uint8Array): PgFieldDescription[] {
-  const count = decodeUInt16BE(data, 0);
-  let offset = 2;
-  const fields: PgFieldDescription[] = new Array(count);
-  for (let index = 0; index < count; index++) {
-    const item: Partial<PgFieldDescription> = {};
-    const nameEnd = findCStringTerminator(data, offset);
-    item.name = decodeUTF16String(data.subarray(offset, nameEnd));
-    offset = nameEnd + 1;
-    item.tableOID = decodeUInt32BE(data, offset);
-    offset += 4;
-    item.columnAttribute = decodeInt16BE(data, offset);
-    offset += 2;
-    item.typeOID = decodeUInt32BE(data, offset);
-    offset += 4;
-    item.typeSize = decodeInt16BE(data, offset);
-    offset += 2;
-    item.typeModifier = decodeInt32BE(data, offset);
-    offset += 4;
-    item.format = getFormat(decodeInt16BE(data, offset));
-    offset += 2;
-    fields[index] = item as PgFieldDescription;
+
+export function createRowDescriptionDecoder(): MessageParser<PgFieldDescription[]> {
+  let fields: PgFieldDescription[] | undefined, nextIndex: number = 0, fieldName: string | undefined;
+  const cStringDecoder = CStringDecoder();
+  return {
+    next(reader) {
+      if (!fields) {
+        if (reader.readableLength < 2) return undefined;
+        fields = new Array(reader.readUInt16BE());
+      }
+      if (!fieldName) {
+        fieldName = cStringDecoder.next(reader);
+        if (!fieldName) return undefined;
+      }
+      if (reader.readableLength < 18) return undefined;
+      const item: Partial<PgFieldDescription> = {
+        name: fieldName,
+      };
+      item.tableOID = reader.readUInt32BE();
+      item.columnAttribute = reader.readInt16BE();
+      item.typeOID = reader.readUInt32BE();
+      item.typeSize = reader.readInt16BE();
+      item.typeModifier = reader.readInt32BE();
+      item.format = getFormat(reader.readInt16BE());
+      fields[nextIndex++] = item as PgFieldDescription;
+      fieldName = undefined;
+      if (nextIndex === fields.length) return fields;
+    },
+    reset() {
+      fields = undefined, nextIndex = 0, fieldName = undefined, cStringDecoder.reset();
+    },
+  };
+}
+const textDecoder = new TextDecoder();
+function CStringDecoder(): StreamDecoder<string> {
+  let nameChunksSize = 0;
+  let nameChunks: Uint8Array[] = [];
+  return {
+    next(reader) {
+      let chunk = reader.buffer.subarray(reader.readableStart, reader.readableEnd);
+      const index = chunk.indexOf(0);
+      if (index === -1) {
+        chunk = reader.buffer.slice(reader.readableStart, reader.readableEnd);
+        nameChunks.push(chunk);
+        nameChunksSize += chunk.byteLength;
+        reader.readableStart += chunk.byteLength;
+        return undefined;
+      }
+      if (nameChunksSize) {
+        nameChunks.push(chunk.subarray(0, index));
+        reader.readableStart += index + 1;
+        chunk = concatU8ArrayList(nameChunks, nameChunksSize);
+        nameChunks = [];
+        nameChunksSize = 0;
+      }
+      return textDecoder.decode(chunk);
+    },
+    reset() {
+      nameChunks = [];
+      nameChunksSize = 0;
+    },
+  };
+}
+function concatU8ArrayList(list: Uint8Array[], size: number) {
+  const result = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of list) {
+    result.set(chunk, offset);
+    offset += chunk.length;
   }
-  return fields;
+  return result;
 }
 
 // 状态

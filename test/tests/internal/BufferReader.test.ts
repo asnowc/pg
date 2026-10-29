@@ -49,7 +49,7 @@ test("readBinary 借用缓冲区，copyBinary 保留独立副本", () => {
   const reader = new BufferReader(new Uint8Array(4));
   reader.pushReaderBufferData(Uint8Array.of(1, 2, 3, 4));
   const borrowed = reader.readBinary(2);
-  const copied = reader.copyBinary(2);
+  const copied = reader.slice(2);
   reader.buffer[0] = 9;
   reader.buffer[2] = 9;
   expect(borrowed).toEqual(Uint8Array.of(9, 2));
