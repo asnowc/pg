@@ -1,9 +1,4 @@
-import type {
-  JsDataEncoder,
-  JsDataEncoder2,
-  JsDataEncoderGetter,
-  JsDataEncoderMap,
-} from "@/interface/js_data_encoder.ts";
+import type { JsDataEncoder, JsDataEncoder2, JsDataEncoderMap } from "@/interface/js_data_encoder.ts";
 import { booleanEncoder, bytesEncoder, numberEncoder, stringEncoder } from "./encoder/base.ts";
 import {
   dateEncoder,
@@ -75,7 +70,7 @@ function createJsDataEncoderV1(): JsDataEncoderMap {
   map.set(Date, dateEncoder);
   return map;
 }
-class DefaultJsDataEncoderGetter implements JsDataEncoderGetter {
+class DefaultJsDataEncoderGetter {
   #map: Map<object, JsDataEncoder2>;
   constructor() {
     this.#map = new Map();

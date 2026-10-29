@@ -33,11 +33,6 @@ export type StreamEncoder = {
   encodeInto(writer: WriterBuffer): boolean;
 };
 
-/** @public */
-export interface JsDataEncoderGetter<T = unknown> {
-  getEncoder(value: T): JsDataEncoder2;
-}
-
 /**  改为 JsDataEncoderGetter */
 export type JsDataEncoderMap = ReadonlyMap<object | string | number, JsDataEncoder<never>>;
 

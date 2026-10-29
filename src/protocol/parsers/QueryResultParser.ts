@@ -1,4 +1,4 @@
-import type { ColumnDecoder, FieldInfo, TypedSqlStatementEncoder } from "@/interface/Query.ts";
+import type { FieldInfo, TypedSqlStatement } from "@/interface/Query.ts";
 import {
   decodeCommandComplete,
   decodeDataRow,
@@ -22,7 +22,7 @@ export class QueryResultParser<T = unknown> {
   constructor(
     readonly resolve: (resolver: QueryResultParser<T>) => void,
     readonly reject: (reason: unknown) => void,
-    readonly decoder: TypedSqlStatementEncoder<unknown>,
+    readonly decoder: TypedSqlStatement<unknown>,
     readonly type: ReceiverType.ExtendedQuery | ReceiverType.SimpleQuery = ReceiverType.ExtendedQuery,
   ) {
   }
@@ -57,7 +57,7 @@ export class SampleQueryResultParser extends QueryResultParser {
   constructor(
     resolve: (resolver: QueryResultParser) => void,
     reject: (reason: unknown) => void,
-    decoder: TypedSqlStatementEncoder<unknown>,
+    decoder: TypedSqlStatement<unknown>,
   ) {
     super(resolve, reject, decoder, ReceiverType.SimpleQuery);
   }
@@ -68,7 +68,7 @@ export class SampleQueryResultParser extends QueryResultParser {
   }
 }
 
-export function sendExecuteWithResult(session: StreamWriter, statement: TypedSqlStatementEncoder, describe?: boolean) {
+export function sendExecuteWithResult(session: StreamWriter, statement: TypedSqlStatement, describe?: boolean) {
   session.pushData(encodeParseMessage(statement));
   session.pushData(encodeBindMessage(statement));
   if (describe) session.pushData(encodeDescribeMessage(DescribeTarget.Portal));
@@ -79,14 +79,14 @@ export function sendExecuteWithResult(session: StreamWriter, statement: TypedSql
 export function decodeRow<T>(
   values: (Uint8Array | null)[],
   descriptions: PgFieldDescription[],
-  statement: TypedSqlStatementEncoder<unknown>,
+  statement: TypedSqlStatement<unknown>,
 ): T {
   const columnDecoders = statement.columnDecoders;
   const typeDecoders = statement.typeDecoders;
   if (!columnDecoders && !typeDecoders) throw new Error("No decoders available for the query result");
 
   const row: Record<string, unknown> = {};
-  let columnDecoder: ColumnDecoder | undefined;
+  let columnDecoder: PgColumnDecoder | undefined;
   let key: string | number;
   for (let index = 0; index < values.length; index++) {
     const value = values[index];
@@ -111,7 +111,7 @@ export function decodeRow<T>(
   return row as T;
 }
 
-function decodeColumn<T>(value: Uint8Array, fieldInfo: PgFieldDescription, decoder: ColumnDecoder<T>): T {
+function decodeColumn<T>(value: Uint8Array, fieldInfo: PgFieldDescription, decoder: PgColumnDecoder<T>): T {
   return fieldInfo.format === PgFormat.binary
     ? decoder.decodeBinary(value, fieldInfo)
     : decoder.decodeText(decodeUTF16String(value), fieldInfo);

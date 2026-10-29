@@ -69,7 +69,7 @@ class Conn {
           break;
         }
         if (bytesRead === 0) continue;
-        reader.readerBufferWriteOffset += bytesRead;
+        reader.readableEnd += bytesRead;
         parsers.next(reader);
         reader.gc();
       } while (true);

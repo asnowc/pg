@@ -3,7 +3,10 @@ import type { PgErrorFields, PgFieldDescription } from "./messages.ts";
 import { decodeUTF16String, findCStringTerminator } from "@/_utils/string.ts";
 import { decodeInt16BE, decodeInt32BE, decodeUInt16BE, decodeUInt32BE } from "@/_utils/number.ts";
 import { PgProtocolError } from "@/_utils/error.ts";
-
+import { StreamReader } from "@/_utils/StreamReader.ts";
+interface StreamDecoder<T> {
+  <T>(reader: StreamReader, initialValue?: T): T;
+}
 // 启动消息
 
 export function decodeNegotiateProtocolVersion(data: Uint8Array) {
@@ -90,6 +93,7 @@ export function decodeParameterDescription(data: Uint8Array) {
   }
   return dataTypeOids;
 }
+export const decodeRowDescription:
 export function decodeRowDescription(data: Uint8Array): PgFieldDescription[] {
   const count = decodeUInt16BE(data, 0);
   let offset = 2;

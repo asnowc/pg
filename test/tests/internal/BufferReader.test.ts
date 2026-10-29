@@ -32,7 +32,7 @@ test("从非零 byteOffset 缓冲区读取大小端整数", () => {
   view.setUint32(10, 3456789012);
   view.setBigInt64(14, -123456789n);
   view.setBigUint64(22, 12345678901234567890n);
-  reader.readerBufferWriteOffset = 30;
+  reader.readableEnd = 30;
 
   expect(reader.readInt8()).toBe(-1);
   expect(reader.readUInt8()).toBe(255);
