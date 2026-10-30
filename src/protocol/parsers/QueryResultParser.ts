@@ -1,21 +1,14 @@
-import type { FieldInfo, TypedSqlStatement } from "@/interface/Query.ts";
+import type { TypedSqlStatement } from "@/interface/Query.ts";
 import {
+  DataRowDecoder,
   decodeCommandComplete,
-  decodeDataRow,
-  DescribeTarget,
-  encodeBindMessage,
-  encodeDescribeMessage,
-  encodeExecuteMessage,
-  encodeParseMessage,
-  FRAME,
-  PgFieldDescription,
-  PgFormat,
+  DecodeRowDescriptionResult,
+  RowDescriptionDecoder,
 } from "@/protocol.ts";
-import { decodeUTF16String } from "@/_utils/string.ts";
-import { StreamWriter } from "@/_utils/StreamWriter.ts";
 import { NoDecoderError, PgProtocolError } from "@/_utils/error.ts";
 import { ReceiverType } from "./QueryTask.ts";
 import { LinkList } from "@/_utils/LinkList.ts";
+import { StreamReader } from "@/_utils/StreamReader.ts";
 
 export class QueryResultParser<T = unknown> {
   constructor(
@@ -25,27 +18,39 @@ export class QueryResultParser<T = unknown> {
     readonly type: ReceiverType.ExtendedQuery | ReceiverType.SimpleQuery = ReceiverType.ExtendedQuery,
   ) {
   }
-  descriptions?: PgFieldDescription[];
-  fields?: Readonly<FieldInfo>[];
+  fields?: DecodeRowDescriptionResult[];
+  private readonly dataRowDecoder = new DataRowDecoder([], []);
   rows: T[] = [];
   notices: string[] = [];
   rowCount?: number;
-  dataRow(body: Uint8Array) {
-    if (!this.descriptions) {
+  dataRow(reader: StreamReader, remainingByteLength: number) {
+    if (!this.fields) {
       this.reject(new PgProtocolError("Row description is missing"));
       return;
     }
+    let row: unknown;
     try {
-      const values = decodeDataRow(body);
-      const data = decodeRow(values, this.descriptions, this.decoder);
-      this.rows.push(data as T);
+      row = this.dataRowDecoder.next(reader, remainingByteLength);
     } catch (error) {
       this.reject(error);
+      return;
     }
+    if (!row) return;
+    this.rows.push(row as T);
   }
-  rowDescription(body: PgFieldDescription[]) {
-    this.descriptions = body;
-    this.fields = this.descriptions.map((description, index) => ({ ...description, index }));
+  private readonly rowDescriptionDecoder = new RowDescriptionDecoder();
+  rowDescription(reader: StreamReader, remainingByteLength: number) {
+    const fields = this.rowDescriptionDecoder.next(reader);
+    if (!fields) return;
+    this.fields = fields;
+    const decoders = fields.map((info, index) => {
+      try {
+        return this.decoder.getResultDecoder(info, index);
+      } catch (error) {
+        throw new NoDecoderError(info.typeOID, info.name, index);
+      }
+    });
+    this.dataRowDecoder.start(decoders, fields);
   }
   commandComplete(body: Uint8Array) {
     this.rowCount = decodeRowCount(decodeCommandComplete(body));
@@ -67,56 +72,7 @@ export class SampleQueryResultParser extends QueryResultParser {
   }
 }
 
-export function sendExecuteWithResult(session: StreamWriter, statement: TypedSqlStatement, describe?: boolean) {
-  session.pushData(encodeParseMessage(statement));
-  session.pushData(encodeBindMessage(statement));
-  if (describe) session.pushData(encodeDescribeMessage(DescribeTarget.Portal));
-  session.pushData(encodeExecuteMessage(0));
-  session.pushData(FRAME.SYNC);
-}
-
-export function decodeRow<T>(
-  values: (Uint8Array | null)[],
-  descriptions: PgFieldDescription[],
-  statement: TypedSqlStatement<unknown>,
-): T {
-  const columnDecoders = statement.columnDecoders;
-  const typeDecoders = statement.typeDecoders;
-  if (!columnDecoders && !typeDecoders) throw new Error("No decoders available for the query result");
-
-  const row: Record<string, unknown> = {};
-  let columnDecoder: PgColumnDecoder | undefined;
-  let key: string | number;
-  for (let index = 0; index < values.length; index++) {
-    const value = values[index];
-    const description = descriptions[index];
-    key = description.name ?? index;
-    if (value === null) {
-      row[key] = null;
-      continue;
-    }
-    columnDecoder = typeof columnDecoders === "function"
-      ? columnDecoders(description, index)
-      : columnDecoders?.get(index);
-    if (!columnDecoder) {
-      columnDecoder = typeDecoders!.get(description.typeOID);
-      if (!columnDecoder) {
-        throw new NoDecoderError(description.typeOID, description.name, index);
-      }
-    }
-
-    row[key] = decodeColumn(value, description, columnDecoder);
-  }
-  return row as T;
-}
-
-function decodeColumn<T>(value: Uint8Array, fieldInfo: PgFieldDescription, decoder: PgColumnDecoder<T>): T {
-  return fieldInfo.format === PgFormat.binary
-    ? decoder.decodeBinary(value, fieldInfo)
-    : decoder.decodeText(decodeUTF16String(value), fieldInfo);
-}
-
-export function decodeRowCount(commandTag: string): number {
+function decodeRowCount(commandTag: string): number {
   const match = / (\d+)\0?$/.exec(commandTag);
   return match ? Number(match[1]) : 0;
 }

@@ -112,6 +112,7 @@ export type FieldInfo = {
   typeOID: number;
   typeSize: number;
   typeModifier: number;
+  index: number;
 };
 
 /** @public */

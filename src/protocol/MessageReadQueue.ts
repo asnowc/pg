@@ -4,12 +4,12 @@ import { InternalError } from "@/_utils/error.ts";
 import { ReceiverType, ResultReceiver } from "./parsers/QueryTask.ts";
 import { QueryResultParser } from "./parsers/QueryResultParser.ts";
 import {
-  createRowDescriptionDecoder,
   decodeError,
   decodeNotice,
   decodeNotification,
   decodeParameterStatus,
   decodeReadyForQuery,
+  RowDescriptionDecoder,
 } from "./decode.ts";
 import { PgDatabaseError, PreviousQueryError } from "@/error.ts";
 import { AsyncMessageType } from "@/interface/protocol.ts";
@@ -80,7 +80,7 @@ export class QueryReadQueue extends CountLinkList<ResultReceiver> {
         queryWrite.clearWriteQueueForSync(); // queue has no SYNC, so we need to clear the write queue and send a SYNC immediately
       }
     });
-    parsers.set(BackendMessageCode.RowDescription, createRowDescriptionDecoder(), (body) => {
+    parsers.set(BackendMessageCode.RowDescription, new RowDescriptionDecoder(), (body) => {
       this.getResultReceiver().rowDescription(body);
     });
 

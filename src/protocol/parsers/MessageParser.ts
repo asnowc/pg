@@ -5,15 +5,20 @@ export interface MessageParser<T = unknown> {
   next(reader: StreamReader, remainingByteLength: number): T | undefined;
   reset(): void;
 }
+export function createMessageParser<T>(next: MessageParser<T>["next"], onFinish?: (body: T) => void): MessageParser<T> {
+  return {
+    next,
+    reset() {},
+  };
+}
 const EMPTY_BODY = new Uint8Array(0);
 export class MessageParsers {
   constructor(readonly maxHeaderLength: number) {
   }
   private readonly parsers: Record<number, MessageParser | undefined> = {};
   private readonly onFinishMap: Record<number, ((body: Uint8Array) => void) | undefined> = {};
-  set(type: number, onFinish: (body: Uint8Array) => void): void;
-  set<T>(type: number, parser: MessageParser<T>, onFinish?: (body: T) => void): void;
-  set(type: number, parser: MessageParser<any> | ((body: Uint8Array) => void), onFinish?: (body: any) => void): void {
+  set<T>(type: number, parser: MessageParser<T> | ((body: Uint8Array) => void), onFinish?: () => void): void;
+  set(type: number, parser: MessageParser<any> | ((body: Uint8Array) => void), onFinish?: () => void): void {
     if (typeof parser === "function") {
       this.onFinishMap[type] = parser;
       parser = this.fullParser;
