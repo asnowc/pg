@@ -1,6 +1,6 @@
 import { PgFieldDescription } from "../messages.ts";
 import { getFormat, type MessageParser } from "./_common.ts";
-import { CStringDecoder } from "./CStringDecoder.ts";
+import { createCStringDecoder } from "./CStringDecoder.ts";
 import type { StreamReader } from "@/_utils/StreamReader.ts";
 
 export type DecodeRowDescriptionResult = PgFieldDescription & { index: number };
@@ -9,7 +9,7 @@ export class RowDescriptionDecoder implements MessageParser<DecodeRowDescription
   private fields: DecodeRowDescriptionResult[] | undefined;
   private nextIndex: number = 0;
   private fieldName: string | undefined;
-  private cStringDecoder = new CStringDecoder();
+  private cStringDecoder = createCStringDecoder();
 
   next(reader: StreamReader) {
     if (!this.fields) {

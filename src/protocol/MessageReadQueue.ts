@@ -26,7 +26,7 @@ export class QueryReadQueue extends CountLinkList<ResultReceiver> {
   }
   private rejectQueueToSync(error: Error) {
     while (this.head) {
-      if (this.head.type === ReceiverType.Sync) {
+      if (this.head.taskType === ReceiverType.Sync) {
         return;
       }
       if (isQueryReceiver(this.head)) {
@@ -51,7 +51,7 @@ export class QueryReadQueue extends CountLinkList<ResultReceiver> {
     });
     parsers.set(BackendMessageCode.PortalSuspended, () => {
       const current = this.popResultReceiver();
-      if (current.type !== ReceiverType.ExtendedQuery) {
+      if (current.taskType !== ReceiverType.ExtendedQuery) {
         throw new InternalError("Unexpected PortalSuspended for a simple query");
       }
       current.resolve(current);
@@ -80,7 +80,7 @@ export class QueryReadQueue extends CountLinkList<ResultReceiver> {
     // 匹配 SYNC
     parsers.setFullParser(BackendMessageCode.ReadyForQuery, (body) => {
       const current = this.head;
-      if (!current || current.type !== ReceiverType.Sync) {
+      if (!current || current.taskType !== ReceiverType.Sync) {
         throw new InternalError("ReadyForQuery message  not matched with SYNC");
       }
       this.shift();
@@ -146,5 +146,5 @@ export class QueryReadQueue extends CountLinkList<ResultReceiver> {
 }
 
 function isQueryReceiver(receiver: ResultReceiver): receiver is QueryResultParser {
-  return receiver.type === ReceiverType.ExtendedQuery || receiver.type === ReceiverType.SimpleQuery;
+  return receiver.taskType === ReceiverType.ExtendedQuery || receiver.taskType === ReceiverType.SimpleQuery;
 }

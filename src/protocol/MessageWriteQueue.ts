@@ -1,14 +1,7 @@
 import type { TransactionMode, TypedSqlStatement } from "@/interface/Query.ts";
 import { throwRewrittenError } from "@/_utils/error.ts";
-import {
-  BeginTransactionTask,
-  ExtendedQueryTask,
-  QueryAction,
-  QueryTask,
-  ReceiverType,
-  SimpleQueryTask,
-} from "./parsers/QueryTask.ts";
-import { QueryResultParser, SampleQueryResultParser } from "./parsers/QueryResultParser.ts";
+import { BeginTransactionTask, PgMessageTask, QueryAction, ReceiverType } from "./parsers/QueryTask.ts";
+import { QueryResultParser } from "./parsers/QueryResultParser.ts";
 import {
   DescribeTarget,
   encodeBindMessage,
@@ -23,7 +16,7 @@ import { InternalTextSqlStatementEncoder } from "@/codec/StatementEncoder.ts";
 import { QueryReadQueue } from "./MessageReadQueue.ts";
 import { FRAME } from "./static_frame.ts";
 
-export class QueryWriteQueue extends BufferWriterQueue<QueryTask> {
+export class QueryWriteQueue extends BufferWriterQueue<PgMessageTask> {
   constructor(
     private writer: BufferWriter,
     private readonly readQueue: QueryReadQueue,
@@ -41,7 +34,7 @@ export class QueryWriteQueue extends BufferWriterQueue<QueryTask> {
   }
   override clear(error: Error = new Error("QueryWriteQueue cleared")): void {
     for (const item of this) {
-      if (item.type === QueryAction.ExtendedQuery || item.type === QueryAction.SimpleQuery) {
+      if (item.taskType === QueryAction.ExtendedQuery || item.taskType === QueryAction.SimpleQuery) {
         item.reject(error);
       }
     }
@@ -49,52 +42,59 @@ export class QueryWriteQueue extends BufferWriterQueue<QueryTask> {
   }
   extendedQuery<T>(statement: TypedSqlStatement): Promise<QueryResultParser<T>> {
     return new Promise<QueryResultParser<T>>((resolve, reject) => {
-      this.push({
-        type: QueryAction.ExtendedQuery,
-        statement,
-        resolve: resolve as (value: QueryResultParser) => void,
+      const parser = new QueryResultParser<any>(
+        resolve,
         reject,
-      });
+        statement,
+        QueryAction.ExtendedQuery,
+      );
+      this.push(parser);
     }).catch((e) => throwRewrittenError(e));
   }
   sync(): void {
-    this.push({ type: QueryAction.Sync });
+    this.push({ taskType: QueryAction.Sync });
   }
   clearWriteQueueForSync(): void {
     let item = this.queueHead;
     while (item) {
-      if (item.type === QueryAction.Sync) return;
+      if (item.taskType === QueryAction.Sync) return;
       this.shift();
       item = this.queueHead;
     }
     this.sync();
   }
 
-  simpleQuery(statement: TypedSqlStatement): Promise<SampleQueryResultParser> {
-    return new Promise((resolve, reject) => {
-      this.push({ type: QueryAction.SimpleQuery, statement, resolve, reject });
+  simpleQuery<T>(statement: TypedSqlStatement): Promise<QueryResultParser<T>> {
+    return new Promise<QueryResultParser<T>>((resolve, reject) => {
+      const parser = new QueryResultParser<any>(
+        resolve,
+        reject,
+        statement,
+        QueryAction.SimpleQuery,
+      );
+      this.push(parser);
     });
   }
   beginTransaction(mode?: TransactionMode): void {
-    this.push({ type: QueryAction.Begin, mode });
+    this.push({ taskType: QueryAction.Begin, mode });
   }
   commitTransaction(): void {
-    this.push({ type: QueryAction.Commit });
+    this.push({ taskType: QueryAction.Commit });
   }
   rollbackTransaction(): void {
-    this.push({ type: QueryAction.Rollback });
+    this.push({ taskType: QueryAction.Rollback });
   }
   close() {
     return new Promise<void>((resolve, reject) => {
-      this.push({ type: QueryAction.Close, resolve, reject });
+      this.push({ taskType: QueryAction.Close, resolve, reject });
     });
   }
 
-  protected override async processItemWrite(item: QueryTask): Promise<void> {
+  protected override async processItemWrite(item: PgMessageTask): Promise<void> {
     // 需要确保函数调用到  this.readQueue.enqueueSync() 是同步的
     // 否则 clearWriteQueueForSync 会情况当前正在处理的 SYNC 之后的任务
     while (item) {
-      switch (item.type) {
+      switch (item.taskType) {
         case QueryAction.ExtendedQuery:
           return this.writeExtendedQueryTask(item);
         case QueryAction.Sync:
@@ -106,10 +106,10 @@ export class QueryWriteQueue extends BufferWriterQueue<QueryTask> {
           return this.writeBeginTransactionTask(item);
 
         case QueryAction.Commit:
-          return this.writeEndTransactionTask(item.type);
+          return this.writeEndTransactionTask(item.taskType);
 
         case QueryAction.Rollback:
-          return this.writeEndTransactionTask(item.type);
+          return this.writeEndTransactionTask(item.taskType);
         case QueryAction.Close:
           await this.writer.writeData(encodeTerminateMessage());
           if (this.writer.writeOffset) await this.writer.flush();
@@ -120,19 +120,17 @@ export class QueryWriteQueue extends BufferWriterQueue<QueryTask> {
     }
   }
 
-  private async writeExtendedQueryTask(item: ExtendedQueryTask): Promise<void> {
-    const parser = new QueryResultParser(item.resolve, item.reject, item.statement);
+  private async writeExtendedQueryTask(parser: QueryResultParser): Promise<void> {
     this.readQueue.push(parser);
-    await this.writeExtended(item.statement);
+    await this.writeExtended(parser.statement);
     await this.writer.writeData(FRAME.FLUSH);
   }
-  private async writeSimpleQueryTask(item: SimpleQueryTask): Promise<void> {
+  private async writeSimpleQueryTask(parser: QueryResultParser): Promise<void> {
     const message = encodeQueryMessage({
-      calculateByteLength: () => item.statement.calculateQueryByteLength(),
-      encodeQueryInto: (buffer, offset) => item.statement.encodeQueryInto(buffer, offset),
+      calculateByteLength: () => parser.statement.calculateQueryByteLength(),
+      encodeQueryInto: (buffer, offset) => parser.statement.encodeQueryInto(buffer, offset),
     });
 
-    const parser = new SampleQueryResultParser(() => item.resolve(parser), item.reject, item.statement);
     const ready = this.readQueue.enqueueSimpleQuery(parser);
     await this.writer.writeData(message);
     return ready;

@@ -1,37 +1,22 @@
-import type { TransactionMode, TypedSqlStatement } from "@/interface/Query.ts";
-import { QueryResultParser, SampleQueryResultParser } from "./QueryResultParser.ts";
+import type { TransactionMode } from "@/interface/Query.ts";
+import { QueryResultParser } from "./QueryResultParser.ts";
 
-export type QueryTask =
+export type PgMessageTask =
   | BeginTransactionTask
-  | ExtendedQueryTask
-  | SimpleQueryTask
+  | QueryResultParser
   | CloseTask
   | EmptyTask;
 
-export interface ExtendedQueryTask {
-  type: QueryAction.ExtendedQuery;
-  statement: TypedSqlStatement;
-  resolve: (result: QueryResultParser) => void;
-  reject: (reason: unknown) => void;
-}
-
-export interface SimpleQueryTask {
-  type: QueryAction.SimpleQuery;
-  statement: TypedSqlStatement;
-  resolve: (result: SampleQueryResultParser) => void;
-  reject: (reason: unknown) => void;
-}
-
 export interface BeginTransactionTask {
-  type: QueryAction.Begin;
+  taskType: QueryAction.Begin;
   mode?: TransactionMode;
 }
 
 type EmptyTask = {
-  type: QueryAction.Commit | QueryAction.Rollback | QueryAction.Sync;
+  taskType: QueryAction.Commit | QueryAction.Rollback | QueryAction.Sync;
 };
 type CloseTask = {
-  type: QueryAction.Close;
+  taskType: QueryAction.Close;
   resolve: () => void;
   reject: (reason: unknown) => void;
 };
@@ -39,6 +24,7 @@ type CloseTask = {
 type EmptyReceiver = {
   type: ReceiverType.StartTransaction | ReceiverType.EndTransaction | ReceiverType.Sync;
 };
+
 export type ResultReceiver = QueryResultParser | EmptyReceiver;
 export interface ParseMessageEncoder {
   statement?: string;

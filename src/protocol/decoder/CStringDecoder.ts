@@ -2,7 +2,7 @@ import { StreamReader } from "@/_utils/StreamReader.ts";
 import { concatU8ArrayList, StreamDecoder } from "./_common.ts";
 
 const textDecoder = new TextDecoder();
-export class CStringDecoder implements StreamDecoder<string> {
+class CStringDecoder implements StreamDecoder<string> {
   private nameChunksSize = 0;
   private nameChunks: Uint8Array[] = [];
   next(reader: StreamReader) {
@@ -19,8 +19,6 @@ export class CStringDecoder implements StreamDecoder<string> {
       this.nameChunks.push(chunk.subarray(0, index));
       reader.readableStart += index + 1;
       chunk = concatU8ArrayList(this.nameChunks, this.nameChunksSize);
-      this.nameChunks = [];
-      this.nameChunksSize = 0;
     }
     return textDecoder.decode(chunk);
   }
@@ -28,4 +26,7 @@ export class CStringDecoder implements StreamDecoder<string> {
     this.nameChunks = [];
     this.nameChunksSize = 0;
   }
+}
+export function createCStringDecoder(): StreamDecoder<string> {
+  return new CStringDecoder();
 }

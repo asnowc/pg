@@ -1,9 +1,10 @@
-import type { SqlStatement, TypedSqlStatement } from "@/interface/Query.ts";
+import type { QueryOptions, SqlStatement, TypedSqlStatement } from "@/interface/Query.ts";
 import { TypedSqlStatementEncoder } from "@/sql/SqlStatementEncoder.ts";
 import { PG_DATA_DECODER_V1 } from "@/codec/pg_data_decoder.ts";
 
 export function sqlStatementToSqlEncoder(
-  queryable: SqlStatement | TypedSqlStatementEncoder,
+  queryable: SqlStatement | TypedSqlStatement,
+  options?: QueryOptions,
 ): TypedSqlStatement {
   if (typeof queryable === "string" || queryable instanceof Uint8Array) {
     const encoder = new TypedSqlStatementEncoder(queryable);

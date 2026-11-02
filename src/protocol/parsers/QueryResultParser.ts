@@ -6,21 +6,26 @@ import {
   RowDescriptionDecoder,
 } from "@/protocol.ts";
 import { InternalError, NoDecoderError } from "@/_utils/error.ts";
-import { ReceiverType } from "./QueryTask.ts";
-import { LinkList } from "@/_utils/LinkList.ts";
+import { QueryAction, ReceiverType } from "./QueryTask.ts";
 import { StreamReader } from "@/_utils/StreamReader.ts";
 
-export class QueryResultParser<T = unknown> {
+export class QueryResultParser<D = unknown> {
   constructor(
-    readonly resolve: (resolver: QueryResultParser<T>) => void,
+    readonly resolve: (resolver: QueryResultParser<D>) => void,
     readonly reject: (reason: unknown) => void,
-    readonly decoder: TypedSqlStatement<unknown>,
-    readonly type: ReceiverType.ExtendedQuery | ReceiverType.SimpleQuery = ReceiverType.ExtendedQuery,
+    readonly statement: TypedSqlStatement<D>,
+    readonly taskType: QueryAction.ExtendedQuery | QueryAction.SimpleQuery,
   ) {
+    if (taskType === QueryAction.ExtendedQuery) {
+      this.type = ReceiverType.ExtendedQuery;
+    } else {
+      this.type = ReceiverType.SimpleQuery;
+    }
   }
+  readonly type: ReceiverType.ExtendedQuery | ReceiverType.SimpleQuery;
   fields?: DecodeRowDescriptionResult[];
   private readonly dataRowDecoder = new DataRowDecoder([], []);
-  rows: T[] = [];
+  rows: D[] = [];
   notices: string[] = [];
   rowCount?: number;
   dataRow(reader: StreamReader, remainingByteLength: number) {
@@ -36,16 +41,18 @@ export class QueryResultParser<T = unknown> {
       return;
     }
     if (!row) return;
-    this.rows.push(row as T);
+    this.dataRowDecoder.reset();
+    this.rows.push(row as D);
   }
   private readonly rowDescriptionDecoder = new RowDescriptionDecoder();
   rowDescription(reader: StreamReader, remainingByteLength: number) {
     const fields = this.rowDescriptionDecoder.next(reader);
     if (!fields) return;
+    this.rowDescriptionDecoder.reset();
     this.fields = fields;
     const decoders = fields.map((info, index) => {
       try {
-        return this.decoder.getResultDecoder(info, index);
+        return this.statement.getResultDecoder(info, index);
       } catch (error) {
         throw new NoDecoderError(info.typeOID, info.name, index);
       }
@@ -54,21 +61,6 @@ export class QueryResultParser<T = unknown> {
   }
   commandComplete(body: Uint8Array) {
     this.rowCount = decodeRowCount(decodeCommandComplete(body));
-  }
-}
-
-export class SampleQueryResultParser extends QueryResultParser {
-  constructor(
-    resolve: (resolver: QueryResultParser) => void,
-    reject: (reason: unknown) => void,
-    decoder: TypedSqlStatement<unknown>,
-  ) {
-    super(resolve, reject, decoder, ReceiverType.SimpleQuery);
-  }
-  #link = new LinkList<QueryResultParser>();
-  override commandComplete(body: Uint8Array): void {
-    super.commandComplete(body);
-    if (this.#link.head) this.#link.shift();
   }
 }
 
