@@ -46,6 +46,12 @@ export class BufferWriter {
     }
     this.writeOffset = 0;
   }
+
+  async ensureWritableLength(byteLength: number): Promise<void> {
+    const writableLength = this.writableLength;
+    if (writableLength >= byteLength) return;
+    await this.transferBuffer(byteLength - writableLength);
+  }
   /**
    * 从缓冲区写入数据，直到累计写入量严格大于 minimumBytesToWrite。
    */

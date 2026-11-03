@@ -13,20 +13,26 @@ export interface JsDataVariableEncoder<T = unknown> {
 /** @public */
 export type JsDataEncoder<T = unknown> = JsDataFixedEncoder<T> | JsDataVariableEncoder<T>;
 export type JsDataEncoder2 = JsDataEncoderDefined<unknown> | JsDataFixedLengthEncoderDefined<unknown>;
+
 /** @public */
 export interface JsDataEncoderDefined<T = unknown> {
-  oid: number;
-  encodeToText(value: T): string;
-  calculateByteLength(value: T): StreamEncoder;
+  (value: T): StreamEncoder;
 }
 /** @public */
-export interface JsDataFixedLengthEncoderDefined<T = unknown> extends StreamEncoder {
-  oid: number;
+export interface JsDataFixedLengthEncoderDefined<T = unknown> {
+  readonly oid: number;
+  readonly byteLength: number;
   encodeToText(value: T): string;
+  /**
+   * writer.writeableLength 必定大于等于 byteLength
+   */
+  encodeInto(writer: WriterBuffer, value: T): true;
 }
 
 export type StreamEncoder = {
+  readonly oid: number;
   readonly byteLength: number;
+  encodeToText(): string;
   /**
    * @returns `true` if encoding is complete, `false` otherwise.
    */
