@@ -3,7 +3,7 @@ import type { JsDataEncoder, JsDataEncoder2, JsDataEncoderMap } from "@/interfac
 import { calcUTF16ByteLength, encodeUTF16StringInto } from "@/_utils/string.ts";
 import { encodeInt16BE, encodeInt32BE } from "@/_utils/number.ts";
 import { TypedSqlStatement } from "@/interface/Query.ts";
-import { PgColumnDecoder } from "../interface/pg_data_decoder.ts";
+import { PgColumnDataDecoder } from "../interface/pg_data_decoder.ts";
 import { FieldInfo } from "../interface/Query/QueryReader.ts";
 
 export class InternalTemplateSqlStatementEncoder<T = unknown> implements TypedSqlStatement<T> {
@@ -20,7 +20,7 @@ export class InternalTemplateSqlStatementEncoder<T = unknown> implements TypedSq
   #chunks: ReadonlyArray<string>;
   getArgEncoder(value: unknown): JsDataEncoder2 {
   }
-  getResultDecoder(field: FieldInfo, index: number): PgColumnDecoder {
+  getResultDecoder(field: FieldInfo): PgColumnDataDecoder {
   }
 
   #template?: string;
@@ -79,7 +79,7 @@ export class InternalTextSqlStatementEncoder<T = unknown> implements TypedSqlSta
   readonly args: (string | null)[];
   getArgEncoder(value: unknown): JsDataEncoder2 {
   }
-  getResultDecoder(field: FieldInfo, index: number): PgColumnDecoder {
+  getResultDecoder(field: FieldInfo): PgColumnDataDecoder {
   }
   calculateParseByteLength(): number {
     const sqlByteLength = calcUTF16ByteLength(this.sqlStatement);

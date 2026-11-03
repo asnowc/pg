@@ -1,13 +1,13 @@
 import { StreamReader } from "@/_utils/StreamReader.ts";
 import { MessageParser } from "./_common.ts";
 import { PgProtocolError } from "@/_utils/error.ts";
-import { PgColumnDecoder } from "@/interface/pg_data_decoder.ts";
+import { PgColumnDataDecoder } from "@/interface/pg_data_decoder.ts";
 import { DecodeRowDescriptionResult } from "./RowDescriptionDecoder.ts";
 import { PgFormat } from "../const.ts";
 
 export class DataRowDecoder<T extends {}> implements MessageParser<T> {
   constructor(
-    private columnDecoders: PgColumnDecoder<unknown>[],
+    private columnDecoders: PgColumnDataDecoder<unknown>[],
     private rowDescriptions: DecodeRowDescriptionResult[],
   ) {
     this.columnCount = columnDecoders.length;
@@ -33,7 +33,7 @@ export class DataRowDecoder<T extends {}> implements MessageParser<T> {
       this.currentRow = {};
     }
 
-    let rowDescription: DecodeRowDescriptionResult, columnDecoder: PgColumnDecoder;
+    let rowDescription: DecodeRowDescriptionResult, columnDecoder: PgColumnDataDecoder;
 
     while (remainingByteLength > 0) {
       if (this.currentValueLength === 0) {
@@ -53,14 +53,9 @@ export class DataRowDecoder<T extends {}> implements MessageParser<T> {
       const start = reader.readableStart;
       if (rowDescription.format === PgFormat.text) {
         this.currentColumnResult = this.nextForText(reader);
-        this.currentColumnResult = columnDecoder.decodeText(this.currentColumnResult as string, rowDescription);
+        this.currentColumnResult = columnDecoder.decodeText(this.currentColumnResult as string);
       } else {
-        this.currentColumnResult = columnDecoder.decodeBinary(
-          reader,
-          rowDescription,
-          this.currentValueLength,
-          this.currentColumnResult,
-        );
+        this.currentColumnResult = columnDecoder.decodeBinary(reader, this.currentValueLength);
       }
 
       const readBytes = reader.readableStart - start;
@@ -100,11 +95,6 @@ export class DataRowDecoder<T extends {}> implements MessageParser<T> {
     this.currentColumnResult = undefined;
     this.currentRow = undefined;
     this.nextIndex = 0;
-  }
-  start(columnDecoders: PgColumnDecoder<unknown>[], rowDescriptions: DecodeRowDescriptionResult[]) {
-    this.columnDecoders = columnDecoders;
-    this.rowDescriptions = rowDescriptions;
-    this.columnCount = columnDecoders.length;
   }
 }
 const textDecoder = new TextDecoder();

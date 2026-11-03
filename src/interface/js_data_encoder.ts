@@ -1,25 +1,29 @@
+/** @deprecated  */
 export interface JsDataFixedEncoder<T = unknown> {
   oid: number | ((value: T) => number);
   encodeToText(value: T, oid: number): string;
   readonly byteLength: number;
   encodeInto(buffer: Uint8Array, offset: number, value: T): number;
 }
+/** @deprecated  */
 export interface JsDataVariableEncoder<T = unknown> {
   oid: number | ((value: T) => number);
   encodeToText(value: T, oid: number): string;
   calculateByteLength(value: T): number;
   encodeInto(buffer: Uint8Array, offset: number, value: T): number;
 }
-/** @public */
+/**
+ * @public
+ * @deprecated 改为 JsDataEncoder2
+ */
 export type JsDataEncoder<T = unknown> = JsDataFixedEncoder<T> | JsDataVariableEncoder<T>;
-export type JsDataEncoder2 = JsDataEncoderDefined<unknown> | JsDataFixedLengthEncoderDefined<unknown>;
+export type JsDataEncoder2<T = unknown> =
+  | ((value: T) => JsDataVariableLengthEncoder<T> | JsDataFixedLengthEncoder<T>)
+  | JsDataVariableLengthEncoder<T>
+  | JsDataFixedLengthEncoder<T>;
 
 /** @public */
-export interface JsDataEncoderDefined<T = unknown> {
-  (value: T): StreamEncoder;
-}
-/** @public */
-export interface JsDataFixedLengthEncoderDefined<T = unknown> {
+export interface JsDataFixedLengthEncoder<T = unknown> {
   readonly oid: number;
   readonly byteLength: number;
   encodeToText(value: T): string;
@@ -28,18 +32,21 @@ export interface JsDataFixedLengthEncoderDefined<T = unknown> {
    */
   encodeInto(writer: WriterBuffer, value: T): true;
 }
-
-export type StreamEncoder = {
+/** @public */
+export interface JsDataVariableLengthEncoder<T> {
   readonly oid: number;
+  encodeToText(value: T): string;
+  startEncode(value: T): StreamEncoder;
+}
+export type StreamEncoder = {
   readonly byteLength: number;
-  encodeToText(): string;
   /**
    * @returns `true` if encoding is complete, `false` otherwise.
    */
   encodeInto(writer: WriterBuffer): boolean;
 };
 
-/**  改为 JsDataEncoderGetter */
+/**  @deprecated 改为 JsDataEncoderGetter */
 export type JsDataEncoderMap = ReadonlyMap<object | string | number, JsDataEncoder<never>>;
 
 export interface WriterBuffer {

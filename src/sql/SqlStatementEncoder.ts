@@ -1,5 +1,5 @@
 import type { JsDataEncoder2, JsDataEncoderMap } from "@/interface/js_data_encoder.ts";
-import { PgColumnDecoder } from "../interface/pg_data_decoder.ts";
+import { PgColumnDataDecoder } from "../interface/pg_data_decoder.ts";
 import { PG_DATA_DECODER_V1 } from "@/codec/pg_data_decoder.ts";
 import { InternalTemplateSqlStatementEncoder, InternalTextSqlStatementEncoder } from "@/codec/StatementEncoder.ts";
 import { TypedSqlStatement } from "@/interface/Query/QueryStatement.ts";
@@ -21,7 +21,7 @@ export class TypedSqlStatementEncoder<T = unknown> implements TypedSqlStatement<
   #internal: InternalTemplateSqlStatementEncoder | InternalTextSqlStatementEncoder;
   getArgEncoder(value: unknown): JsDataEncoder2 {
   }
-  getResultDecoder(field: FieldInfo, index: number): PgColumnDecoder {
+  getResultDecoder(field: FieldInfo): PgColumnDataDecoder {
   }
   toTemplate(): string {
     return this.#internal.toTemplate();

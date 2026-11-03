@@ -7,12 +7,11 @@ export type PgDataDecoder<T = unknown> = {
   decodeBinary(value: Uint8Array, context: Readonly<FieldInfo>): T;
 };
 /** @public */
-export type PgColumnDecoder<T = unknown> = {
-  decodeText(value: string, field: Readonly<FieldInfo>): T;
-  decodeBinary(
-    value: StreamReader,
-    field: Readonly<FieldInfo>,
-    remainingByteLength: number,
-    initialValue?: T,
-  ): T;
+export type PgColumnDataDecoder<T = unknown> = {
+  decodeText(value: string): T;
+  decodeBinary(value: StreamReader, remainingByteLength: number): T | undefined;
 };
+/** @public */
+export type PgColumnDecoder<T> =
+  | PgColumnDataDecoder<T>
+  | (new (info: Readonly<FieldInfo>) => PgColumnDataDecoder<T>);

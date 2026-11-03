@@ -24,12 +24,12 @@ export class QueryResultParser<D = unknown> {
   }
   readonly type: ReceiverType.ExtendedQuery | ReceiverType.SimpleQuery;
   fields?: DecodeRowDescriptionResult[];
-  private readonly dataRowDecoder = new DataRowDecoder([], []);
+  private dataRowDecoder?: DataRowDecoder<any>;
   rows: D[] = [];
   notices: string[] = [];
   rowCount?: number;
   dataRow(reader: StreamReader, remainingByteLength: number) {
-    if (!this.fields) {
+    if (!this.dataRowDecoder) {
       this.reject(new InternalError("Row description is missing"));
       return;
     }
@@ -52,12 +52,12 @@ export class QueryResultParser<D = unknown> {
     this.fields = fields;
     const decoders = fields.map((info, index) => {
       try {
-        return this.statement.getResultDecoder(info, index);
+        return this.statement.getResultDecoder(info);
       } catch (error) {
         throw new NoDecoderError(info.typeOID, info.name, index);
       }
     });
-    this.dataRowDecoder.start(decoders, fields);
+    this.dataRowDecoder = new DataRowDecoder(decoders, fields);
   }
   commandComplete(body: Uint8Array) {
     this.rowCount = decodeRowCount(decodeCommandComplete(body));
