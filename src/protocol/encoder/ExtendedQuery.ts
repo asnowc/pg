@@ -7,6 +7,8 @@ import { calcUTF16ByteLength } from "@/_utils/string.ts";
 const c = new TextEncoderStream();
 const textEncoder = new TextEncoder();
 export async function writeParse(writer: BufferWriter, statement: TypedSqlStatement) {
+  await writer.ensureWritableLength(6);
+
   const { sqlStatement } = statement;
   const statementByteLength = typeof sqlStatement === "string"
     ? calcUTF16ByteLength(sqlStatement)
@@ -17,8 +19,8 @@ export async function writeParse(writer: BufferWriter, statement: TypedSqlStatem
     FrontendMessageCode.Parse,
     1 + statementByteLength + 1 + 2 + (statement.args.length) * 4,
   );
-
   writer.buffer[writer.writeOffset++] = 0;
+
   if (typeof sqlStatement === "string") {
     let statement: string = sqlStatement;
     let result: TextEncoderEncodeIntoResult = textEncoder.encodeInto(

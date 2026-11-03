@@ -47,7 +47,7 @@ export class BufferWriter {
     this.writeOffset = 0;
   }
 
-  async ensureWritableLength(byteLength: number): Promise<void> {
+  async ensureWritableLength(byteLength: number = this.flushThreshold): Promise<void> {
     const writableLength = this.writableLength;
     if (writableLength >= byteLength) return;
     await this.transferBuffer(byteLength - writableLength);
