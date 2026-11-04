@@ -107,13 +107,6 @@ export class InternalTextSqlStatementEncoder<T = unknown> implements TypedSqlSta
     return byteLength;
   }
   encodeBindInto(data: Uint8Array, offset: number): number {
-    // https://postgres.ac.cn/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-BIND
-    // | portal name | statement name | format code count| format codes... | parameter value count | parameter values... | result column count | result codes...|
-    // | C string    | C string       | int16            | int16[]         | int16                 | value[]             | int16               | int16[]        |
-
-    // value:
-    // | value length |   value       |
-    // |  int32       |  value length |
     data[offset++] = 0;
     data[offset++] = 0;
     offset += encodeInt16BE(data, offset, 0);

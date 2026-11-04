@@ -15,6 +15,8 @@ import { BufferWriter, BufferWriterQueue } from "@/_utils/StreamWriter.ts";
 import { InternalTextSqlStatementEncoder } from "@/codec/StatementEncoder.ts";
 import { QueryReadQueue } from "./MessageReadQueue.ts";
 import { FRAME } from "./static_frame.ts";
+import { BindMessageEncoder, ExecuteMessageEncoder, ParseMessageEncoder } from "./encoder/ExtendedQuery.ts";
+import { DynamicLengthBlockEncoder } from "./encoder/_common.ts";
 
 export class QueryWriteQueue extends BufferWriterQueue<PgMessageTask> {
   constructor(

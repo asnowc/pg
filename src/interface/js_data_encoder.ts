@@ -18,7 +18,6 @@ export interface JsDataVariableEncoder<T = unknown> {
  */
 export type JsDataEncoder<T = unknown> = JsDataFixedEncoder<T> | JsDataVariableEncoder<T>;
 export type JsDataEncoder2<T = unknown> =
-  | ((value: T) => JsDataVariableLengthEncoder<T> | JsDataFixedLengthEncoder<T>)
   | JsDataVariableLengthEncoder<T>
   | JsDataFixedLengthEncoder<T>;
 

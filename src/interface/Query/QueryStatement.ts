@@ -1,6 +1,6 @@
 import type { PgColumnDataDecoder } from "@/interface/pg_data_decoder.ts";
 import type { FieldInfo } from "./QueryReader.ts";
-import type { JsDataFixedLengthEncoder, StreamEncoder } from "@/interface/js_data_encoder.ts";
+import type { JsDataEncoder2 } from "@/interface/js_data_encoder.ts";
 
 /** @public */
 export type TypedSqlStatement<T = unknown> = {
@@ -8,7 +8,7 @@ export type TypedSqlStatement<T = unknown> = {
   readonly args: unknown[];
 
   readonly statementByteLength: number;
-  readonly argsEncoders: (StreamEncoder | JsDataFixedLengthEncoder)[];
+  readonly argsEncoders: JsDataEncoder2[];
   readonly argsTotalByteLength: number;
   getResultDecoder(field: FieldInfo): PgColumnDataDecoder;
   checkRow?(value: T): void;
