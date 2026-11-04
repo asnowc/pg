@@ -7,9 +7,87 @@ export function encodeFrameHeaderInto(writer: BufferWriter, code: FrontendMessag
   writer.writeOffset += 4;
 }
 export interface DynamicLengthBlockEncoder {
+  readonly messageCode: number;
+  readonly bodyLength: number;
   /**
-   * 返回 true, 编码结束，返回 false 表示缓冲区需要更多空间继续编码。
+   * 返回 false, 编码结束，返回 true 表示缓冲区需要更多空间继续编码。
    * 应在缓冲区有足够空间时继续调用 encodeInto 继续编码
    */
   encodeInto(writer: BufferWriter): boolean;
+}
+export interface BufferEncoder {
+  encodeInto(writer: BufferWriter): boolean;
+}
+export interface FixedEncoder {
+  readonly requiredByteLength: number;
+  encodeInto(writer: BufferWriter): void;
+}
+const textEncoder = new TextEncoder();
+
+export class EncoderGroup implements BufferEncoder {
+  constructor(readonly groups: (FixedEncoder | BufferEncoder)[]) {
+  }
+  private offset: number = 0;
+  encodeInto(writer: BufferWriter): boolean {
+    let encoder = this.groups[this.offset];
+    while (encoder) {
+      if ("requiredByteLength" in encoder) {
+        if (writer.writableLength < encoder.requiredByteLength) return true;
+        encoder.encodeInto(writer);
+      } else {
+        if (encoder.encodeInto(writer)) return true;
+      }
+      this.offset++;
+      encoder = this.groups[this.offset];
+    }
+    return false;
+  }
+}
+export class UTF16BufferEncoder implements BufferEncoder {
+  /**
+   * 编码字符串为 UTF-16 前要求缓冲区至少有 UTF16_ENCODE_FREE_BUFFER_SIZE 个可写字节。
+   * 该值用于确保在编码过程中缓冲区有足够的空间，避免频繁的缓冲区扩展。
+   */
+  static readonly UTF16_ENCODE_FREE_BUFFER_SIZE = 10;
+  constructor(private value: string) {}
+  private offset: number = 0;
+  encodeInto(writer: BufferWriter): boolean {
+    if (writer.writableLength < UTF16BufferEncoder.UTF16_ENCODE_FREE_BUFFER_SIZE) return true;
+    const { read, written } = textEncoder.encodeInto(
+      this.value.substring(this.offset),
+      writer.buffer.subarray(writer.writeOffset),
+    );
+    writer.writeOffset += written;
+    this.offset += read;
+    return this.offset < this.value.length;
+  }
+  reset(value: string) {
+    this.value = value;
+    this.offset = 0;
+  }
+}
+
+export class CStringEncoder implements BufferEncoder {
+  constructor(private value: string) {}
+  private offset: number = 0;
+  encodeInto(writer: BufferWriter): boolean {
+    if (this.offset < this.value.length) {
+      if (writer.writableLength < UTF16BufferEncoder.UTF16_ENCODE_FREE_BUFFER_SIZE) return true;
+      const { read, written } = textEncoder.encodeInto(
+        this.value.substring(this.offset),
+        writer.buffer.subarray(writer.writeOffset),
+      );
+      writer.writeOffset += written;
+      this.offset += read;
+      if (this.offset < this.value.length) return true;
+    }
+
+    if (writer.writableLength < 1) return true;
+    writer.buffer[writer.writeOffset++] = 0;
+    return false;
+  }
+  reset(value: string) {
+    this.value = value;
+    this.offset = 0;
+  }
 }
