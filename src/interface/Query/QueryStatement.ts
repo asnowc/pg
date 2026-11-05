@@ -1,18 +1,6 @@
 import type { PgColumnDataDecoder } from "@/interface/pg_data_decoder.ts";
 import type { FieldInfo } from "./QueryReader.ts";
-import type { JsDataEncoder2 } from "@/interface/js_data_encoder.ts";
-
-/** @public */
-export type TypedSqlStatement<T = unknown> = {
-  readonly sqlStatement: string | Uint8Array;
-  readonly args: unknown[];
-
-  readonly statementByteLength: number;
-  readonly argsEncoders: JsDataEncoder2[];
-  readonly argsTotalByteLength: number;
-  getResultDecoder(field: FieldInfo): PgColumnDataDecoder;
-  checkRow?(value: T): void;
-};
+import { PreparedStatement } from "@/class/PreparedStatement.ts";
 
 /** @public */
 export type SqlWithTextArgs = {
@@ -23,23 +11,31 @@ export type SqlWithTextArgs = {
    * 参数数量不能超过 65535.
    */
   readonly textArgs?: (string | null)[];
+  getResultDecoder?: (field: FieldInfo) => PgColumnDataDecoder;
 };
 
 /**
  * 表示可以包含单条 SQL 语句的查询对象
  * @public
  */
-export type SqlStatement = SqlWithTextArgs | string | Uint8Array | TypedSqlStatement;
+export type SqlStatement = string | Uint8Array | PreparedStatement;
 /**
  * 表示可以包含多条 SQL 语句的查询对象
  * @public
  */
 export type SqlStatements =
   | string
-  | SqlWithTextArgs
-  | TypedSqlStatement
   | Uint8Array
-  | ArrayLike<SqlWithTextArgs | TypedSqlStatement | Uint8Array | string>;
+  | SqlWithTextArgs
+  | PreparedStatement
+  | ArrayLike<string | Uint8Array | SqlWithTextArgs | PreparedStatement>;
+
+/** @public */
+export type TypedSqlStatement<T = unknown> = {
+  readonly sqlStatement: SqlStatement;
+  getResultDecoder(field: FieldInfo): PgColumnDataDecoder;
+  checkRow?(value: T): void;
+};
 
 /**
  * 推断查询结果的类型

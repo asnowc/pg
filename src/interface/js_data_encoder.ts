@@ -40,7 +40,7 @@ export interface JsDataVariableLengthEncoder<T> {
 export type StreamEncoder = {
   readonly byteLength: number;
   /**
-   * @returns `true` if encoding is complete, `false` otherwise.
+   * @returns `false` if encoding is complete, `true` otherwise.
    */
   encodeInto(writer: WriterBuffer): boolean;
 };

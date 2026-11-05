@@ -6,6 +6,7 @@ const textDecoder = new TextDecoder();
  * Throws an error if the string contains NUL bytes.
  */
 export function calcUTF16ByteLength(str: string): number {
+  if (!str) return 0;
   let utf8Len = 0;
   let code: number;
   let i = 0;

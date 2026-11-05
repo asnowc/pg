@@ -11,14 +11,15 @@ function assertWrittenLength(output: Uint8Array, offset: number): Uint8Array {
   return output;
 }
 
-function encodeFrameHeaderInto(
+export function encodeFrameHeaderInto(
   buffet: Uint8Array,
   offset: number,
   code: FrontendMessageCode,
   bodyLength: number,
 ): number {
   buffet[offset++] = code;
-  return encodeInt32BE(buffet, offset, bodyLength + 4);
+  offset += encodeInt32BE(buffet, offset, bodyLength + 4);
+  return offset;
 }
 
 /**

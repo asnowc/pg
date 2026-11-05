@@ -1,6 +1,6 @@
 import type { QueryReader, SampleQueryReader } from "./QueryReader.ts";
-import type { SqlStatement, SqlStatements, TypedSqlStatement } from "./QueryStatement.ts";
-import type { QueryCommonOptions } from "./_internal.ts";
+import type { SqlStatement, SqlStatements, SqlWithTextArgs, TypedSqlStatement } from "./QueryStatement.ts";
+import type { QueryCommonOptions, QueryOptionsWithDecoder } from "./_internal.ts";
 
 /**
  * 扩展查询的解码选项。
@@ -29,7 +29,9 @@ export interface SingleQueryOperation {
    * const rows = await conn.query(sql).getRows();
    * ```
    */
-  query<T>(queryable: TypedSqlStatement<T> | SqlStatement, options?: QueryOptions): QueryReader<T>;
+  query<T>(queryable: TypedSqlStatement<T>, options?: QueryOptions): QueryReader<T>;
+  query<T>(queryable: SqlWithTextArgs & QueryOptions): QueryReader<T>;
+  query<T>(queryable: SqlStatement, options?: QueryOptions & QueryOptionsWithDecoder): QueryReader<T>;
 }
 export interface PipelineQueryOperation {
   /**
@@ -65,7 +67,7 @@ export interface MultipleQueryOperation {
    * @returns 按结果集顺序产生读取器的异步可迭代对象。
    * @since 0.3.0
    */
-  queryMultiple(queryable: SqlStatements, options?: QueryOptions): SampleQueryReader;
+  queryMultiple(queryable: SqlStatements, options?: QueryOptions & QueryOptionsWithDecoder): SampleQueryReader;
   /**
    * 从 SQL 字节流执行简单查询，并按 PostgreSQL 返回的每个结果集依次产生读取器。
    * 改方法执行结束后不能处于事务中，否则抛出异常
@@ -75,5 +77,8 @@ export interface MultipleQueryOperation {
    * @returns 按结果集顺序产生读取器的异步可迭代对象。
    * @since 0.3.0
    */
-  queryMultiple(queryable: ReadableStream<Uint8Array>, options?: QueryOptions): SampleQueryReader;
+  queryMultiple(
+    queryable: ReadableStream<Uint8Array>,
+    options?: QueryOptions & QueryOptionsWithDecoder,
+  ): SampleQueryReader;
 }

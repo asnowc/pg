@@ -24,25 +24,6 @@ export interface FixedEncoder {
 }
 const textEncoder = new TextEncoder();
 
-export class EncoderGroup implements BufferEncoder {
-  constructor(readonly groups: (FixedEncoder | BufferEncoder)[]) {
-  }
-  private offset: number = 0;
-  encodeInto(writer: BufferWriter): boolean {
-    let encoder = this.groups[this.offset];
-    while (encoder) {
-      if ("requiredByteLength" in encoder) {
-        if (writer.writableLength < encoder.requiredByteLength) return true;
-        encoder.encodeInto(writer);
-      } else {
-        if (encoder.encodeInto(writer)) return true;
-      }
-      this.offset++;
-      encoder = this.groups[this.offset];
-    }
-    return false;
-  }
-}
 export class UTF16BufferEncoder implements BufferEncoder {
   /**
    * 编码字符串为 UTF-16 前要求缓冲区至少有 UTF16_ENCODE_FREE_BUFFER_SIZE 个可写字节。
@@ -89,5 +70,19 @@ export class CStringEncoder implements BufferEncoder {
   reset(value: string) {
     this.value = value;
     this.offset = 0;
+  }
+}
+export class MessageEncoder implements BufferEncoder {
+  constructor(private readonly encoder: DynamicLengthBlockEncoder) {
+  }
+  private headWritten: boolean = false;
+  encodeInto(writer: BufferWriter): boolean {
+    if (!this.headWritten) {
+      if (writer.writableLength < 5) return true;
+      writer.buffer[writer.writeOffset++] = this.encoder.messageCode;
+      writer.view.setInt32(writer.writeOffset, this.encoder.bodyLength + 4), writer.writeOffset += 4;
+      this.headWritten = true;
+    }
+    return this.encoder.encodeInto(writer);
   }
 }
