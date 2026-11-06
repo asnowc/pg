@@ -1,11 +1,9 @@
-import { TypedSqlStatement } from "@/interface/Query.ts";
+import { PreparedStatement } from "@/class/PreparedStatement.ts";
 import { BufferWriter } from "@/_utils/StreamWriter.ts";
-import { CStringEncoder, DynamicLengthBlockEncoder, UTF16BufferEncoder } from "@/protocol/encoder/_common.ts";
+import { DynamicLengthBlockEncoder, StageBufferEncoder, UTF16BufferEncoder } from "@/protocol/encoder/_common.ts";
 import { FrontendMessageCode } from "@/protocol/const.ts";
-import { calcUTF16ByteLength, encodeUTF16StringInto } from "@/_utils/string.ts";
+import { calcCStringByteLength } from "@/_utils/string.ts";
 import { StreamEncoder } from "@/interface/js_data_encoder.ts";
-
-const textEncoder = new TextEncoder();
 
 /**
  *  https://postgres.ac.cn/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-PARSE
@@ -14,89 +12,68 @@ const textEncoder = new TextEncoder();
  *  |   C string     |   C string     |  int16   |  int32[]
  *  名称能完整写入时直接编码，仅跨缓冲区的名称创建续写对象。
  */
-export class ParseMessageEncoder implements DynamicLengthBlockEncoder {
-  constructor(private readonly typedStatement: TypedSqlStatement, private readonly statementName: string = "") {
-    this.statementNameByteLength = calcUTF16ByteLength(statementName);
-    this.bodyLength = 4 + this.statementNameByteLength + this.typedStatement.statementByteLength +
-      typedStatement.argsEncoders.length * 4;
+export class ParseMessageEncoder extends StageBufferEncoder implements DynamicLengthBlockEncoder {
+  constructor(private readonly typedStatement: PreparedStatement, statementName: string = "") {
+    super();
+    const statementNameByteLength = calcCStringByteLength(statementName);
+    this.bodyLength = 4 + statementNameByteLength + this.typedStatement.statementByteLength +
+      typedStatement.argsLength * 4;
+    this.cStringEncoder = new UTF16BufferEncoder(statementName);
   }
-  private readonly statementNameByteLength: number;
-  private cStringEncoder?: CStringEncoder;
   readonly messageCode = FrontendMessageCode.Parse;
   readonly bodyLength: number;
-  private sqlStatement?: string | Uint8Array;
-  private sqlByteOffset = 0;
-  private oidIndex?: number;
-  encodeInto(writer: BufferWriter): boolean {
-    if (this.sqlStatement === undefined) {
-      if (!this.cStringEncoder && writer.writableLength >= this.statementNameByteLength + 1) {
-        if (this.statementName) {
-          writer.writeOffset += encodeUTF16StringInto(this.statementName, writer.buffer.subarray(writer.writeOffset));
-        }
-        writer.buffer[writer.writeOffset++] = 0;
-      } else {
-        if (!this.cStringEncoder) {
-          if (writer.writableLength < UTF16BufferEncoder.UTF16_ENCODE_FREE_BUFFER_SIZE) return true;
-          this.cStringEncoder = new CStringEncoder(this.statementName);
-        }
-        if (this.cStringEncoder.encodeInto(writer)) return true;
-        this.cStringEncoder = undefined;
-      }
+  private readonly cStringEncoder: UTF16BufferEncoder;
+  override encodeStage = this.encodeStatementName;
+  private encodeStatementName(writer: BufferWriter) {
+    if (this.cStringEncoder.encodeInto(writer)) return true;
+    if (typeof this.typedStatement.sqlStatement === "string") {
+      this.cStringEncoder.reset(this.typedStatement.sqlStatement);
+      return this.encodeTextStatement;
+    } else {
+      return this.encodeBinaryStatement;
+    }
+  }
+  private encodeTextStatement(writer: BufferWriter) {
+    if (this.cStringEncoder.encodeInto(writer)) return true;
+    return this.encodeArgs;
+  }
+  private sqlStatement?: Uint8Array;
+  private encodeBinaryStatement(writer: BufferWriter) {
+    const writableLength = writer.writableLength;
+    if (writableLength === 0) return true;
+    const sqlStatement = this.sqlStatement!;
+    if (writableLength < sqlStatement.byteLength) {
+      const chunk = sqlStatement.subarray(0, writableLength);
+      writer.buffer.set(chunk, writer.writeOffset);
+      writer.writeOffset += chunk.byteLength;
+      this.sqlStatement = sqlStatement.subarray(chunk.byteLength);
+      return true;
+    }
+    writer.buffer.set(sqlStatement, writer.writeOffset), writer.writeOffset += sqlStatement.byteLength;
+    this.sqlStatement = undefined;
+    return this.encodeArgs;
+  }
 
-      this.sqlStatement = this.typedStatement.sqlStatement;
-    }
-    if (this.sqlByteOffset < this.typedStatement.statementByteLength) {
-      if (typeof this.sqlStatement === "string") {
-        if (writer.writableLength < Math.min(4, this.typedStatement.statementByteLength - this.sqlByteOffset)) {
-          return true;
-        }
-        const output = writer.writeOffset === 0 ? writer.buffer : writer.buffer.subarray(writer.writeOffset);
-        const { read, written } = textEncoder.encodeInto(this.sqlStatement, output);
-        writer.writeOffset += written;
-        this.sqlByteOffset += written;
-        if (this.sqlByteOffset < this.typedStatement.statementByteLength) {
-          this.sqlStatement = this.sqlStatement.substring(read);
-        }
-      } else {
-        if (writer.writableLength === 0) return true;
-        const offsetEnd = Math.min(writer.writableLength + this.sqlByteOffset, this.sqlStatement.byteLength);
-        const bytes = this.sqlByteOffset === 0 && offsetEnd === this.sqlStatement.byteLength
-          ? this.sqlStatement
-          : this.sqlStatement.subarray(this.sqlByteOffset, offsetEnd);
-        writer.buffer.set(bytes, writer.writeOffset);
-        writer.writeOffset += offsetEnd - this.sqlByteOffset;
-        this.sqlByteOffset = offsetEnd;
-      }
-      if (this.sqlByteOffset < this.typedStatement.statementByteLength) return true;
-    }
-    const argsEncoders = this.typedStatement.argsEncoders;
+  private oidIndex?: number;
+  private encodeArgs(writer: BufferWriter) {
     if (this.oidIndex === undefined) {
       if (writer.writableLength < 3) return true;
-      writer.buffer[writer.writeOffset++] = 0;
-      writer.view.setInt16(writer.writeOffset, argsEncoders.length), writer.writeOffset += 2;
+      writer.buffer[writer.writeOffset++] = 0; //statement text end
+      writer.view.setInt16(writer.writeOffset, this.typedStatement.argsLength), writer.writeOffset += 2;
       this.oidIndex = 0;
     }
 
-    if (this.oidIndex === argsEncoders.length) return false;
-    const end = Math.min(argsEncoders.length, this.oidIndex + Math.floor(writer.writableLength / 4));
-    let writeOffset = writer.writeOffset;
-    for (let i = this.oidIndex; i < end; i++) {
-      writer.view.setInt32(writeOffset, argsEncoders[i].oid);
-      writeOffset += 4;
-    }
-    writer.writeOffset = writeOffset;
-    this.oidIndex = end;
-    return end < argsEncoders.length;
-  }
-}
+    const argsEncoders = this.typedStatement.argsEncoders;
+    if (!argsEncoders) return false;
 
-enum BindEncodeStage {
-  PortalName,
-  StatementName,
-  Formats,
-  Parameters,
-  ResultFormat,
-  Done,
+    while (this.oidIndex < argsEncoders.length) {
+      if (writer.writableLength < 4) return true;
+      writer.view.setInt32(writer.writeOffset, argsEncoders[this.oidIndex].oid), writer.writeOffset += 4;
+      this.oidIndex++;
+    }
+    this.oidIndex = undefined;
+    return false;
+  }
 }
 
 /**
@@ -109,12 +86,9 @@ enum BindEncodeStage {
  *  | int32(n)          | n     |
  *  名称直接写入可用缓冲区，跨缓冲区时才分配名称续写对象。
  */
-export class BindMessageEncoder implements DynamicLengthBlockEncoder {
-  constructor(
-    private readonly typedStatement: TypedSqlStatement,
-    private readonly statementName: string = "",
-    private readonly portalName: string = "",
-  ) {
+export class BindMessageEncoder extends StageBufferEncoder implements DynamicLengthBlockEncoder {
+  constructor(private readonly typedStatement: PreparedStatement, statementName: string = "", portalName: string = "") {
+    super();
     // | name                  | value       | byte |
     // | --------------------- | ----------- | ---- |
     // | portal name           | ...\0       | n+1  |
@@ -125,64 +99,31 @@ export class BindMessageEncoder implements DynamicLengthBlockEncoder {
     // | parameter values      | ...         | n    |
     // | result column count   | 0           | 2    |
 
-    // 10= 1+1+2+2+2+2 (minimum fixed part of the message)
-    this.statementNameByteLength = calcUTF16ByteLength(statementName);
-    this.portalNameByteLength = calcUTF16ByteLength(portalName);
-    // Two C-string terminators and four int16 fields.
-    this.bodyLength = 10 + this.statementNameByteLength + this.portalNameByteLength +
-      (typedStatement.argsTotalByteLength + typedStatement.argsEncoders.length * 4);
+    const prefixNameByteLength = calcCStringByteLength(portalName) + calcCStringByteLength(statementName) + 2;
+    // 8= 1+1+2+2+2+2 (minimum fixed part of the message)
+    this.bodyLength = 8 + prefixNameByteLength + typedStatement.argsTotalByteLength +
+      typedStatement.argsLength * 4;
+    this.prefixEncoder = new UTF16BufferEncoder(portalName + "\0" + statementName + "\0");
   }
-  private readonly statementNameByteLength: number;
-  private readonly portalNameByteLength: number;
-  private stage = BindEncodeStage.PortalName;
-  private cStringEncoder?: CStringEncoder;
-  private parameterIndex = 0;
-  private streamEncoder?: StreamEncoder;
   readonly messageCode = FrontendMessageCode.Bind;
   readonly bodyLength: number;
-  encodeInto(writer: BufferWriter): boolean {
-    if (this.stage === BindEncodeStage.PortalName) {
-      if (this.encodeName(writer, this.portalName, this.portalNameByteLength)) return true;
-      this.stage = BindEncodeStage.StatementName;
-    }
-    if (this.stage === BindEncodeStage.StatementName) {
-      if (this.encodeName(writer, this.statementName, this.statementNameByteLength)) return true;
-      this.stage = BindEncodeStage.Formats;
-    }
-    if (this.stage === BindEncodeStage.Formats) {
-      if (writer.writableLength < 6) return true;
-      writer.view.setInt16(writer.writeOffset, 1), writer.writeOffset += 2; // format code count
-      writer.view.setInt16(writer.writeOffset, 1), writer.writeOffset += 2; // format code
-      writer.view.setInt16(writer.writeOffset, this.typedStatement.argsEncoders.length), writer.writeOffset += 2;
-      this.stage = BindEncodeStage.Parameters;
-    }
-    if (this.stage === BindEncodeStage.Parameters) {
-      if (this.encodeParameterValues(writer)) return true;
-      this.stage = BindEncodeStage.ResultFormat;
-    }
-    if (this.stage === BindEncodeStage.ResultFormat) {
-      if (writer.writableLength < 2) return true;
-      writer.view.setInt16(writer.writeOffset, 0), writer.writeOffset += 2; // result column count
-      this.stage = BindEncodeStage.Done;
-    }
-    return false;
-  }
 
-  private encodeName(writer: BufferWriter, value: string, byteLength: number): boolean {
-    if (!this.cStringEncoder) {
-      if (writer.writableLength >= byteLength + 1) {
-        if (value) writer.writeOffset += encodeUTF16StringInto(value, writer.buffer.subarray(writer.writeOffset));
-        writer.buffer[writer.writeOffset++] = 0;
-        return false;
-      }
-      if (writer.writableLength < UTF16BufferEncoder.UTF16_ENCODE_FREE_BUFFER_SIZE) return true;
-      this.cStringEncoder = new CStringEncoder(value);
-    }
-    if (this.cStringEncoder.encodeInto(writer)) return true;
-    this.cStringEncoder = undefined;
-    return false;
+  private prefixEncoder: UTF16BufferEncoder;
+  override encodeStage = this.encodePrefixName;
+  private encodePrefixName(writer: BufferWriter) {
+    if (this.prefixEncoder.encodeInto(writer)) return true;
+    return this.encodeFormats;
   }
-  private encodeParameterValues(writer: BufferWriter): boolean {
+  private encodeFormats(writer: BufferWriter) {
+    if (writer.writableLength < 6) return true;
+    writer.view.setInt16(writer.writeOffset, 1), writer.writeOffset += 2; // format code count
+    writer.view.setInt16(writer.writeOffset, 1), writer.writeOffset += 2; // format code
+    writer.view.setInt16(writer.writeOffset, this.typedStatement.argsLength), writer.writeOffset += 2;
+    return this.encodeParameters;
+  }
+  private streamEncoder?: StreamEncoder;
+  private parameterIndex = 0;
+  private encodeParameters(writer: BufferWriter) {
     let parameterIndex = this.parameterIndex;
     if (this.streamEncoder) {
       if (this.streamEncoder.encodeInto(writer)) return true;
@@ -190,8 +131,8 @@ export class BindMessageEncoder implements DynamicLengthBlockEncoder {
       parameterIndex++;
     }
 
-    const argsEncoders = this.typedStatement.argsEncoders;
-    const args = this.typedStatement.args;
+    const argsEncoders = this.typedStatement.argsEncoders ?? [];
+    const args = this.typedStatement.args ?? [];
     for (; parameterIndex < argsEncoders.length; parameterIndex++) {
       const enc = argsEncoders[parameterIndex];
       if ("byteLength" in enc) {
@@ -209,13 +150,19 @@ export class BindMessageEncoder implements DynamicLengthBlockEncoder {
       }
     }
     this.parameterIndex = parameterIndex;
-    return parameterIndex < argsEncoders.length;
+    if (parameterIndex < argsEncoders.length) return true;
+    return this.encodeResultFormat;
+  }
+  private encodeResultFormat(writer: BufferWriter) {
+    if (writer.writableLength < 2) return true;
+    writer.view.setInt16(writer.writeOffset, 0), writer.writeOffset += 2; // result column count
+    return false;
   }
 }
 
 export class ExecuteMessageEncoder implements DynamicLengthBlockEncoder {
   constructor(private maxRows: number, private portal: string = "") {
-    this.bodyLength = 4 + calcUTF16ByteLength(this.portal) + 1; // 1 for message code, 4 for length, portal length + null terminator
+    this.bodyLength = 4 + calcCStringByteLength(this.portal) + 1; // 1 for message code, 4 for length, portal length + null terminator
   }
   readonly bodyLength: number;
   readonly messageCode = FrontendMessageCode.Execute;

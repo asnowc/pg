@@ -1,4 +1,4 @@
-import type { TypedSqlStatement } from "@/interface/Query.ts";
+import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
 import {
   DataRowDecoder,
   decodeCommandComplete,

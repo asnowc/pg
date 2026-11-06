@@ -7,9 +7,10 @@ import type {
 } from "@/interface/Connection.ts";
 import { eachLink, LinkList } from "@/_utils/LinkList.ts";
 import { PgPoolConnection } from "./PgConnection.ts";
-import { QueryOptions, QueryReader, SingleQueryOperation, SqlStatement, TypedSqlStatement } from "@/interface/Query.ts";
+import { QueryOptions, QueryReader, SingleQueryOperation, SqlStatement } from "@/interface/Query.ts";
 import { sqlStatementToSqlEncoder } from "./private/sql_statement.ts";
 import QueryReaderImpl from "./private/QueryReader.ts";
+import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
 
 /**
  * 原生连接池配置。建连和认证由调用方注入 。

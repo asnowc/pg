@@ -1,4 +1,5 @@
-import type { TransactionMode, TypedSqlStatement } from "@/interface/Query.ts";
+import type { TransactionMode } from "@/interface/Query.ts";
+import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
 import { throwRewrittenError } from "@/_utils/error.ts";
 import { BeginTransactionTask, PgMessageTask, QueryAction, ReceiverType } from "./parsers/QueryTask.ts";
 import { QueryResultParser } from "./parsers/QueryResultParser.ts";

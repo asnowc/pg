@@ -1,11 +1,32 @@
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
+export function calcUTF16ByteLength(str: string): number {
+  if (!str) return 0;
+  let utf8Len = 0;
+  let code: number;
+  let i = 0;
+  const max = str.length;
+  while (i < max) {
+    code = str.codePointAt(i)!;
+    if (code < 0x80) utf8Len++;
+    else if (code < 0x8_00) utf8Len += 2;
+    else if (code < 0x10000) utf8Len += 3;
+    else if (code < 0x200000) utf8Len += 4;
+    else if (code < 0x4000000) utf8Len += 5;
+    else utf8Len += 6;
+
+    if (code > 0xffff) i += 2;
+    else i++;
+  }
+
+  return utf8Len;
+}
 /**
  * Calculates the byte length of a UTF-16 string when encoded as UTF-8.
  * Throws an error if the string contains NUL bytes.
  */
-export function calcUTF16ByteLength(str: string): number {
+export function calcCStringByteLength(str: string): number {
   if (!str) return 0;
   let utf8Len = 0;
   let code: number;

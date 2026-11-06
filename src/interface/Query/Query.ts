@@ -1,5 +1,6 @@
+import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
 import type { QueryReader, SampleQueryReader } from "./QueryReader.ts";
-import type { SqlStatement, SqlStatements, SqlWithTextArgs, TypedSqlStatement } from "./QueryStatement.ts";
+import type { SqlStatement, SqlStatements } from "./QueryStatement.ts";
 import type { QueryCommonOptions, QueryOptionsWithDecoder } from "./_internal.ts";
 
 /**
@@ -30,7 +31,6 @@ export interface SingleQueryOperation {
    * ```
    */
   query<T>(queryable: TypedSqlStatement<T>, options?: QueryOptions): QueryReader<T>;
-  query<T>(queryable: SqlWithTextArgs & QueryOptions): QueryReader<T>;
   query<T>(queryable: SqlStatement, options?: QueryOptions & QueryOptionsWithDecoder): QueryReader<T>;
 }
 export interface PipelineQueryOperation {

@@ -1,12 +1,12 @@
 import { encodeInt32BE } from "@/_utils/number.ts";
-import { calcUTF16ByteLength, encodeUTF16StringInto } from "@/_utils/string.ts";
+import { calcCStringByteLength, encodeUTF16StringInto } from "@/_utils/string.ts";
 import type { JsDataEncoder } from "@/interface/js_data_encoder.ts";
 import { PgOid } from "@/util/pg_oid.ts";
 
 export const stringEncoder: JsDataEncoder<string> = {
   oid: PgOid.TEXT,
   encodeToText: String,
-  calculateByteLength: calcUTF16ByteLength,
+  calculateByteLength: calcCStringByteLength,
   encodeInto: (buffer, offset, value) => encodeUTF16StringInto(value, buffer.subarray(offset)),
 };
 export const numberEncoder: JsDataEncoder<number> = {

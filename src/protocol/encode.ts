@@ -1,5 +1,5 @@
 import { FrontendMessageCode, SSL_REQUEST_CODE } from "./const.ts";
-import { calcUTF16ByteLength, encodeUTF16StringInto } from "@/_utils/string.ts";
+import { calcCStringByteLength, encodeUTF16StringInto } from "@/_utils/string.ts";
 import { encodeInt32BE } from "@/_utils/number.ts";
 
 const FRAME_HEADER_LENGTH = 5;
@@ -28,7 +28,7 @@ export function encodeFrameHeaderInto(
 export function encodeStartupMessage(version: number, parameters: Map<string, string>): Uint8Array {
   let length = 9;
   for (const [key, value] of parameters) {
-    length += calcUTF16ByteLength(key) + calcUTF16ByteLength(value);
+    length += calcCStringByteLength(key) + calcCStringByteLength(value);
     length += 2; // for the null terminators of key and value
   }
   const message = new Uint8Array(length);
@@ -59,7 +59,7 @@ type PasswordMessage =
 
 export function encodePasswordMessage(message: PasswordMessage): Uint8Array {
   if ("password" in message) {
-    const bodyLength = calcUTF16ByteLength(message.password) + 1;
+    const bodyLength = calcCStringByteLength(message.password) + 1;
     const buffer = createFrame(FrontendMessageCode.Password, bodyLength);
 
     let offset = FRAME_HEADER_LENGTH;
@@ -68,7 +68,7 @@ export function encodePasswordMessage(message: PasswordMessage): Uint8Array {
     return buffer;
   }
   if ("mechanism" in message) {
-    const mechanismByteLength = calcUTF16ByteLength(message.mechanism);
+    const mechanismByteLength = calcCStringByteLength(message.mechanism);
     const bodyLength = mechanismByteLength + 5 + (message.data?.byteLength ?? 0);
     const buffer = createFrame(FrontendMessageCode.Password, bodyLength);
 
@@ -186,7 +186,7 @@ export function encodeCopyDataMessage(data: Uint8Array): Uint8Array {
 }
 
 export function encodeCopyFailMessage(reason: string): Uint8Array {
-  const bodyLength = calcUTF16ByteLength(reason) + 1;
+  const bodyLength = calcCStringByteLength(reason) + 1;
   const buffer = createFrame(FrontendMessageCode.CopyFail, bodyLength);
   const offset = FRAME_HEADER_LENGTH + encodeUTF16StringInto(reason, buffer.subarray(FRAME_HEADER_LENGTH));
   buffer[offset] = CSTRING_TERMINATOR;

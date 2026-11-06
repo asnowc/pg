@@ -1,8 +1,8 @@
 import { getJsDataEncoder } from "@/codec/js_data_encoder.ts";
 import type { JsDataEncoder, JsDataEncoder2, JsDataEncoderMap } from "@/interface/js_data_encoder.ts";
-import { calcUTF16ByteLength, encodeUTF16StringInto } from "@/_utils/string.ts";
+import { calcCStringByteLength, encodeUTF16StringInto } from "@/_utils/string.ts";
 import { encodeInt16BE, encodeInt32BE } from "@/_utils/number.ts";
-import { TypedSqlStatement } from "@/interface/Query.ts";
+import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
 import { PgColumnDataDecoder } from "../interface/pg_data_decoder.ts";
 import { FieldInfo } from "../interface/Query/QueryReader.ts";
 
@@ -82,7 +82,7 @@ export class InternalTextSqlStatementEncoder<T = unknown> implements TypedSqlSta
   getResultDecoder(field: FieldInfo): PgColumnDataDecoder {
   }
   calculateParseByteLength(): number {
-    const sqlByteLength = calcUTF16ByteLength(this.sqlStatement);
+    const sqlByteLength = calcCStringByteLength(this.sqlStatement);
     return 1 + sqlByteLength + 1 + 2 + (this.args.length ?? 0) * 4;
   }
 
@@ -102,7 +102,7 @@ export class InternalTextSqlStatementEncoder<T = unknown> implements TypedSqlSta
   calculateBindByteLength(): number {
     let byteLength = 8;
     for (const value of this.args) {
-      byteLength += 4 + (value === null ? 0 : calcUTF16ByteLength(value));
+      byteLength += 4 + (value === null ? 0 : calcCStringByteLength(value));
     }
     return byteLength;
   }
@@ -116,7 +116,7 @@ export class InternalTextSqlStatementEncoder<T = unknown> implements TypedSqlSta
       if (value === null) {
         offset += encodeInt32BE(data, offset, -1);
       } else {
-        const byteLength = calcUTF16ByteLength(value);
+        const byteLength = calcCStringByteLength(value);
         offset += encodeInt32BE(data, offset, byteLength);
         offset += encodeUTF16StringInto(value, data.subarray(offset));
       }
@@ -125,7 +125,7 @@ export class InternalTextSqlStatementEncoder<T = unknown> implements TypedSqlSta
     return offset;
   }
   calculateQueryByteLength(): number {
-    return calcUTF16ByteLength(this.sqlStatement) + 1;
+    return calcCStringByteLength(this.sqlStatement) + 1;
   }
   encodeQueryInto(data: Uint8Array, offset: number): number {
     offset += encodeUTF16StringInto(this.sqlStatement, data.subarray(offset));
