@@ -1,4 +1,14 @@
-import { BufferWriter } from "@/_utils/StreamWriter.ts";
+import { BufferWriter } from "@/_utils/BufferWriter.ts";
+import { FrontendMessageCode } from "../const.ts";
+
+export function encodeFrameHeaderInto(
+  writer: BufferWriter,
+  code: FrontendMessageCode,
+  bodyLength: number,
+) {
+  writer.view.setUint8(writer.writeOffset++, code);
+  writer.view.setInt32(writer.writeOffset, bodyLength + 4), writer.writeOffset += 4;
+}
 
 export interface BufferEncoder {
   /**
@@ -7,15 +17,7 @@ export interface BufferEncoder {
    */
   encodeInto(writer: BufferWriter): boolean | void;
 }
-export interface DynamicLengthBlockEncoder extends BufferEncoder {
-  readonly messageCode: number;
-  readonly bodyLength: number;
-}
 
-export interface FixedEncoder {
-  readonly requiredByteLength: number;
-  encodeInto(writer: BufferWriter): void;
-}
 const textEncoder = new TextEncoder();
 
 export class UTF16BufferEncoder implements BufferEncoder {
@@ -42,7 +44,16 @@ export class UTF16BufferEncoder implements BufferEncoder {
     this.offset = 0;
   }
 }
-
+export class Uint8ArrayEncoder implements BufferEncoder {
+  constructor(private value: Uint8Array) {}
+  encodeInto(writer: BufferWriter): boolean | void {
+    const rest = writer.setDataToThreshold(this.value);
+    if (rest) {
+      this.value = rest;
+      return true;
+    }
+  }
+}
 export class CStringEncoder implements BufferEncoder {
   constructor(private value: string) {}
   private offset: number = 0;
@@ -66,23 +77,10 @@ export class CStringEncoder implements BufferEncoder {
     this.offset = 0;
   }
 }
-export class MessageEncoder implements BufferEncoder {
-  constructor(private readonly encoder: DynamicLengthBlockEncoder) {
-  }
-  private headWritten: boolean = false;
-  encodeInto(writer: BufferWriter): boolean | void {
-    if (!this.headWritten) {
-      if (writer.writableLength < 5) return true;
-      writer.buffer[writer.writeOffset++] = this.encoder.messageCode;
-      writer.view.setInt32(writer.writeOffset, this.encoder.bodyLength + 4), writer.writeOffset += 4;
-      this.headWritten = true;
-    }
-    return this.encoder.encodeInto(writer);
-  }
-}
+
 export abstract class StageBufferEncoder implements BufferEncoder {
   encodeInto(writer: BufferWriter): boolean {
-    let nextStage: EncodeStage | boolean;
+    let nextStage: StageEncode | boolean;
     do {
       nextStage = this.encodeStage(writer);
       if (nextStage === true) return true;
@@ -90,8 +88,8 @@ export abstract class StageBufferEncoder implements BufferEncoder {
       this.encodeStage = nextStage;
     } while (true);
   }
-  abstract encodeStage: EncodeStage;
+  protected abstract encodeStage: StageEncode;
 }
-interface EncodeStage {
-  (writer: BufferWriter): EncodeStage | boolean;
+export interface StageEncode {
+  (writer: BufferWriter): StageEncode | boolean;
 }

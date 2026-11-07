@@ -13,12 +13,10 @@ export class QueryReadQueue extends CountLinkList<ResultReceiver> {
   transactionStatus = PgTransactionStatus.Idle;
 
   enqueueSync(result?: QueryResultParser): void {
-    this.push({ type: ReceiverType.Sync });
+    this.push({ taskType: ReceiverType.Sync });
   }
-  enqueueSimpleQuery(result: QueryResultParser): Promise<void> {
-    const waiter = Promise.withResolvers<void>();
+  enqueueSimpleQuery(result: QueryResultParser): void {
     this.push(result);
-    return waiter.promise;
   }
   init(parsers: MessageParsers, queryWrite: QueryWriteQueue) {
     this.initLifecycleMessageListener(parsers);
@@ -69,9 +67,7 @@ export class QueryReadQueue extends CountLinkList<ResultReceiver> {
 
       this.rejectQueueToSync(afterError);
       const isNoSyncInReadQueue = !this.head;
-      if (isNoSyncInReadQueue) {
-        queryWrite.clearWriteQueueForSync(); // queue has no SYNC, so we need to clear the write queue and send a SYNC immediately
-      }
+      if (isNoSyncInReadQueue) queryWrite.sync();
     });
     parsers.set(BackendMessageCode.RowDescription, (reader, remaining) => {
       return this.getResultReceiver().rowDescription(reader, remaining);

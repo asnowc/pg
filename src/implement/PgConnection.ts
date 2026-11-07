@@ -19,10 +19,10 @@ import type {
   Transaction,
   TransactionMode,
   TransactionQueryOperation,
-  TypedSqlStatement,
 } from "@/interface/Query.ts";
 import { sqlStatementToSqlEncoder } from "./private/sql_statement.ts";
 import QueryReaderImpl from "./private/QueryReader.ts";
+import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
 
 class QueryOperation
   implements
@@ -40,8 +40,8 @@ class QueryOperation
   query<T>(queryable: SqlStatement | TypedSqlStatement<T>, options?: QueryOptions): QueryReader<T> {
     const encoder = sqlStatementToSqlEncoder(queryable, options);
     return new QueryReaderImpl(() => {
-      const promise = this.#session.extendedQuery<T>(encoder);
-      this.#session.sync();
+      const promise = this.#session.queryWriter.extendedQuery<T>(encoder);
+      this.#session.queryWriter.sync();
       return promise;
     });
   }

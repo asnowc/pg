@@ -7,7 +7,8 @@ import { ConnectionStream } from "@/_utils/ConnectionStream.ts";
 import { AuthenticationData, AuthParser, getAuthParser } from "./parsers/AuthParser.ts";
 import { BufferReader } from "@/_utils/StreamReader.ts";
 import { PgAuthenticationError } from "@/error.ts";
-import { BufferWriter, StreamWriter } from "@/_utils/StreamWriter.ts";
+import { BufferWriter } from "@/_utils/BufferWriter.ts";
+import { BufferWriterQueue } from "@/_utils/BufferWriterQueue.ts";
 
 const DEFAULT_MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
 
@@ -33,7 +34,7 @@ export async function startAuthentication(
   let authOk: AuthenticationData | undefined;
 
   await new Promise<void>((resolve, reject) => {
-    const writer = new StreamWriter(
+    const writer = new BufferWriterQueue(
       new BufferWriter((data) => conn.write(data), 8 * 1024),
       () => conn.closeWrite(),
       reject,

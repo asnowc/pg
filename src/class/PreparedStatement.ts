@@ -5,13 +5,18 @@ import type { FieldInfo } from "@/interface/Query/QueryReader.ts";
 /** @public */
 export class PreparedStatement {
   constructor(
-    readonly sqlStatement: string | Uint8Array,
+    sqlStatement: string | TemplateStringsArray | Uint8Array,
     readonly args?: unknown[],
     readonly argsEncoders?: JsDataEncoder2[],
     readonly statementName?: string,
   ) {
+    if (sqlStatement instanceof Array) {
+      sqlStatement = sqlStatement.join("");
+    }
+    this.sqlStatement = sqlStatement;
     //需要确保 sqlStatement 不包含 \0
   }
+  readonly sqlStatement: string | Uint8Array;
   declare readonly statementNameByteLength: number;
   declare readonly statementByteLength: number;
 

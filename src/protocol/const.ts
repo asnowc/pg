@@ -5,12 +5,18 @@ export const PG_EPOCH_UNIX_MS = 946684800000;
 export const SSL_REQUEST_CODE = 80877103;
 export const GSS_ENC_REQUEST_CODE = 80877104;
 
+/** PostgreSQL 协议帧头长度。 */
+export const FRAME_HEADER_LENGTH = 5;
+export const CSTRING_TERMINATOR = 0;
 /** SSL 协商响应字节。 */
 export enum TLSResponseCode {
   Accepted = 0x53,
   Rejected = 0x4e,
 }
-
+export enum DescribeTarget {
+  Statement = 0x53,
+  Portal = 0x50,
+}
 /** 后端消息类型字节。 */
 export enum BackendMessageCode {
   /** 无法识别的后端消息类型。 */

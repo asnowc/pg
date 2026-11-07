@@ -87,7 +87,7 @@ export class InternalTextSqlStatementEncoder<T = unknown> implements TypedSqlSta
   }
 
   encodeParseInto(data: Uint8Array, offset: number): number {
-    // https://postgres.ac.cn/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-PARSE
+    // https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-PARSE
     // arg count 表示前端希望预先指定的参数数量，可以为0.
     // | statement name | statement text |arg count | arg OIDs...
     // |   C string     |   C string     |  int16   |  int32[]

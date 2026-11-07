@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
-import { JS_DATA_ENCODER_V1, type JsDataEncoder, PG_DATA_DECODER_V1, PgDataDecodeContext, PgOid } from "@asla/pg";
+import { FieldInfo, JS_DATA_ENCODER_V1, type JsDataEncoder, PG_DATA_DECODER_V1, PgOid } from "@asla/pg";
 const encoderV1 = JS_DATA_ENCODER_V1;
 
-const context: PgDataDecodeContext = { typeOID: 0, typeSize: -1, typeModifier: -1 };
+const context: FieldInfo = { typeOID: 0, typeSize: -1, typeModifier: -1, index: 0, name: "" };
 
 function encode<T>(encoder: JsDataEncoder<T>, value: T): Uint8Array {
   const byteLength = "byteLength" in encoder ? encoder.byteLength : encoder.calculateByteLength(value);

@@ -1,6 +1,6 @@
 import { PgAuthenticationExchangeOptions } from "@asla/pg";
 import { startAuth } from "@/protocol/connect.ts";
-import { BufferWriter, StreamWriter } from "@/_utils/StreamWriter.ts";
+import { BufferWriter } from "@/_utils/BufferWriter.ts";
 import { MessageParsers } from "@/protocol/parsers/MessageParser.ts";
 import {
   BackendMessageCode,
@@ -16,6 +16,7 @@ import { Buffer } from "node:buffer";
 import { BufferReader } from "@/_utils/StreamReader.ts";
 import { eachLink, LinkList } from "@/_utils/LinkList.ts";
 import { InternalTextSqlStatementEncoder } from "@/codec/StatementEncoder.ts";
+import { BufferWriterQueue } from "@/_utils/BufferWriterQueue.ts";
 
 export class FakeRequest {
   constructor(private connections: Conn[]) {
@@ -52,11 +53,11 @@ async function connect(
   return new Conn(conn);
 }
 class Conn {
-  writer: StreamWriter;
+  writer: BufferWriterQueue;
   constructor(private conn: Deno.Conn) {
     const flushThreshold = 8 * 1024;
     const buffer = new BufferWriter((data) => conn.write(data), flushThreshold * 2, flushThreshold);
-    this.writer = new StreamWriter(buffer, () => conn.closeWrite(), (e) => {
+    this.writer = new BufferWriterQueue(buffer, () => conn.closeWrite(), (e) => {
       console.error("BufferWriter error", e);
     });
     const reader = new BufferReader(new Uint8Array(8 * 1024));

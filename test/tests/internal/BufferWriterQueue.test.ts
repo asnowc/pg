@@ -1,10 +1,11 @@
 import { expect, test, vi } from "vitest";
-import { BufferWriter, StreamWriter } from "@/_utils/StreamWriter.ts";
+import { BufferWriter } from "@/_utils/BufferWriter.ts";
+import { BufferWriterQueue } from "@/_utils/BufferWriterQueue.ts";
 
 function createWriter(size = 8, maxWrite = Infinity) {
   const output: number[] = [];
   const errors: unknown[] = [];
-  const writer = new StreamWriter(
+  const writer = new BufferWriterQueue(
     new BufferWriter(async (buffer) => {
       const written = Math.min(buffer.byteLength, maxWrite);
       output.push(...buffer.subarray(0, written));
@@ -53,7 +54,7 @@ test("队列空闲后冲刷小块数据", async () => {
 test("定时刷新不会与未完成的底层写入并发", async () => {
   const release: Array<() => void> = [];
   const errors: unknown[] = [];
-  const writer = new StreamWriter(
+  const writer = new BufferWriterQueue(
     new BufferWriter(
       async (_buffer) =>
         new Promise<number>((resolve) => {
@@ -76,4 +77,19 @@ test("定时刷新不会与未完成的底层写入并发", async () => {
     release.forEach((resolve) => resolve());
   }
   expect(errors).toEqual([]);
+});
+
+test("编码器在空缓冲区未写入数据却请求更多空间时报告错误", () => {
+  const { writer, output, errors } = createWriter();
+  const encodeInto = vi.fn(() => true);
+
+  writer.pushEncoder({ encodeInto });
+
+  expect(encodeInto).toHaveBeenCalledOnce();
+  expect(output).toEqual([]);
+  expect(errors).toHaveLength(1);
+  expect(errors[0]).toMatchObject({
+    message: "Encoder requested more space without writing any bytes",
+  });
+  expect(writer.length).toBe(0);
 });

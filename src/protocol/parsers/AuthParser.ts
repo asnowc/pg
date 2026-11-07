@@ -5,7 +5,7 @@ import { AuthCode } from "../const.ts";
 import { encodePasswordMessage } from "../encode.ts";
 import { PgProtocolError } from "@/_utils/error.ts";
 import { StreamReader } from "@/_utils/StreamReader.ts";
-import { StreamWriter } from "@/_utils/StreamWriter.ts";
+import { BufferWriterQueue } from "@/_utils/BufferWriterQueue.ts";
 
 export type AuthenticationData = true | Promise<void>;
 
@@ -15,7 +15,7 @@ export interface AuthParser<T> {
 }
 export function getAuthParser(
   code: number,
-  writer: StreamWriter,
+  writer: BufferWriterQueue,
   options: PgAuthenticationExchangeOptions,
 ): AuthParser<AuthenticationData> {
   switch (code) {
@@ -36,7 +36,7 @@ export function getAuthParser(
 
 class AuthSASLParser implements AuthParser<Promise<void> | true> {
   constructor(
-    private writer: StreamWriter,
+    private writer: BufferWriterQueue,
     private options: PgAuthenticationExchangeOptions,
   ) {
   }
@@ -91,7 +91,7 @@ class AuthSASLParser implements AuthParser<Promise<void> | true> {
   }
 }
 class AuthCleartextPasswordParser implements AuthParser<true> {
-  constructor(private writer: StreamWriter, private options: PgAuthenticationExchangeOptions) {
+  constructor(private writer: BufferWriterQueue, private options: PgAuthenticationExchangeOptions) {
   }
   authCode = "CLEAR_TEXT";
   next(reader: StreamReader): true | undefined {

@@ -3,14 +3,21 @@ import { QueryWriteQueue } from "./MessageWriteQueue.ts";
 import { AuthenticationResult } from "./auth.ts";
 import { MessageParsers } from "./parsers/MessageParser.ts";
 import { ConnectionStream } from "@/_utils/ConnectionStream.ts";
-import type { SqlStatement, TransactionMode, TypedSqlStatement } from "@/interface/Query.ts";
-import type { QueryResultParser } from "./parsers/QueryResultParser.ts";
-import { BufferWriter } from "@/_utils/StreamWriter.ts";
+import { BufferWriter } from "@/_utils/BufferWriter.ts";
 import { EventEmitter, Listener } from "@/_utils/EventEmitter.ts";
 import { SessionDestroyedError, UnexpectedEOFError } from "@/_utils/error.ts";
+import { BufferWriterQueue } from "@/_utils/BufferWriterQueue.ts";
 
 const DEFAULT_MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
 
+function createBufferWriter(stream: ConnectionStream) {
+  const flushThreshold = 8 * 1024;
+  return new BufferWriter(
+    stream.write.bind(stream),
+    new Uint8Array(flushThreshold * 2),
+    flushThreshold,
+  );
+}
 export class PgSession<T = unknown> extends EventEmitter {
   constructor(
     private readonly stream: ConnectionStream,
@@ -28,28 +35,15 @@ export class PgSession<T = unknown> extends EventEmitter {
     this.processId = backendKey?.processId ?? null;
     this.secretKey = backendKey?.secretKey ?? null;
 
+    const writer = createBufferWriter(stream);
+    const bufferWriterQueue = new BufferWriterQueue(writer, () => stream.closeWrite(), (cause: unknown) => {
+      const error = cause instanceof Error ? cause : new Error("PostgreSQL query write failed", { cause });
+      this.readQueue.fail(error);
+      this.destroy(error);
+    });
+    this.queryWriter = new QueryWriteQueue(bufferWriterQueue, this.readQueue);
     const parser = new MessageParsers(maxMessageSize);
-    const flushThreshold = 8 * 1024;
-    this.writer = new BufferWriter(
-      this.stream.write.bind(this.stream),
-      new Uint8Array(flushThreshold * 2),
-      flushThreshold,
-    );
-    this.writeQueue = new QueryWriteQueue(
-      this.writer,
-      this.readQueue,
-      () => stream.closeWrite(),
-      (cause: unknown) => {
-        const error = cause instanceof Error ? cause : new Error("PostgreSQL query write failed", { cause });
-        this.readQueue.fail(error);
-        this.destroy(error);
-      },
-      () => {
-        if (this.locked) return;
-        this.emit("release");
-      },
-    );
-    this.readQueue.init(parser, this.writeQueue);
+    this.readQueue.init(parser, this.queryWriter);
 
     stream.startReadLoop(() => parser.next(this.stream), () => {
       if (this.readQueue.head) {
@@ -64,7 +58,7 @@ export class PgSession<T = unknown> extends EventEmitter {
       if (this.closed) {
         //这里可能是 this.destroy() 被调用导致 write error
         this.readQueue.fail(err);
-        this.writeQueue.clear(err);
+        this.queryWriter.clear(err);
       } else {
         this.destroy(err);
       }
@@ -79,36 +73,17 @@ export class PgSession<T = unknown> extends EventEmitter {
   get parameters(): Record<string, string> {
     return this.readQueue.parameters;
   }
-  private readonly writeQueue: QueryWriteQueue;
-  private readonly readQueue = new QueryReadQueue();
-  private readonly writer: BufferWriter;
 
-  get ttl(): number {
-    return this.writeQueue.length + this.readQueue.length;
-  }
-  locked = false;
-  beginTransaction(mode?: TransactionMode): void {
-    return this.writeQueue.beginTransaction(mode);
-  }
-  commitTransaction(): void {
-    return this.writeQueue.commitTransaction();
-  }
-  rollbackTransaction(): void {
-    return this.writeQueue.rollbackTransaction();
-  }
-  extendedQuery<T>(statement: TypedSqlStatement<T>): Promise<QueryResultParser<T>> {
-    return this.writeQueue.extendedQuery<T>(statement);
-  }
-  sync(): void {
-    this.writeQueue.sync();
-  }
+  readonly queryWriter: QueryWriteQueue;
+  private readonly readQueue = new QueryReadQueue();
+
   #closedInfo?: Promise<void> | true;
   get closed(): boolean {
     return !!this.#closedInfo;
   }
   async close(): Promise<void> {
     if (!this.#closedInfo) {
-      this.#closedInfo = this.writeQueue.close();
+      this.#closedInfo = this.queryWriter.close();
     }
     await this.#closedInfo;
   }

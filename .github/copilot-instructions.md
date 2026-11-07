@@ -29,19 +29,13 @@
 - 保留显式 `.ts` 导入后缀和现有 Deno 模块风格。
 - 复杂公共接口使用独立的 `XxxImpl implements Xxx` 实现；公共入口优先导出接口和稳定类型，非必要不导出实现类，
   避免无意扩大公共承诺。
+- 内部函数、类、方法或类的私有方法，无需添加对参数的类型、返回校验。
 - 所有从 `@asla/pg` 导出的声明必须有 JSDoc `@public`；待移除的兼容 API 同时保留 `@deprecated` 并指明替代 API。 JSDoc
   细则见 [jsdoc.instructions.md](instructions/jsdoc.instructions.md)。
 - 除非任务明确要求破坏性变更，否则保持公共签名稳定。
 - 注释应简洁，解释约束或状态机原因；对不直观的公共方法、选项、错误和资源行为补充 JSDoc 与示例。
 - 示例和实现优先使用 `using` 或 `await using` 自动释放连接、事务和游标。
 
-## 常用命令
-
-在仓库根目录执行：
-
-- 类型检查：`deno task type:check`
-- 运行测试：`deno task ci:test`；只运行相关文件时使用 `deno x vitest run <path>`
-- 格式化：`deno fmt`（行宽 120）
 
 ## 测试约定
 

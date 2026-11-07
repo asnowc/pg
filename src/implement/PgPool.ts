@@ -188,9 +188,9 @@ export class PgPool implements SingleQueryOperation, AsyncDisposable {
   query<T>(queryable: SqlStatement | TypedSqlStatement<T>, options?: QueryOptions): QueryReader<T> {
     const encoder = sqlStatementToSqlEncoder(queryable, options);
     return new QueryReaderImpl<T>(async () => {
-      const session = await this.#getSession();
-      const promise = session.extendedQuery<T>(encoder);
-      session.sync();
+      const { queryWriter: queryWriteQueue } = await this.#getSession();
+      const promise = queryWriteQueue.extendedQuery<T>(encoder);
+      queryWriteQueue.sync();
       return promise;
     });
   }

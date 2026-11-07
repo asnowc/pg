@@ -13,8 +13,8 @@ class Pool {
   async query(sql: string): Promise<any> {
     const conn = this.conn[this.count++ % this.conn.length];
     const encoder = sqlStatementToSqlEncoder(sql);
-    const promise = conn.extendedQuery(encoder);
-    conn.sync();
+    const promise = conn.queryWriter.extendedQuery(encoder);
+    conn.queryWriter.sync();
     return promise;
   }
   async close() {

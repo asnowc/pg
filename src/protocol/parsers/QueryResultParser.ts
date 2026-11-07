@@ -6,7 +6,7 @@ import {
   RowDescriptionDecoder,
 } from "@/protocol.ts";
 import { InternalError, NoDecoderError } from "@/_utils/error.ts";
-import { QueryAction, ReceiverType } from "./QueryTask.ts";
+import { ReceiverType } from "./QueryTask.ts";
 import { StreamReader } from "@/_utils/StreamReader.ts";
 
 export class QueryResultParser<D = unknown> {
@@ -14,15 +14,9 @@ export class QueryResultParser<D = unknown> {
     readonly resolve: (resolver: QueryResultParser<D>) => void,
     readonly reject: (reason: unknown) => void,
     readonly statement: TypedSqlStatement<D>,
-    readonly taskType: QueryAction.ExtendedQuery | QueryAction.SimpleQuery,
+    readonly taskType: ReceiverType.ExtendedQuery | ReceiverType.SimpleQuery,
   ) {
-    if (taskType === QueryAction.ExtendedQuery) {
-      this.type = ReceiverType.ExtendedQuery;
-    } else {
-      this.type = ReceiverType.SimpleQuery;
-    }
   }
-  readonly type: ReceiverType.ExtendedQuery | ReceiverType.SimpleQuery;
   fields?: DecodeRowDescriptionResult[];
   private dataRowDecoder?: DataRowDecoder<any>;
   rows: D[] = [];

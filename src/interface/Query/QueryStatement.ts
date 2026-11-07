@@ -1,5 +1,3 @@
-import type { PgColumnDataDecoder } from "@/interface/pg_data_decoder.ts";
-import type { FieldInfo } from "./QueryReader.ts";
 import { PreparedStatement } from "@/class/PreparedStatement.ts";
 
 /**
