@@ -1,6 +1,6 @@
 import { PgAuthenticationError } from "@/error.ts";
 import type { PgAuthenticationExchangeOptions, PgSaslExchange } from "@/interface/Connection.ts";
-import { decodeBase64, decodeUTF16String, encodeBase64 } from "@/_utils/string.ts";
+import { decodeUTF16String } from "@/_utils/string.ts";
 import { AuthCode } from "../const.ts";
 import { encodePasswordMessage } from "../encode.ts";
 import { PgProtocolError } from "@/_utils/error.ts";
@@ -54,7 +54,8 @@ class AuthSASLParser implements AuthParser<Promise<void> | true> {
     switch (code) {
       case AuthCode.SASL_CONTINUE: {
         this.authCode = "SASL_CONTINUE";
-        const data = reader.readBinary(reader.readableLength);
+        const data = reader.buffer.subarray(reader.readableStart, reader.readableEnd);
+        reader.readableStart = reader.readableEnd;
         if (!state) throw new PgAuthenticationError("Unexpected SASL continuation");
         this.writer.pushWrite(async (writer) => {
           const message = encodePasswordMessage({ data: await state.continue(data) });
@@ -63,7 +64,8 @@ class AuthSASLParser implements AuthParser<Promise<void> | true> {
         return;
       }
       case AuthCode.SASL_FINAL: {
-        const data = reader.readBinary(reader.readableLength);
+        const data = reader.buffer.subarray(reader.readableStart, reader.readableEnd);
+        reader.readableStart = reader.readableEnd;
         if (!state) throw new PgAuthenticationError("Unexpected SASL final message");
         return state.final?.(data) ?? true;
       }
@@ -72,7 +74,9 @@ class AuthSASLParser implements AuthParser<Promise<void> | true> {
     }
   }
   start(reader: StreamReader): NonNullable<typeof this.f1> {
-    const mechanisms = decodeSASLMechanisms(reader.readBinary(reader.readableLength), 0);
+    const data = reader.buffer.subarray(reader.readableStart, reader.readableEnd);
+    reader.readableStart = reader.readableEnd;
+    const mechanisms = decodeSASLMechanisms(data, 0);
     if (!mechanisms) {
       throw new PgProtocolError("Invalid AuthenticationSASL message: missing terminator");
     }
@@ -137,7 +141,7 @@ async function createScramExchange(
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
   const nonceBytes = crypto.getRandomValues(new Uint8Array(18));
-  const nonce = encodeBase64(nonceBytes);
+  const nonce = nonceBytes.toBase64();
   const escapedUser = user.replaceAll("=", "=3D").replaceAll(",", "=2C");
   const clientFirstBare = `n=${escapedUser},r=${nonce}`;
   let serverSignature: string | undefined;
@@ -160,7 +164,7 @@ async function createScramExchange(
           {
             name: "PBKDF2",
             hash: "SHA-256",
-            salt: decodeBase64(attributes.s),
+            salt: Uint8Array.fromBase64(attributes.s),
             iterations,
           },
           key,
@@ -174,8 +178,8 @@ async function createScramExchange(
       const clientSignature = await hmac(storedKey, authMessage);
       const proof = clientKey.map((value, index) => value ^ clientSignature[index]);
       const serverKey = await hmac(saltedPassword, encoder.encode("Server Key"));
-      serverSignature = encodeBase64(await hmac(serverKey, authMessage));
-      return encoder.encode(`${clientFinalWithoutProof},p=${encodeBase64(proof)}`);
+      serverSignature = (await hmac(serverKey, authMessage)).toBase64();
+      return encoder.encode(`${clientFinalWithoutProof},p=${proof.toBase64()}`);
     },
     final(data) {
       const finalMessage = decoder.decode(data);

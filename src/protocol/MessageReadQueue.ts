@@ -9,11 +9,33 @@ import { AsyncMessageType } from "@/interface/protocol.ts";
 import type { QueryWriteQueue } from "./MessageWriteQueue.ts";
 import { CountLinkList, eachLink } from "@/_utils/LinkList.ts";
 
-export class QueryReadQueue extends CountLinkList<ResultReceiver> {
-  transactionStatus = PgTransactionStatus.Idle;
+export class QueryReadQueue {
+  constructor(private onIdle?: () => void) {
+  }
+  private link = new CountLinkList<ResultReceiver>();
+  get head() {
+    return this.link.head;
+  }
 
-  enqueueSync(result?: QueryResultParser): void {
-    this.push({ taskType: ReceiverType.Sync });
+  transactionStatus = PgTransactionStatus.Idle;
+  /** 已入队但尚未到达对应 ReadyForQuery 的查询数。 */
+  pendingQueyNumber = 0;
+  private completedQueryNumber = 0;
+  push(receiver: ResultReceiver): void {
+    this.link.push(receiver);
+    if (receiver.taskType !== ReceiverType.Sync) this.pendingQueyNumber++;
+  }
+  private shift(): void {
+    if (this.link.head!.taskType !== ReceiverType.Sync) this.completedQueryNumber++;
+    this.link.shift();
+  }
+  private clear(): void {
+    this.link.clear();
+    this.pendingQueyNumber = 0;
+    this.completedQueryNumber = 0;
+  }
+  enqueueSync(onReady?: () => void): void {
+    this.push({ taskType: ReceiverType.Sync, onReady });
   }
   enqueueSimpleQuery(result: QueryResultParser): void {
     this.push(result);
@@ -36,7 +58,9 @@ export class QueryReadQueue extends CountLinkList<ResultReceiver> {
   private initQueryMessageListener(parsers: MessageParsers, queryWrite: QueryWriteQueue) {
     parsers.set(BackendMessageCode.DataRow, (reader, remaining) => this.getResultReceiver().dataRow(reader, remaining));
     parsers.set(BackendMessageCode.EmptyQueryResponse, () => {
-      this.getResultReceiver(); // 确保有一个当前的结果接收器
+      const current = this.popResultReceiver();
+      current.rowCount = 0;
+      current.resolve(current);
     });
     parsers.set(BackendMessageCode.NoData, () => {
       this.getResultReceiver(); // 确保有一个当前的结果接收器
@@ -81,6 +105,11 @@ export class QueryReadQueue extends CountLinkList<ResultReceiver> {
       }
       this.shift();
       const status = decodeReadyForQuery(body);
+      this.transactionStatus = status;
+      this.pendingQueyNumber -= this.completedQueryNumber;
+      this.completedQueryNumber = 0;
+      current.onReady?.();
+      if (!this.head) this.onIdle?.();
     });
     parsers.set(BackendMessageCode.BindComplete, (body) => {
     });
@@ -125,7 +154,7 @@ export class QueryReadQueue extends CountLinkList<ResultReceiver> {
       this.parameters[name] = value;
     });
     parser.setFullParser(BackendMessageCode.NotificationResponse, (data) => {
-      const message = decodeNotification(data);
+      const message = decodeNotification(data, new DataView(data.buffer, data.byteOffset, data.byteLength));
       const asyncData = {
         type: AsyncMessageType.Notification,
         processId: message.processId,

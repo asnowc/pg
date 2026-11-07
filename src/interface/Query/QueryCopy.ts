@@ -1,3 +1,4 @@
+import { TypedSqlStatement } from "@/class.ts";
 import type { SqlStatement } from "./QueryStatement.ts";
 import type { QueryCommonOptions } from "./_internal.ts";
 
@@ -9,8 +10,8 @@ export type CopyToOptions = QueryCommonOptions;
 
 /** @public */
 export type CopyQueryOperation = {
-  copyFrom(queryable: SqlStatement<unknown>, options?: CopyFromOptions): CopyFromHandle;
-  copyTo(queryable: SqlStatement<unknown>, options?: CopyToOptions): ReadableStream<Uint8Array>;
+  copyFrom(queryable: SqlStatement | TypedSqlStatement, options?: CopyFromOptions): CopyFromHandle;
+  copyTo(queryable: SqlStatement | TypedSqlStatement, options?: CopyToOptions): ReadableStream<Uint8Array>;
 };
 
 /** @public */

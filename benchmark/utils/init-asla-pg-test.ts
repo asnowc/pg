@@ -1,6 +1,7 @@
 import { ConnectHandler, PoolHandler, PoolQueryTest, QueryTest, TestQueries } from "./common.ts";
 import { DB_CONNECT_INFO } from "../utils/db.ts";
 import type { PgConnection, PgPool } from "@asla/pg";
+import { connect as nodeConnect } from "node:net";
 
 const BUFFER_DATA = Buffer.from("awesome");
 const JSON_DATA = [{ some: "json" }, { array: "object" }];
@@ -9,6 +10,7 @@ export function initTest(
   {
     createSqlBuilder,
     JS_DATA_ENCODER_V1,
+    PG_DATA_DECODER_V1,
     connect: rawConnect,
     connectFromNodeTCP,
     PgPool,
@@ -16,7 +18,7 @@ export function initTest(
   name: string = "@asla/pg",
   node = false,
 ) {
-  const sql = createSqlBuilder(JS_DATA_ENCODER_V1);
+  const sql = createSqlBuilder(JS_DATA_ENCODER_V1, PG_DATA_DECODER_V1);
   const c = node ? connectFromNodeTCP : rawConnect;
   function connect() {
     return c({
@@ -63,8 +65,18 @@ export function initTest(
       new PgPool({
         ...DB_CONNECT_INFO,
         maxCount: poolSize,
+        maxPipeline: 100,
         create: async () => {
-          const conn = await Deno.connect({ hostname: DB_CONNECT_INFO.host, port: DB_CONNECT_INFO.port });
+          const conn = node
+            ? await new Promise<import("node:net").Socket>((resolve, reject) => {
+              const socket = nodeConnect({ host: DB_CONNECT_INFO.host, port: DB_CONNECT_INFO.port });
+              socket.once("error", reject);
+              socket.once("connect", () => {
+                socket.off("error", reject);
+                resolve(socket);
+              });
+            })
+            : await Deno.connect({ hostname: DB_CONNECT_INFO.host, port: DB_CONNECT_INFO.port });
           conn.setNoDelay(true);
           return {
             stream: conn,

@@ -68,7 +68,8 @@ async function negotiateTls<T>(
   await writeData(stream, encodeNegotiateTlsMessage());
   return new Promise((resolve, reject) => {
     stream.startReadLoop(() => {
-      const responseCode = stream.readUInt8();
+      const responseCode = stream.view.getUint8(stream.readableStart);
+      stream.readableStart++;
       if (responseCode === TLSResponseCode.Accepted) resolve(encryptionOptions.upgradeTLS(source));
       else if (responseCode === TLSResponseCode.Rejected) {
         resolve(null);

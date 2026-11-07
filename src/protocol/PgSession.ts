@@ -58,7 +58,6 @@ export class PgSession<T = unknown> extends EventEmitter {
       if (this.closed) {
         //这里可能是 this.destroy() 被调用导致 write error
         this.readQueue.fail(err);
-        this.queryWriter.clear(err);
       } else {
         this.destroy(err);
       }
@@ -73,9 +72,14 @@ export class PgSession<T = unknown> extends EventEmitter {
   get parameters(): Record<string, string> {
     return this.readQueue.parameters;
   }
-
+  get pendingQueyNumber() {
+    return this.readQueue.pendingQueyNumber;
+  }
+  get idle(): boolean {
+    return !this.readQueue.head;
+  }
   readonly queryWriter: QueryWriteQueue;
-  private readonly readQueue = new QueryReadQueue();
+  private readonly readQueue = new QueryReadQueue(() => this.emit("idle"));
 
   #closedInfo?: Promise<void> | true;
   get closed(): boolean {

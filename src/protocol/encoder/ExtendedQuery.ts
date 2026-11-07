@@ -20,8 +20,11 @@ import { calcCStringByteLength } from "@/_utils/string.ts";
  *  名称能完整写入时直接编码，仅跨缓冲区的名称创建续写对象。
  */
 export class ParseMessageEncoder extends StageBufferEncoder implements BufferEncoder {
-  constructor(private readonly typedStatement: PreparedStatement, statementName: string = "") {
+  constructor(
+    private readonly typedStatement: PreparedStatement,
+  ) {
     super();
+    const statementName = typedStatement.statementName ?? "";
     const statementNameByteLength = calcCStringByteLength(statementName);
     this.bodyLength = 4 + statementNameByteLength + this.typedStatement.statementByteLength +
       typedStatement.argsLength * 4;
@@ -94,7 +97,6 @@ export class ParseMessageEncoder extends StageBufferEncoder implements BufferEnc
 export class BindMessageEncoder extends StageBufferEncoder implements BufferEncoder {
   constructor(
     private readonly typedStatement: PreparedStatement,
-    private readonly statementName: string = "",
     private readonly portalName: string = "",
   ) {
     super();
@@ -106,11 +108,12 @@ export class BindMessageEncoder extends StageBufferEncoder implements BufferEnco
     // | format code           | 1           | 2    |
     // | parameter value count | args.length | 2    |
     // | parameter values      | ...         | n    |
-    // | result column count   | 0           | 2    |
-
-    const prefixNameByteLength = calcCStringByteLength(portalName) + calcCStringByteLength(statementName) + 2;
-    // 8= 1+1+2+2+2+2 (minimum fixed part of the message)
-    this.bodyLength = 8 + prefixNameByteLength + typedStatement.argsTotalByteLength +
+    // | result column count   | 1           | 2    |
+    // | result format         | 1           | 2    |
+    const statementName = typedStatement.statementName ?? "";
+    const prefixNameByteLength = calcCStringByteLength(portalName) +
+      calcCStringByteLength(statementName) + 2;
+    this.bodyLength = 10 + prefixNameByteLength + typedStatement.argsTotalByteLength +
       typedStatement.argsLength * 4;
     if (portalName === "" && statementName === "") {
       this.encodeStage = this.encodeEmptyName;
@@ -138,7 +141,7 @@ export class BindMessageEncoder extends StageBufferEncoder implements BufferEnco
   }
   private encodePortalName(writer: BufferWriter) {
     if (this.encoder!.encodeInto(writer)) return true;
-    this.encoder = new CStringEncoder(this.statementName);
+    this.encoder = new CStringEncoder(this.typedStatement.statementName ?? "");
     return this.encodeStatementName;
   }
   private encodeStatementName(writer: BufferWriter) {
@@ -174,6 +177,11 @@ export class BindMessageEncoder extends StageBufferEncoder implements BufferEnco
     const args = this.typedStatement.args ?? [];
     for (; parameterIndex < argsEncoders.length; parameterIndex++) {
       const enc = argsEncoders[parameterIndex];
+      if (args[parameterIndex] === null) {
+        if (writer.writableLength < 4) break;
+        writer.view.setInt32(writer.writeOffset, -1), writer.writeOffset += 4;
+        continue;
+      }
       if ("byteLength" in enc) {
         if (writer.writableLength < enc.byteLength + 4) break;
         writer.view.setInt32(writer.writeOffset, enc.byteLength), writer.writeOffset += 4; // parameter value length
@@ -197,8 +205,9 @@ export class BindMessageEncoder extends StageBufferEncoder implements BufferEnco
     return this.encodeResultFormat;
   }
   private encodeResultFormat(writer: BufferWriter) {
-    if (writer.writableLength < 2) return true;
-    writer.view.setInt16(writer.writeOffset, 0), writer.writeOffset += 2; // result column count
+    if (writer.writableLength < 4) return true;
+    writer.view.setInt16(writer.writeOffset, 1), writer.writeOffset += 2;
+    writer.view.setInt16(writer.writeOffset, 1), writer.writeOffset += 2;
     return false;
   }
 }
@@ -236,7 +245,7 @@ export class ExecuteMessageEncoder extends StageBufferEncoder implements BufferE
     return false;
   }
   encodeNoPortal(writer: BufferWriter) {
-    if (writer.writableLength < 5) return true;
+    if (writer.writableLength < FRAME_HEADER_LENGTH + 5) return true;
     encodeFrameHeaderInto(writer, FrontendMessageCode.Execute, this.bodyLength);
     this.encodeLatest(writer);
     return false;
@@ -249,7 +258,7 @@ export class ExecuteMessageEncoder extends StageBufferEncoder implements BufferE
 
 export class QueryMessageEncoder implements BufferEncoder {
   constructor(statement: TypedSqlStatement) {
-    this.bodyLength = statement.statementByteLength;
+    this.bodyLength = statement.statementByteLength + 1;
     if (typeof statement.sqlStatement === "string") this.encoder = new UTF16BufferEncoder(statement.sqlStatement);
     else this.encoder = new Uint8ArrayEncoder(statement.sqlStatement);
   }

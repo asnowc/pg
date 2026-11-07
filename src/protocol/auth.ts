@@ -24,10 +24,13 @@ export async function startAuthentication(
   let negotiateProtocolVersion: { newestMinorVersion: number; unsupportedOptions: string[] } | undefined;
 
   parser.setFullParser(BackendMessageCode.BackendKeyData, (data) => {
-    backendKey = decodeBackendKeyData(data);
+    backendKey = decodeBackendKeyData(data, new DataView(data.buffer, data.byteOffset, data.byteLength));
   });
   parser.setFullParser(BackendMessageCode.NegotiateProtocolVersion, (data) => {
-    negotiateProtocolVersion = decodeNegotiateProtocolVersion(data);
+    negotiateProtocolVersion = decodeNegotiateProtocolVersion(
+      data,
+      new DataView(data.buffer, data.byteOffset, data.byteLength),
+    );
   });
 
   let auth: AuthParser<AuthenticationData> | undefined;
@@ -41,7 +44,8 @@ export async function startAuthentication(
     );
     parser.setFullParser(BackendMessageCode.Authentication, (data) => {
       const reader = new BufferReader(data, data.byteLength);
-      const code = reader.readUInt32BE();
+      const code = reader.view.getUint32(reader.readableStart);
+      reader.readableStart += 4;
       if (code === AuthCode.OK) return;
       auth ??= getAuthParser(code, writer, options);
       const result = auth.next(reader, code);

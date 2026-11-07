@@ -20,9 +20,10 @@ import type {
   TransactionMode,
   TransactionQueryOperation,
 } from "@/interface/Query.ts";
-import { sqlStatementToSqlEncoder } from "./private/sql_statement.ts";
+import { createTypedSqlStatement } from "./private/sql_statement.ts";
 import QueryReaderImpl from "./private/QueryReader.ts";
 import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
+import { QueryOptionsWithDecoder } from "@/interface/Query/_internal.ts";
 
 class QueryOperation
   implements
@@ -37,8 +38,11 @@ class QueryOperation
   }
 
   #session: PgSession;
-  query<T>(queryable: SqlStatement | TypedSqlStatement<T>, options?: QueryOptions): QueryReader<T> {
-    const encoder = sqlStatementToSqlEncoder(queryable, options);
+  query<T>(
+    queryable: SqlStatement | TypedSqlStatement<T>,
+    options?: QueryOptions & QueryOptionsWithDecoder,
+  ): QueryReader<T> {
+    const encoder = createTypedSqlStatement(queryable, options);
     return new QueryReaderImpl(() => {
       const promise = this.#session.queryWriter.extendedQuery<T>(encoder);
       this.#session.queryWriter.sync();
@@ -59,7 +63,7 @@ class QueryOperation
     throw new Error("Not implemented");
   }
 
-  pipeline(queryable: unknown, options?: unknown): QueryReader<unknown> {
+  pipeline<T>(queryable: unknown, options?: unknown): QueryReader<T> {
     throw new Error("Not implemented");
   }
 

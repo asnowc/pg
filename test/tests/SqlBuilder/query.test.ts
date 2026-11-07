@@ -1,7 +1,7 @@
 import { expect } from "vitest";
 import { test } from "@test/fixtures/db_connect.ts";
-import { createSqlBuilder, JS_DATA_ENCODER_V1 } from "@asla/pg";
-const sql = createSqlBuilder(JS_DATA_ENCODER_V1);
+import { createSqlBuilder, JS_DATA_ENCODER_V1, PG_DATA_DECODER_V1 } from "@asla/pg";
+const sql = createSqlBuilder(JS_DATA_ENCODER_V1, PG_DATA_DECODER_V1);
 
 type QueryResult = {
   value: number;

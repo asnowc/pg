@@ -1,44 +1,81 @@
-import type { PgDataDecoder } from "@/interface/pg_data_decoder.ts";
+import type { PgColumnDataDecoder, PgColumnDecoder } from "@/interface/pg_data_decoder.ts";
 
-const textDecoder = new TextDecoder();
-
-export const text: PgDataDecoder = {
-  decodeText: (value: string) => value,
-  decodeBinary: (value: Uint8Array) => textDecoder.decode(value),
+export const char: PgColumnDataDecoder<string> = {
+  decodeText: (value) => value,
+  decodeBinary(reader) {
+    if (reader.readableLength < 1) return undefined;
+    return String.fromCodePoint(reader.buffer[reader.readableStart++]);
+  },
 };
 
-export const bytea: PgDataDecoder = {
-  decodeText: (value: string) => decodeByteaText(value),
-  decodeBinary: (value: Uint8Array) => value,
+export const text = (() => {
+  const decoder = new TextDecoder();
+  let value = "";
+  return {
+    decodeText: (value) => value,
+    decodeBinary(reader, remainingByteLength) {
+      const noComplete = reader.readableLength < remainingByteLength;
+
+      const end = Math.min(reader.readableEnd, reader.readableStart + remainingByteLength);
+      const chunk = reader.buffer.subarray(reader.readableStart, end);
+      reader.readableStart = end;
+      if (noComplete) {
+        value += decoder.decode(chunk, { stream: noComplete });
+        return;
+      }
+      const result = value + decoder.decode(chunk);
+      value = "";
+      return result;
+    },
+  };
+}) satisfies PgColumnDecoder<string>;
+
+export const bytea: PgColumnDecoder<Uint8Array> = () => {
+  let value: Uint8Array | undefined;
+  let offset = 0;
+  return {
+    decodeText(value: string): Uint8Array {
+      if (!value.startsWith("\\x")) return new TextEncoder().encode(value);
+      return Uint8Array.fromHex(value.substring(2));
+    },
+    decodeBinary(reader, remainingByteLength) {
+      value ??= new Uint8Array(remainingByteLength);
+      const length = Math.min(reader.readableLength, remainingByteLength);
+      const chunk = reader.buffer.subarray(reader.readableStart, reader.readableStart + length);
+      reader.readableStart += length;
+      value.set(chunk, offset);
+      offset += length;
+      if (length < remainingByteLength) return undefined;
+      const result = value;
+      value = undefined;
+      offset = 0;
+      return result;
+    },
+  };
 };
 
-export const uuid: PgDataDecoder = {
+export const uuid: PgColumnDataDecoder<string> = {
   decodeText: (value: string) => value,
-  decodeBinary: (value: Uint8Array) => {
-    if (value.byteLength !== 16) throw new RangeError(`Invalid UUID length: ${value.byteLength}`);
-    const hex = toHex(value);
+  decodeBinary(reader) {
+    if (reader.readableLength < 16) return undefined;
+    const hex = reader.buffer.subarray(reader.readableStart, reader.readableStart + 16).toHex();
+    reader.readableStart += 16;
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   },
 };
 
-export const bit: PgDataDecoder = {
-  decodeText: (value: string) => value,
-  decodeBinary: (value: Uint8Array) => {
-    if (value.byteLength < 4) throw new RangeError("Invalid bit string");
-    const length = new DataView(value.buffer, value.byteOffset, value.byteLength).getInt32(0);
-    return Array.from(value.subarray(4), (byte) => byte.toString(2).padStart(8, "0")).join("").slice(0, length);
+export const bitText: PgColumnDataDecoder<string> = {
+  decodeText: (value) => value,
+  decodeBinary(reader, remainingByteLength) {
+    if (reader.readableLength < remainingByteLength) return undefined;
+    const bitLength = reader.view.getInt32(reader.readableStart);
+    reader.readableStart += 4;
+    remainingByteLength -= 4;
+    let value = "";
+    for (let i = 0; i < remainingByteLength; i++) {
+      value += reader.view.getUint8(reader.readableStart).toString(2).padStart(8, "0");
+      reader.readableStart++;
+    }
+    return value.slice(0, bitLength);
   },
 };
-
-function decodeByteaText(value: string): Uint8Array {
-  if (!value.startsWith("\\x")) return new TextEncoder().encode(value);
-  const output = new Uint8Array((value.length - 2) / 2);
-  for (let index = 0; index < output.length; index++) {
-    output[index] = Number.parseInt(value.slice(2 + index * 2, 4 + index * 2), 16);
-  }
-  return output;
-}
-
-function toHex(value: Uint8Array): string {
-  return Array.from(value, (byte) => byte.toString(16).padStart(2, "0")).join("");
-}

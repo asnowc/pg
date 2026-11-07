@@ -2,21 +2,14 @@ import { PgAuthenticationExchangeOptions } from "@asla/pg";
 import { startAuth } from "@/protocol/connect.ts";
 import { BufferWriter } from "@/_utils/BufferWriter.ts";
 import { MessageParsers } from "@/protocol/parsers/MessageParser.ts";
-import {
-  BackendMessageCode,
-  DescribeTarget,
-  encodeBindMessage,
-  encodeDescribeMessage,
-  encodeExecuteMessage,
-  encodeParseMessage,
-  encodeTerminateMessage,
-  FRAME,
-} from "@/protocol.ts";
-import { Buffer } from "node:buffer";
+import { BackendMessageCode, decodeError, FRAME } from "@/protocol.ts";
+import { PgDatabaseError } from "@/error.ts";
 import { BufferReader } from "@/_utils/StreamReader.ts";
 import { eachLink, LinkList } from "@/_utils/LinkList.ts";
-import { InternalTextSqlStatementEncoder } from "@/codec/StatementEncoder.ts";
 import { BufferWriterQueue } from "@/_utils/BufferWriterQueue.ts";
+import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
+import { TerminateFrame } from "@/protocol/encoder/Message.ts";
+import { ExecuteMessageEncoder, ParseMessageEncoder } from "@/protocol/encoder/ExtendedQuery.ts";
 
 export class FakeRequest {
   constructor(private connections: Conn[]) {
@@ -58,6 +51,7 @@ class Conn {
     const flushThreshold = 8 * 1024;
     const buffer = new BufferWriter((data) => conn.write(data), flushThreshold * 2, flushThreshold);
     this.writer = new BufferWriterQueue(buffer, () => conn.closeWrite(), (e) => {
+      this.clear(e);
       console.error("BufferWriter error", e);
     });
     const reader = new BufferReader(new Uint8Array(8 * 1024));
@@ -74,8 +68,14 @@ class Conn {
         parsers.next(reader);
         reader.gc();
       } while (true);
-    })();
-    parsers.set(BackendMessageCode.CommandComplete, (reader) => {
+    })().catch((error) => {
+      this.clear(error);
+      conn.close();
+    });
+    parsers.setFullParser(BackendMessageCode.ErrorResponse, (body) => {
+      this.clear(new PgDatabaseError(decodeError(body).fields));
+    });
+    parsers.setFullParser(BackendMessageCode.CommandComplete, () => {
       const item = this.#link.head;
       if (!item) {
         console.error("No item in link list for CommandComplete");
@@ -94,28 +94,20 @@ class Conn {
   }
   query(data: string) {
     return new Promise((resolve, reject) => {
+      const statement = new TypedSqlStatement(data);
       this.#link.push({ resolve, reject });
-      this.writer.pushData(getQueryData(data));
+      getQueryData(statement, this.writer);
     });
   }
-  async close() {
-    this.writer.pushData(encodeTerminateMessage());
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        this.conn.closeWrite();
-        this.conn.close();
-        resolve(undefined);
-      }, 100);
-    });
+  close() {
+    this.writer.pushEncoder(TerminateFrame);
+    return this.writer.pushClose();
   }
 }
-function getQueryData(textStatement: string) {
-  const statement = new InternalTextSqlStatementEncoder(textStatement);
-  const parse = encodeParseMessage(statement);
-  const bind = encodeBindMessage(statement);
-  const portal = encodeDescribeMessage(DescribeTarget.Portal);
-  const execute = encodeExecuteMessage(0);
-  const sync = FRAME.SYNC;
-  const list = [parse, bind, portal, execute, sync];
-  return Buffer.concat(list);
+function getQueryData(statement: TypedSqlStatement, writer: BufferWriterQueue) {
+  writer.pushEncoder(new ParseMessageEncoder(statement));
+  writer.pushData(FRAME.BIND_ANONYMOUS_PORTAL_NO_PARAMS);
+  writer.pushData(FRAME.DESCRIBE_PORTAL_ANONYMOUS);
+  writer.pushEncoder(new ExecuteMessageEncoder(0));
+  writer.pushData(FRAME.SYNC);
 }

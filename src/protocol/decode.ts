@@ -1,18 +1,17 @@
 import { BackendMessageCode, NOTICE_STANDARD_FIELD_MAP, PgFormat, PgTransactionStatus } from "./const.ts";
 import type { PgErrorFields } from "./messages.ts";
 import { decodeUTF16String, findCStringTerminator } from "@/_utils/string.ts";
-import { decodeInt16BE, decodeInt32BE, decodeUInt16BE, decodeUInt32BE } from "@/_utils/number.ts";
 import { PgProtocolError } from "@/_utils/error.ts";
 import { getFormat } from "./decoder/_common.ts";
 export * from "./decoder/DataRowDecoder.ts";
 export * from "./decoder/RowDescriptionDecoder.ts";
 // 启动消息
 
-export function decodeNegotiateProtocolVersion(data: Uint8Array) {
+export function decodeNegotiateProtocolVersion(data: Uint8Array, view: DataView) {
   let offset = 0;
-  const newestMinorVersion = decodeInt32BE(data, offset);
+  const newestMinorVersion = view.getInt32(offset);
   offset += 4;
-  const count = decodeUInt32BE(data, offset);
+  const count = view.getUint32(offset);
   offset += 4;
 
   const unsupportedOptions: string[] = new Array(count);
@@ -29,13 +28,13 @@ export interface PgBackendKeyData {
   /** 协议 3.0 使用的 32 位取消请求密钥。 */
   secretKey: number;
 }
-export function decodeBackendKeyData(body: Uint8Array): PgBackendKeyData {
+export function decodeBackendKeyData(body: Uint8Array, view: DataView): PgBackendKeyData {
   const byteLength = body.byteLength;
   if (byteLength !== 8) {
     throw new Error("Only protocol 3.0 BackendKeyData messages are supported");
   }
-  const processId = decodeInt32BE(body, 0);
-  const secretKey = decodeUInt32BE(body, 4);
+  const processId = view.getInt32(0);
+  const secretKey = view.getUint32(4);
   return {
     /** 后端进程 ID，用于构造 CancelRequest。 */
     processId,
@@ -63,12 +62,12 @@ export function decodeParameterStatus(body: Uint8Array) {
   return { name, value };
 }
 
-export function decodeParameterDescription(data: Uint8Array) {
-  const count = decodeUInt16BE(data, 0);
+export function decodeParameterDescription(data: Uint8Array, view: DataView) {
+  const count = view.getUint16(0);
   let offset = 2;
   const dataTypeOids: number[] = new Array(count);
   for (let index = 0; index < count; index++) {
-    dataTypeOids[index] = decodeUInt32BE(data, offset);
+    dataTypeOids[index] = view.getUint32(offset);
     offset += 4;
   }
   return dataTypeOids;
@@ -93,6 +92,7 @@ export function decodeReadyForQuery(body: Uint8Array): PgTransactionStatus {
 
 export function decodeCopyResponse(
   data: Uint8Array,
+  view: DataView,
   code:
     | BackendMessageCode.CopyInResponse
     | BackendMessageCode.CopyOutResponse
@@ -103,11 +103,11 @@ export function decodeCopyResponse(
     throw new PgProtocolError(`Invalid PostgreSQL COPY format code: ${overallFormat}`);
   }
   let offset = 1;
-  const count = decodeUInt16BE(data, offset);
+  const count = view.getUint16(offset);
   offset += 2;
   const columnFormats: PgFormat[] = new Array(count);
   for (let index = 0; index < count; index++) {
-    columnFormats[index] = getFormat(decodeInt16BE(data, offset));
+    columnFormats[index] = getFormat(view.getInt16(offset));
     offset += 2;
   }
   return { overallFormat, columnFormats };
@@ -115,9 +115,9 @@ export function decodeCopyResponse(
 
 // 通知
 
-export function decodeNotification(body: Uint8Array) {
+export function decodeNotification(body: Uint8Array, view: DataView) {
   let offset = 0;
-  const processId = decodeInt32BE(body, 0);
+  const processId = view.getInt32(0);
   offset += 4;
   let next = findCStringTerminator(body, offset);
   const channel = decodeUTF16String(body.subarray(offset, next));

@@ -5,9 +5,9 @@ import {
   DecodeRowDescriptionResult,
   RowDescriptionDecoder,
 } from "@/protocol.ts";
-import { InternalError, NoDecoderError } from "@/_utils/error.ts";
 import { ReceiverType } from "./QueryTask.ts";
 import { StreamReader } from "@/_utils/StreamReader.ts";
+import { PgColumnDataDecoder } from "@/interface/pg_data_decoder.ts";
 
 export class QueryResultParser<D = unknown> {
   constructor(
@@ -18,40 +18,44 @@ export class QueryResultParser<D = unknown> {
   ) {
   }
   fields?: DecodeRowDescriptionResult[];
-  private dataRowDecoder?: DataRowDecoder<any>;
+  private dataRowDecoder?: DataRowDecoder<Record<string, unknown>>;
+  private failed = false;
   rows: D[] = [];
   notices: string[] = [];
   rowCount?: number;
   dataRow(reader: StreamReader, remainingByteLength: number) {
-    if (!this.dataRowDecoder) {
-      this.reject(new InternalError("Row description is missing"));
-      return;
-    }
+    if (this.failed || !this.dataRowDecoder) return this.skipData(reader, remainingByteLength);
     let row: unknown;
+    const start = reader.readableStart;
     try {
       row = this.dataRowDecoder.next(reader, remainingByteLength);
     } catch (error) {
+      this.failed = true;
       this.reject(error);
-      return;
+      const remaining = remainingByteLength - (reader.readableStart - start);
+      return this.skipData(reader, Math.max(0, remaining));
     }
-    if (!row) return;
+    if (row === undefined) return;
     this.dataRowDecoder.reset();
     this.rows.push(row as D);
   }
   private readonly rowDescriptionDecoder = new RowDescriptionDecoder();
+
   rowDescription(reader: StreamReader, remainingByteLength: number) {
-    const fields = this.rowDescriptionDecoder.next(reader);
-    if (!fields) return;
+    if (this.failed) return this.skipData(reader, remainingByteLength);
+    const statement = this.statement;
+    if (!statement.getResultDecoder) {
+      return this.skipData(reader, remainingByteLength);
+    }
+    this.fields = this.rowDescriptionDecoder.next(reader);
+    if (!this.fields) return;
     this.rowDescriptionDecoder.reset();
-    this.fields = fields;
-    const decoders = fields.map((info, index) => {
-      try {
-        return this.statement.getResultDecoder(info);
-      } catch (error) {
-        throw new NoDecoderError(info.typeOID, info.name, index);
-      }
-    });
-    this.dataRowDecoder = new DataRowDecoder(decoders, fields);
+    const decoders: PgColumnDataDecoder[] = this.fields.map((item) => statement.getResultDecoder!(item));
+    this.dataRowDecoder = new DataRowDecoder(decoders, this.fields);
+  }
+  private skipData(reader: StreamReader, remainingByteLength: number) {
+    if (reader.readableLength < remainingByteLength) reader.readableStart = reader.readableEnd;
+    else reader.readableStart += remainingByteLength;
   }
   commandComplete(body: Uint8Array) {
     this.rowCount = decodeRowCount(decodeCommandComplete(body));

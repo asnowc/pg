@@ -6,16 +6,16 @@ import {
   SSL_REQUEST_CODE,
 } from "./const.ts";
 import { calcCStringByteLength, encodeUTF16StringInto } from "@/_utils/string.ts";
-import { encodeInt32BE } from "@/_utils/number.ts";
 
 function encodeFrameHeaderInto(
-  buffet: Uint8Array,
+  view: DataView,
   offset: number,
   code: FrontendMessageCode,
   bodyLength: number,
 ): number {
-  buffet[offset++] = code;
-  offset += encodeInt32BE(buffet, offset, bodyLength + 4);
+  view.setUint8(offset++, code);
+  view.setInt32(offset, bodyLength + 4);
+  offset += 4;
   return offset;
 }
 
@@ -29,8 +29,10 @@ export function encodeStartupMessage(version: number, parameters: Map<string, st
     length += 2; // for the null terminators of key and value
   }
   const message = new Uint8Array(length);
-  let offset = encodeInt32BE(message, 0, length);
-  offset += encodeInt32BE(message, 4, version);
+  const view = new DataView(message.buffer, message.byteOffset, message.byteLength);
+  let offset = 0;
+  view.setInt32(offset, length), offset += 4;
+  view.setInt32(offset, version), offset += 4;
 
   for (const [key, value] of parameters) {
     offset += encodeUTF16StringInto(key, message.subarray(offset));
@@ -43,9 +45,10 @@ export function encodeStartupMessage(version: number, parameters: Map<string, st
 
 export function encodeNegotiateTlsMessage(): Uint8Array {
   const request = new Uint8Array(8);
+  const view = new DataView(request.buffer, request.byteOffset, request.byteLength);
   let offset = 0;
-  offset += encodeInt32BE(request, offset, 8);
-  offset += encodeInt32BE(request, offset, SSL_REQUEST_CODE);
+  view.setInt32(offset, 8), offset += 4;
+  view.setInt32(offset, SSL_REQUEST_CODE), offset += 4;
   return request;
 }
 
@@ -68,17 +71,19 @@ export function encodePasswordMessage(message: PasswordMessage): Uint8Array {
     const mechanismByteLength = calcCStringByteLength(message.mechanism);
     const bodyLength = mechanismByteLength + 5 + (message.data?.byteLength ?? 0);
     const buffer = createFrame(FrontendMessageCode.Password, bodyLength);
+    const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
 
     let offset = FRAME_HEADER_LENGTH;
     offset += encodeUTF16StringInto(message.mechanism, buffer.subarray(offset));
     buffer[offset++] = CSTRING_TERMINATOR;
-    offset += encodeInt32BE(buffer, offset, message.data?.byteLength ?? -1);
+    view.setInt32(offset, message.data?.byteLength ?? -1), offset += 4;
     if (message.data) buffer.set(message.data, offset);
     return buffer;
   }
   const buffer = new Uint8Array(5 + message.data.byteLength);
   buffer[0] = FrontendMessageCode.Password;
-  encodeInt32BE(buffer, 1, 4 + message.data.byteLength);
+  const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  view.setInt32(1, 4 + message.data.byteLength);
   buffer.set(message.data, 5);
   return buffer;
 }
@@ -112,6 +117,7 @@ export function encodeCopyFailMessage(reason: string): Uint8Array {
 }
 function createFrame(code: FrontendMessageCode, bodyLength: number): Uint8Array {
   const buffer = new Uint8Array(FRAME_HEADER_LENGTH + bodyLength);
-  encodeFrameHeaderInto(buffer, 0, code, bodyLength);
+  const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  encodeFrameHeaderInto(view, 0, code, bodyLength);
   return buffer;
 }

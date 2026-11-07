@@ -1,8 +1,13 @@
 import { CSTRING_TERMINATOR, DescribeTarget, FrontendMessageCode } from "./const.ts";
 
-function createEmptyMessage(buffer: Uint8Array, offset: number, view: DataView, code: FrontendMessageCode): number {
-  buffer[offset++] = code;
-  view.setInt32(offset, 4), offset += 4;
+function encodeMessageHeaderInto(
+  view: DataView,
+  offset: number,
+  code: FrontendMessageCode,
+  bodyLength: number = 0,
+): number {
+  view.setUint8(offset, code), offset += 1;
+  view.setInt32(offset, bodyLength + 4), offset += 4;
   return offset;
 }
 
@@ -11,41 +16,52 @@ function createStaticMessage() {
     FLUSH: {
       byteLength: 5,
       create(data: Uint8Array, view: DataView, offset: number) {
-        createEmptyMessage(data, offset, view, FrontendMessageCode.Flush);
+        encodeMessageHeaderInto(view, offset, FrontendMessageCode.Flush);
       },
     },
     SYNC: {
       byteLength: 5,
       create(data: Uint8Array, view: DataView, offset: number) {
-        createEmptyMessage(data, offset, view, FrontendMessageCode.Sync);
+        encodeMessageHeaderInto(view, offset, FrontendMessageCode.Sync);
       },
     },
     COPY_DONE: {
       byteLength: 5,
       create(data: Uint8Array, view: DataView, offset: number) {
-        createEmptyMessage(data, offset, view, FrontendMessageCode.CopyDone);
+        encodeMessageHeaderInto(view, offset, FrontendMessageCode.CopyDone);
       },
     },
     TERMINATE: {
       byteLength: 5,
       create(data: Uint8Array, view: DataView, offset: number) {
-        createEmptyMessage(data, offset, view, FrontendMessageCode.Terminate);
+        encodeMessageHeaderInto(view, offset, FrontendMessageCode.Terminate);
       },
     },
-    ANONYMOUS_DESCRIBE_PORTAL: {
+    DESCRIBE_PORTAL_ANONYMOUS: {
       byteLength: 7,
       create(data: Uint8Array, view: DataView, offset: number) {
-        offset = createEmptyMessage(data, offset, view, FrontendMessageCode.Describe);
+        offset = encodeMessageHeaderInto(view, offset, FrontendMessageCode.Describe, 2);
         data[offset++] = DescribeTarget.Portal;
         data[offset++] = CSTRING_TERMINATOR;
       },
     },
-    ANONYMOUS_DESCRIBE_STATEMENT: {
+    DESCRIBE_STATEMENT_ANONYMOUS: {
       byteLength: 7,
       create(data: Uint8Array, view: DataView, offset: number) {
-        offset = createEmptyMessage(data, offset, view, FrontendMessageCode.Describe);
+        offset = encodeMessageHeaderInto(view, offset, FrontendMessageCode.Describe, 2);
         data[offset++] = DescribeTarget.Statement;
         data[offset++] = CSTRING_TERMINATOR;
+      },
+    },
+    BIND_ANONYMOUS_PORTAL_NO_PARAMS: {
+      byteLength: 13,
+      create(data: Uint8Array, view: DataView, offset: number) {
+        offset = encodeMessageHeaderInto(view, offset, FrontendMessageCode.Bind, 8);
+        data[offset++] = CSTRING_TERMINATOR; // portal name
+        data[offset++] = CSTRING_TERMINATOR; // statement names
+        view.setInt16(offset, 0), offset += 2; // format code count
+        view.setInt16(offset, 0), offset += 2; // parameter value count
+        view.setInt16(offset, 0), offset += 2; // result column count
       },
     },
   } satisfies Record<string, { byteLength: number; create(data: Uint8Array, view: DataView, offset: number): void }>;

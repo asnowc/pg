@@ -14,26 +14,30 @@ export class RowDescriptionDecoder implements MessageParser<DecodeRowDescription
   next(reader: StreamReader) {
     if (!this.fields) {
       if (reader.readableLength < 2) return undefined;
-      this.fields = new Array(reader.readUInt16BE());
+      this.fields = new Array(reader.view.getUint16(reader.readableStart));
+      reader.readableStart += 2;
     }
-    if (!this.fieldName) {
-      this.fieldName = this.cStringDecoder.next(reader);
-      if (!this.fieldName) return undefined;
+    while (this.nextIndex < this.fields.length) {
+      if (this.fieldName === undefined) {
+        this.fieldName = this.cStringDecoder.next(reader);
+        if (this.fieldName === undefined) return undefined;
+      }
+      if (reader.readableLength < 18) return undefined;
+      const item: DecodeRowDescriptionResult = {
+        name: this.fieldName,
+        index: this.nextIndex,
+        tableOID: reader.view.getUint32(reader.readableStart),
+        columnAttribute: reader.view.getInt16(reader.readableStart + 4),
+        typeOID: reader.view.getUint32(reader.readableStart + 6),
+        typeSize: reader.view.getInt16(reader.readableStart + 10),
+        typeModifier: reader.view.getInt32(reader.readableStart + 12),
+        format: getFormat(reader.view.getInt16(reader.readableStart + 16)),
+      };
+      reader.readableStart += 18;
+      this.fields[this.nextIndex++] = item;
+      this.fieldName = undefined;
     }
-    if (reader.readableLength < 18) return undefined;
-    const item: Partial<DecodeRowDescriptionResult> = {
-      name: this.fieldName,
-      index: this.nextIndex,
-    };
-    item.tableOID = reader.readUInt32BE();
-    item.columnAttribute = reader.readInt16BE();
-    item.typeOID = reader.readUInt32BE();
-    item.typeSize = reader.readInt16BE();
-    item.typeModifier = reader.readInt32BE();
-    item.format = getFormat(reader.readInt16BE());
-    this.fields[this.nextIndex++] = item as DecodeRowDescriptionResult;
-    this.fieldName = undefined;
-    if (this.nextIndex === this.fields.length) return this.fields;
+    return this.fields;
   }
   reset() {
     this.fields = undefined;

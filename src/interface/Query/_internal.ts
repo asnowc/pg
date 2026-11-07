@@ -8,6 +8,6 @@ export type QueryCommonOptions = {
   onNotice?: (info: { notice: string }) => void;
 };
 
-export type QueryOptionsWithDecoder = {
+export interface QueryOptionsWithDecoder {
   getResultDecoder?: (field: FieldInfo) => PgColumnDataDecoder;
-};
+}

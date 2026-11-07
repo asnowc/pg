@@ -93,11 +93,18 @@ export class BufferWriterQueue {
           this.shift();
           return;
         }
-        case QueueItemType.Encoder:
-          if (item.encoder.encodeInto(this.#writer)) {
+        case QueueItemType.Encoder: {
+          let needsMoreSpace: boolean | void;
+          try {
+            needsMoreSpace = item.encoder.encodeInto(this.#writer);
+          } catch (error) {
+            this.onWriteError(error);
+            return;
+          }
+          if (needsMoreSpace) {
             if (this.#writer.writeOffset === 0) {
               this.pendingWrite = undefined;
-              this.onError(new Error("Encoder requested more space without writing any bytes"));
+              this.onWriteError(new Error("Encoder requested more space without writing any bytes"));
               return;
             }
             this.setPendingWrite(this.#writer.transferBuffer());
@@ -105,6 +112,7 @@ export class BufferWriterQueue {
           }
           this.shift();
           break;
+        }
         default:
           this.clear();
           this.onError(new Error(`Unknown queue item type: ${item}`));
@@ -136,7 +144,7 @@ export interface BufferEncoder {
    */
   encodeInto(writer: BufferWriter): boolean | void;
 }
-type Link<T extends {} = {}> = T & {
+type Link<T extends object = object> = T & {
   next?: Link<T>;
 };
 

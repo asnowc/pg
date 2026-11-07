@@ -1,10 +1,10 @@
 import { expect } from "vitest";
 import { test } from "@test/fixtures/db_connect.ts";
-import { createSqlBuilder, JS_DATA_ENCODER_V1 } from "@asla/pg";
-const sql = createSqlBuilder(JS_DATA_ENCODER_V1);
+import { createSqlBuilder, JS_DATA_ENCODER_V1, PG_DATA_DECODER_V1 } from "@asla/pg";
+const sql = createSqlBuilder(JS_DATA_ENCODER_V1, PG_DATA_DECODER_V1);
 
 test("NULL 无需编码器，保留 Bind null 和 OID 0", async ({ conn }) => {
-  const sql = createSqlBuilder(new Map());
+  const sql = createSqlBuilder(new Map(), PG_DATA_DECODER_V1);
   const statement = sql`SELECT ${null}::text AS a, ${null}::int AS b`;
   expect(statement.toTemplate()).toBe("SELECT $1::text AS a, $2::int AS b");
   await expect(conn.query(statement).firstRow()).resolves.toEqual({ a: null, b: null });

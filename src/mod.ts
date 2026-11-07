@@ -11,6 +11,7 @@ export * from "./abstract/mod.ts"; // 废弃
 
 export * from "./implement.ts";
 
+export * from "./class.ts";
 export * from "./sql.ts";
 
 export * from "./util.ts";

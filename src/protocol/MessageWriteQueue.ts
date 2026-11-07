@@ -36,8 +36,8 @@ export class QueryWriteQueue {
     }).catch((e) => throwRewrittenError(e));
   }
 
-  sync(): void {
-    this.readQueue.enqueueSync();
+  sync(onReady?: () => void): void {
+    this.readQueue.enqueueSync(onReady);
     this.writer.pushData(FRAME.SYNC);
   }
 
@@ -49,15 +49,15 @@ export class QueryWriteQueue {
         statement,
         ReceiverType.SimpleQuery,
       );
-      this.writer.pushEncoder(new QueryMessageEncoder(parser.statement));
       this.readQueue.enqueueSimpleQuery(parser);
+      this.writer.pushEncoder(new QueryMessageEncoder(parser.statement));
     });
   }
 
   beginTransaction(mode?: TransactionMode): void {
     const statement = new TypedSqlStatement("BEGIN" + (mode ? " ISOLATION LEVEL " + mode : ""));
     this.writeExtended(statement);
-    this.writer.pushData(FRAME.ANONYMOUS_DESCRIBE_PORTAL);
+    this.writer.pushData(FRAME.DESCRIBE_PORTAL_ANONYMOUS);
     this.readQueue.push({ taskType: ReceiverType.StartTransaction });
   }
   commitTransaction(): void {
@@ -81,7 +81,7 @@ export class QueryWriteQueue {
   private writeExtended(statement: TypedSqlStatement): void {
     this.writer.pushEncoder(new ParseMessageEncoder(statement));
     this.writer.pushEncoder(new BindMessageEncoder(statement));
-    this.writer.pushData(FRAME.ANONYMOUS_DESCRIBE_PORTAL);
+    this.writer.pushData(FRAME.DESCRIBE_PORTAL_ANONYMOUS);
     this.writer.pushEncoder(new ExecuteMessageEncoder(0));
   }
 }

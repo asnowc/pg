@@ -122,29 +122,29 @@ const conn = await connectFromStream(stream, {
 
 ### 连接池
 
-`createPgPool()` 通过 `create` 回调按需创建原生连接；回调负责 TCP/TLS 建连和认证，Deno 与 Node.js 使用相同的池 API。
+`PgPool` 通过 `create` 回调按需建立 TCP/TLS 流，连接池负责认证。Deno 与 Node.js 使用相同的池 API。
 
 ```ts
-import { connectFromStream, createPgPool, DenoConnByteStream } from "@asla/pg";
+import { PgPool } from "@asla/pg";
 
-await using pool = createPgPool({
+await using pool = new PgPool({
   maxCount: 4,
+  maxPipeline: 8,
   create: async () => {
     const tcp = await Deno.connect({ hostname: "127.0.0.1", port: 5432 });
-    return await connectFromStream(new DenoConnByteStream(tcp), {
-      user: "postgres",
-      database: "app",
-    });
+    return { stream: tcp, connectOptions: { user: "postgres", database: "app" } };
   },
 });
 
-const rows = await pool.query("SELECT 1 AS value").getRows();
-using connection = await pool.connect();
-await connection.query("SELECT 2 AS value").getCompletion();
+const rows = await pool.query("SELECT 1 AS value").rows();
+using connection = await pool.borrow();
+await connection.query("SELECT 2 AS value");
 ```
 
-池级查询完成后自动归还连接；显式借用的连接须 `release()` 或使用 `using`。事务、游标和 COPY 必须完成或取消，
-否则会持续占用连接。池支持 `idleTimeout`（空闲毫秒数）和 `usageLimit`（单连接借用次数），两者默认 `0` 表示不限。
+`maxPipeline` 限制每条连接同时承载的池级查询请求数，默认 `1`，也可设为 `Infinity` 表示不限制。
+请求发送后无需等待前一条返回，但 PostgreSQL 仍按顺序执行；对应响应读取到 `ReadyForQuery` 后释放名额。
+显式借用的连接保持独占，不受 `maxPipeline` 限制，须 `release()` 或使用 `using` 归还。
+池支持 `idleTimeout`（空闲毫秒数），默认 `0` 表示不回收。
 离开池的 `await using` 作用域会停止接收新请求，等待借出的资源归还，并关闭物理连接。
 
 ## 查询

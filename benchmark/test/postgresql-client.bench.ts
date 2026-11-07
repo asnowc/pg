@@ -14,11 +14,7 @@ export const BENCH_CONFIG: UserBenchConfig = {
   warmupDuration: 100,
   benchDataDir: RESULT_DIR,
 };
-const queryNames: QueryName[] = [
-  // "select",
-  "selectArg",
-  // "selectArgs",
-];
+
 export const SERIES: Library[] = [
   "@asla/pg",
   "@asla/pg-node",
@@ -26,7 +22,12 @@ export const SERIES: Library[] = [
   "pg",
   // "fake2",
 ];
-export const META: Meta = { poolSize: 4, queryName: "selectArgs" };
+export const META: Meta = {
+  poolSize: 4,
+  // queryName: "select",
+  queryName: "selectArg",
+  // queryName: "selectArgs",
+};
 
 const getBatch: GetBenchItem<Meta> = async function getBatch(name: string, meta: Meta) {
   const { poolSize, queryName } = meta;
@@ -42,11 +43,9 @@ const getBatch: GetBenchItem<Meta> = async function getBatch(name: string, meta:
 export default getBatch;
 
 if (import.meta.main) {
-  for (const queryName of queryNames) {
-    await runUserBench<Meta>(BENCH_CONFIG, {
-      series: SERIES,
-      getBenchItem: getBatch,
-      meta: { poolSize: 4, queryName },
-    });
-  }
+  await runUserBench<Meta>(BENCH_CONFIG, {
+    series: SERIES,
+    getBenchItem: getBatch,
+    meta: META,
+  });
 }

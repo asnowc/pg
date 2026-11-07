@@ -3,35 +3,21 @@
  */
 export interface StreamReader {
   readonly buffer: Uint8Array;
+  readonly view: DataView;
   get readableEnd(): number;
   /** 当前读取偏移量，即下一个读取操作将从该偏移量开始 */
   readableStart: number;
   /** 可读取的字节长度 */
   get readableLength(): number;
-  readInt8(): number;
-  readUInt8(): number;
-  readInt16BE(): number;
-  readUInt16BE(): number;
-  readInt32BE(): number;
-  readUInt32BE(): number;
-  readInt64BE(): bigint;
-  readUInt64BE(): bigint;
-  /**
-   * 读取指定长度的字节，并返回一个指向原始缓冲区的 Uint8Array。
-   * 注意：返回的 Uint8Array 可能会被覆盖，必须立即消费。
-   */
-  readBinary(size: number): Uint8Array;
-  /** 复制指定长度的字节，不会影响原始缓冲区的数据 */
-  slice(size: number): Uint8Array;
 }
 
 export class BufferReader implements StreamReader {
   constructor(buffer: Uint8Array, dataSize: number = 0) {
     this.buffer = buffer;
     this.readableEnd = dataSize;
-    this.#dataView = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    this.view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
   }
-  #dataView: DataView;
+  readonly view: DataView;
   readonly buffer: Uint8Array;
   /** 已读取的偏移量，即下一个读取操作将从该偏移量开始 */
   #readOffset: number = 0;
@@ -39,6 +25,9 @@ export class BufferReader implements StreamReader {
   readableEnd: number;
   get readableStart(): number {
     return this.#readOffset;
+  }
+  set readableStart(value: number) {
+    this.#readOffset = value;
   }
 
   /** 将数据推入缓冲区，返回实际写入缓冲区的字节数 */
@@ -55,57 +44,6 @@ export class BufferReader implements StreamReader {
 
   get readableLength(): number {
     return this.readableEnd - this.#readOffset;
-  }
-
-  readInt8(): number {
-    const value = this.#dataView.getInt8(this.#readOffset);
-    this.#readOffset += 1;
-    return value;
-  }
-  readUInt8(): number {
-    const value = this.#dataView.getUint8(this.#readOffset);
-    this.#readOffset += 1;
-    return value;
-  }
-  readInt16BE(): number {
-    const value = this.#dataView.getInt16(this.#readOffset);
-    this.#readOffset += 2;
-    return value;
-  }
-  readUInt16BE(): number {
-    const value = this.#dataView.getUint16(this.#readOffset);
-    this.#readOffset += 2;
-    return value;
-  }
-  readInt32BE(): number {
-    const value = this.#dataView.getInt32(this.#readOffset);
-    this.#readOffset += 4;
-    return value;
-  }
-  readUInt32BE(): number {
-    const value = this.#dataView.getUint32(this.#readOffset);
-    this.#readOffset += 4;
-    return value;
-  }
-  readInt64BE(): bigint {
-    const value = this.#dataView.getBigInt64(this.#readOffset);
-    this.#readOffset += 8;
-    return value;
-  }
-  readUInt64BE(): bigint {
-    const value = this.#dataView.getBigUint64(this.#readOffset);
-    this.#readOffset += 8;
-    return value;
-  }
-  readBinary(size: number): Uint8Array {
-    const start = this.#readOffset;
-    this.#readOffset = start + size;
-    return this.buffer.subarray(start, this.#readOffset);
-  }
-  slice(size: number): Uint8Array {
-    const start = this.#readOffset;
-    this.#readOffset = start + size;
-    return this.buffer.slice(start, this.#readOffset);
   }
 
   /**

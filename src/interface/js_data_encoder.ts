@@ -1,23 +1,5 @@
-/** @deprecated  */
-export interface JsDataFixedEncoder<T = unknown> {
-  oid: number | ((value: T) => number);
-  encodeToText(value: T, oid: number): string;
-  readonly byteLength: number;
-  encodeInto(buffer: Uint8Array, offset: number, value: T): number;
-}
-/** @deprecated  */
-export interface JsDataVariableEncoder<T = unknown> {
-  oid: number | ((value: T) => number);
-  encodeToText(value: T, oid: number): string;
-  calculateByteLength(value: T): number;
-  encodeInto(buffer: Uint8Array, offset: number, value: T): number;
-}
-/**
- * @public
- * @deprecated 改为 JsDataEncoder2
- */
-export type JsDataEncoder<T = unknown> = JsDataFixedEncoder<T> | JsDataVariableEncoder<T>;
-export type JsDataEncoder2<T = unknown> =
+/** @public */
+export type JsDataEncoder<T = unknown> =
   | JsDataVariableLengthEncoder<T>
   | JsDataFixedLengthEncoder<T>;
 
@@ -29,25 +11,32 @@ export interface JsDataFixedLengthEncoder<T = unknown> {
   /**
    * writer.writeableLength 必定大于等于 byteLength
    */
-  encodeInto(writer: WriterBuffer, value: T): true;
+  encodeInto(writer: WriterBuffer, value: T): void;
 }
 /** @public */
 export interface JsDataVariableLengthEncoder<T> {
   readonly oid: number;
   encodeToText(value: T): string;
-  startEncode(value: T): StreamEncoder;
+  startEncode(value: T): {
+    readonly byteLength: number;
+    /**
+     * @returns `false` if encoding is complete, `true` otherwise.
+     */
+    encodeInto(writer: WriterBuffer): boolean;
+  };
 }
-export type StreamEncoder = {
-  readonly byteLength: number;
-  /**
-   * @returns `false` if encoding is complete, `true` otherwise.
-   */
-  encodeInto(writer: WriterBuffer): boolean;
-};
 
-/**  @deprecated 改为 JsDataEncoderGetter */
-export type JsDataEncoderMap = ReadonlyMap<object | string | number, JsDataEncoder<never>>;
+/**
+ * 按构造函数、JavaScript 类型名或显式字符串/数字类型标记查找编码器。
+ * @public
+ * @since 0.3.0
+ */
+export type JSDataEncoderMap = ReadonlyMap<
+  Function | string | number,
+  JsDataEncoder<unknown> | ((value: unknown) => JsDataEncoder<unknown>)
+>;
 
+/** @public */
 export interface WriterBuffer {
   /** The underlying buffer where data is written. */
   readonly buffer: Uint8Array;

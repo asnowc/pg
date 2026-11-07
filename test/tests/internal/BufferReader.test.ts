@@ -4,12 +4,17 @@ import { BufferReader } from "@/\u005futils/StreamReader.ts";
 test("gc 保留未读字节并允许继续追加", () => {
   const reader = new BufferReader(new Uint8Array(6));
   expect(reader.pushReaderBufferData(Uint8Array.of(1, 2, 3, 4))).toBe(4);
-  expect(reader.readBinary(2)).toEqual(Uint8Array.of(1, 2));
+  expect(reader.buffer.subarray(reader.readableStart, reader.readableStart + 2)).toEqual(Uint8Array.of(1, 2));
+  reader.readableStart += 2;
 
   reader.gc();
   expect(reader.readableLength).toBe(2);
   expect(reader.pushReaderBufferData(Uint8Array.of(5, 6, 7, 8))).toBe(4);
-  expect(reader.readBinary(6)).toEqual(Uint8Array.of(3, 4, 5, 6, 7, 8));
+  expect(reader.buffer.subarray(reader.readableStart, reader.readableStart + 6)).toEqual(
+    Uint8Array.of(3, 4, 5, 6, 7, 8),
+  );
+  reader.readableStart += 6;
+  expect(reader.readableLength).toBe(0);
 });
 
 test("gc 在尚未读取时不丢弃数据", () => {
@@ -17,7 +22,9 @@ test("gc 在尚未读取时不丢弃数据", () => {
   reader.pushReaderBufferData(Uint8Array.of(1, 2));
   reader.gc();
   expect(reader.readableLength).toBe(2);
-  expect(reader.readBinary(2)).toEqual(Uint8Array.of(1, 2));
+  expect(reader.buffer.subarray(reader.readableStart, reader.readableStart + 2)).toEqual(Uint8Array.of(1, 2));
+  reader.readableStart += 2;
+  expect(reader.readableLength).toBe(0);
 });
 
 test("从非零 byteOffset 缓冲区读取大小端整数", () => {
@@ -34,22 +41,33 @@ test("从非零 byteOffset 缓冲区读取大小端整数", () => {
   view.setBigUint64(22, 12345678901234567890n);
   reader.readableEnd = 30;
 
-  expect(reader.readInt8()).toBe(-1);
-  expect(reader.readUInt8()).toBe(255);
-  expect(reader.readInt16BE()).toBe(-1234);
-  expect(reader.readUInt16BE()).toBe(54321);
-  expect(reader.readInt32BE()).toBe(-12345678);
-  expect(reader.readUInt32BE()).toBe(3456789012);
-  expect(reader.readInt64BE()).toBe(-123456789n);
-  expect(reader.readUInt64BE()).toBe(12345678901234567890n);
+  expect(reader.view.getInt8(reader.readableStart)).toBe(-1);
+  reader.readableStart++;
+  expect(reader.view.getUint8(reader.readableStart)).toBe(255);
+  reader.readableStart++;
+  expect(reader.view.getInt16(reader.readableStart)).toBe(-1234);
+  reader.readableStart += 2;
+  expect(reader.view.getUint16(reader.readableStart)).toBe(54321);
+  reader.readableStart += 2;
+  expect(reader.view.getInt32(reader.readableStart)).toBe(-12345678);
+  reader.readableStart += 4;
+  expect(reader.view.getUint32(reader.readableStart)).toBe(3456789012);
+  reader.readableStart += 4;
+  expect(reader.view.getBigInt64(reader.readableStart)).toBe(-123456789n);
+  reader.readableStart += 8;
+  expect(reader.view.getBigUint64(reader.readableStart)).toBe(12345678901234567890n);
+  reader.readableStart += 8;
   expect(reader.readableLength).toBe(0);
 });
 
-test("readBinary 借用缓冲区，copyBinary 保留独立副本", () => {
+test("subarray 借用缓冲区，slice 保留独立副本", () => {
   const reader = new BufferReader(new Uint8Array(4));
   reader.pushReaderBufferData(Uint8Array.of(1, 2, 3, 4));
-  const borrowed = reader.readBinary(2);
-  const copied = reader.slice(2);
+  const borrowed = reader.buffer.subarray(reader.readableStart, reader.readableStart + 2);
+  reader.readableStart += 2;
+  const copied = reader.buffer.slice(reader.readableStart, reader.readableStart + 2);
+  reader.readableStart += 2;
+  expect(reader.readableLength).toBe(0);
   reader.buffer[0] = 9;
   reader.buffer[2] = 9;
   expect(borrowed).toEqual(Uint8Array.of(9, 2));

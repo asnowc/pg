@@ -19,9 +19,9 @@
 2. 连接默认使用 `postgres://postgres@127.0.0.1:5432/test_public`，可通过 `TEST_LOGIN_DB` 覆盖。 当前比较明文 TCP，不读取
    URL 中的 TLS 等查询参数。
 3. 在本目录安装依赖：`deno install`。
-4. 比较 `@asla/pg-node`（上一版构建产物）时，先在仓库根目录执行 `deno task bundle` 生成 `dist/mod.js`。
+4. 比较上一版构建产物 `@asla/pg-prev` 时，先在仓库根目录执行 `deno task build` 生成 `dist/mod.js`。
 
-`@asla/pg` 系列的连接池通过 `Deno.connect` 建连，需在 Deno 中运行。
+`@asla/pg` 系列通过 `Deno.connect` 建连，`@asla/pg-node` 使用 Node.js TCP 流；命令行均在 Deno 中运行。
 
 ## 客户端查询基准
 
@@ -44,7 +44,7 @@ deno run -A deps/bench-cli/main.ts report results/tmp -p compact -o report.compa
 | 系列            | 说明                                                                          |
 | --------------- | ----------------------------------------------------------------------------- |
 | `@asla/pg`      | 当前源码                                                                      |
-| `@asla/pg-node` | 上一版构建产物 `dist/mod.js`                                                  |
+| `@asla/pg-node` | 当前源码，使用 Node.js TCP 流                                                 |
 | `postgres`      | postgres.js，关闭预备语句                                                     |
 | `pg`            | node-postgres                                                                 |
 | `pg-promise`    | pg-promise                                                                    |

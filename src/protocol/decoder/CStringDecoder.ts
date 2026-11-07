@@ -17,9 +17,11 @@ class CStringDecoder implements StreamDecoder<string> {
     }
     if (this.nameChunksSize) {
       this.nameChunks.push(chunk.subarray(0, index));
-      reader.readableStart += index + 1;
+      this.nameChunksSize += index;
       chunk = concatU8ArrayList(this.nameChunks, this.nameChunksSize);
-    }
+    } else chunk = chunk.subarray(0, index);
+    reader.readableStart += index + 1;
+    this.reset();
     return textDecoder.decode(chunk);
   }
   reset() {

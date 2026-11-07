@@ -1,6 +1,7 @@
 import type { SqlStatement } from "./QueryStatement.ts";
 import type { FieldInfo, QueryCompletion } from "./QueryReader.ts";
-import type { QueryCommonOptions } from "./_internal.ts";
+import type { QueryCommonOptions, QueryOptionsWithDecoder } from "./_internal.ts";
+import { TypedSqlStatement } from "@/class.ts";
 /** @public */
 export type CursorOpenOptions = QueryCommonOptions & {
   /**
@@ -37,7 +38,8 @@ export type CursorQueryOperation = {
    * }
    * ```
    */
-  open<T>(queryable: SqlStatement<T>, options?: CursorOpenOptions): Promise<Cursor<T>>;
+  open<T>(queryable: TypedSqlStatement<T>, options?: CursorOpenOptions): Promise<Cursor<T>>;
+  open<T>(queryable: SqlStatement, options?: CursorOpenOptions & QueryOptionsWithDecoder): Promise<Cursor<T>>;
 };
 /** @public */
 export interface Cursor<T> extends AsyncDisposable, AsyncIterable<T> {
