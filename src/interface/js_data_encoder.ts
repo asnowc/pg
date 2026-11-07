@@ -1,23 +1,4 @@
-/** @deprecated  */
-export interface JsDataFixedEncoder<T = unknown> {
-  oid: number | ((value: T) => number);
-  encodeToText(value: T, oid: number): string;
-  readonly byteLength: number;
-  encodeInto(buffer: Uint8Array, offset: number, value: T): number;
-}
-/** @deprecated  */
-export interface JsDataVariableEncoder<T = unknown> {
-  oid: number | ((value: T) => number);
-  encodeToText(value: T, oid: number): string;
-  calculateByteLength(value: T): number;
-  encodeInto(buffer: Uint8Array, offset: number, value: T): number;
-}
-/**
- * @public
- * @deprecated 改为 JsDataEncoder2
- */
-export type JsDataEncoder<T = unknown> = JsDataFixedEncoder<T> | JsDataVariableEncoder<T>;
-export type JsDataEncoder2<T = unknown> =
+export type JsDataEncoder<T = unknown> =
   | JsDataVariableLengthEncoder<T>
   | JsDataFixedLengthEncoder<T>;
 
@@ -29,7 +10,7 @@ export interface JsDataFixedLengthEncoder<T = unknown> {
   /**
    * writer.writeableLength 必定大于等于 byteLength
    */
-  encodeInto(writer: WriterBuffer, value: T): true;
+  encodeInto(writer: WriterBuffer, value: T): void;
 }
 /** @public */
 export interface JsDataVariableLengthEncoder<T> {
@@ -45,8 +26,10 @@ export type StreamEncoder = {
   encodeInto(writer: WriterBuffer): boolean;
 };
 
-/**  @deprecated 改为 JsDataEncoderGetter */
-export type JsDataEncoderMap = ReadonlyMap<object | string | number, JsDataEncoder<never>>;
+export type JSDataEncoderMap = ReadonlyMap<
+  object | string | number,
+  JsDataEncoder<unknown> | ((value: unknown) => JsDataEncoder<unknown>)
+>;
 
 export interface WriterBuffer {
   /** The underlying buffer where data is written. */

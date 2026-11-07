@@ -24,7 +24,8 @@ export class DataRowDecoder<T extends {}> implements MessageParser<T> {
   next(reader: StreamReader, remainingByteLength: number): T | undefined {
     if (!this.currentRow) {
       if (reader.readableLength < 4) return undefined; // Not enough data to read the row count
-      const columnCount = reader.readUInt32BE();
+      const columnCount = reader.view.getUint32(reader.readableStart);
+      reader.readableStart += 4;
       if (columnCount !== this.columnCount) {
         throw new PgProtocolError(
           `Column count mismatch. RowDescription has ${this.columnCount} columns, but DataRow has ${columnCount} columns.`,
@@ -38,7 +39,8 @@ export class DataRowDecoder<T extends {}> implements MessageParser<T> {
     while (remainingByteLength > 0) {
       if (this.currentValueLength === 0) {
         if (reader.readableLength < 4) return undefined;
-        this.currentValueLength = reader.readInt32BE();
+        this.currentValueLength = reader.view.getInt32(reader.readableStart);
+        reader.readableStart += 4;
         if (this.currentValueLength === -1) {
           rowDescription = this.rowDescriptions[this.nextIndex];
           this.currentRow[rowDescription.name] = null;
@@ -73,14 +75,16 @@ export class DataRowDecoder<T extends {}> implements MessageParser<T> {
   private nextForText(reader: StreamReader): string | undefined {
     if (!this.textDecodeBuffer) {
       if (reader.readableLength >= this.currentValueLength) {
-        const chunk = reader.readBinary(this.currentValueLength);
+        const chunk = reader.buffer.subarray(reader.readableStart, reader.readableStart + this.currentValueLength);
+        reader.readableStart += this.currentValueLength;
         return textDecoder.decode(chunk);
       } else {
         this.textDecodeBuffer = new Uint8Array(this.currentValueLength);
       }
     }
     const size = Math.min(this.currentValueLength, reader.readableLength);
-    const chunk = reader.readBinary(size);
+    const chunk = reader.buffer.subarray(reader.readableStart, reader.readableStart + size);
+    reader.readableStart += size;
     this.textDecodeBuffer.set(chunk, this.textDecodeOffset);
     this.textDecodeOffset += size;
     if (this.textDecodeOffset >= this.textDecodeBuffer.byteLength) {

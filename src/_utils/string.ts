@@ -60,12 +60,12 @@ export function findCStringTerminator(data: Uint8Array, offset: number = 0): num
   const end = data.indexOf(0, offset);
   return end === -1 ? data.byteLength : end;
 }
-//TODO: 性能优化
-export function encodeBase64(data: Uint8Array): string {
-  return btoa(String.fromCharCode(...data));
-}
-
-//TODO: 性能优化
-export function decodeBase64(value: string): Uint8Array<ArrayBuffer> {
-  return Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
+export function findUTF18CodePointEnd(buf: Uint8Array, offset: number, end = buf.byteLength): number {
+  while (offset < end) {
+    const code = buf[offset];
+    const size = code < 0x80 ? 1 : code < 0xe0 ? 2 : code < 0xf0 ? 3 : code < 0xf8 ? 4 : code < 0xfc ? 5 : 6;
+    if (offset + size > end) break;
+    offset += size;
+  }
+  return offset;
 }

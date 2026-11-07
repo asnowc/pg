@@ -29,7 +29,7 @@ export class MessageParsers {
   private readonly ignoreParser: MessageParser = {
     next(reader, remainingByteLength) {
       const length = Math.min(reader.readableLength, remainingByteLength);
-      reader.readBinary(length);
+      reader.readableStart += length;
     },
     reset() {},
   };
@@ -40,7 +40,8 @@ export class MessageParsers {
       if (!this.parser) {
         if (reader.readableLength < 5) return;
 
-        const type = reader.readUInt8();
+        const type = reader.view.getUint8(reader.readableStart);
+        reader.readableStart++;
         this.remainingByteLength = decodeMessageLength(reader, this.maxHeaderLength) - 4;
         if (this.remainingByteLength === 0) {
           this.onFinishMap[type]?.(EMPTY_BODY);
@@ -68,7 +69,8 @@ export class MessageParsers {
 }
 
 function decodeMessageLength(reader: StreamReader, maxLength: number) {
-  const messageLength = reader.readUInt32BE();
+  const messageLength = reader.view.getUint32(reader.readableStart);
+  reader.readableStart += 4;
   if (messageLength < 4) {
     throw new PgProtocolError(`Invalid PostgreSQL message length: ${messageLength}`);
   }
@@ -89,7 +91,8 @@ class MessageFullParser implements MessageParser {
     const readableLength = reader.readableLength;
 
     if (readableLength >= remainingByteLength && !this.bodyChunks) {
-      const body = reader.slice(remainingByteLength);
+      const body = reader.buffer.slice(reader.readableStart, reader.readableStart + remainingByteLength);
+      reader.readableStart += remainingByteLength;
       this.onFinish?.(body);
       return;
     }
@@ -99,7 +102,9 @@ class MessageFullParser implements MessageParser {
     this.bodyChunks ??= new Uint8Array(remainingByteLength);
     const chunkLength = Math.min(readableLength, remainingByteLength);
     const offset = this.bodyChunks.byteLength - remainingByteLength;
-    this.bodyChunks.set(reader.slice(chunkLength), offset);
+    const chunk = reader.buffer.slice(reader.readableStart, reader.readableStart + chunkLength);
+    reader.readableStart += chunkLength;
+    this.bodyChunks.set(chunk, offset);
     remainingByteLength -= chunkLength;
     if (remainingByteLength > 0) return;
 

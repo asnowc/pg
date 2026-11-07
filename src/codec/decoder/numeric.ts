@@ -1,60 +1,115 @@
-import type { PgDataDecoder } from "@/interface/pg_data_decoder.ts";
+import type { PgColumnDataDecoder, PgColumnDecoder } from "@/interface/pg_data_decoder.ts";
 
-export const boolean: PgDataDecoder = {
+export const boolean: PgColumnDataDecoder<boolean> = {
   decodeText: (value: string) => value === "t",
-  decodeBinary: (value: Uint8Array) => value[0] !== 0,
-};
-
-export const signedInteger: PgDataDecoder = {
-  decodeText: (value: string) => Number(value),
-  decodeBinary: (value: Uint8Array) => {
-    const view = new DataView(value.buffer, value.byteOffset, value.byteLength);
-    return value.byteLength === 2 ? view.getInt16(0) : view.getInt32(0);
+  decodeBinary(reader) {
+    if (reader.readableLength < 1) return undefined;
+    const value = reader.view.getUint8(reader.readableStart);
+    reader.readableStart++;
+    return value !== 0;
   },
 };
 
-export const bigint: PgDataDecoder = {
-  decodeText: (value: string) => BigInt(value),
-  decodeBinary: (value: Uint8Array) => new DataView(value.buffer, value.byteOffset, value.byteLength).getBigInt64(0),
-};
-
-export const unsignedInteger: PgDataDecoder = {
+export const int32: PgColumnDataDecoder<number> = {
   decodeText: (value: string) => Number(value),
-  decodeBinary: (value: Uint8Array) => new DataView(value.buffer, value.byteOffset, value.byteLength).getUint32(0),
-};
-
-export const unsignedBigint: PgDataDecoder = {
-  decodeText: (value: string) => BigInt(value),
-  decodeBinary: (value: Uint8Array) => new DataView(value.buffer, value.byteOffset, value.byteLength).getBigUint64(0),
-};
-
-export const float: PgDataDecoder = {
-  decodeText: (value: string) => Number(value),
-  decodeBinary: (value: Uint8Array) => {
-    const view = new DataView(value.buffer, value.byteOffset, value.byteLength);
-    return value.byteLength === 4 ? view.getFloat32(0) : view.getFloat64(0);
+  decodeBinary(reader, remainingByteLength) {
+    const length = remainingByteLength === 2 ? 2 : 4;
+    if (reader.readableLength < length) return undefined;
+    const value = length === 2
+      ? reader.view.getInt16(reader.readableStart)
+      : reader.view.getInt32(reader.readableStart);
+    reader.readableStart += length;
+    return value;
   },
 };
 
-export const numeric: PgDataDecoder = {
-  decodeText: (value: string) => value,
-  decodeBinary: decodeNumeric,
+export const int64: PgColumnDataDecoder<bigint> = {
+  decodeText: (value: string) => BigInt(value),
+  decodeBinary(reader) {
+    if (reader.readableLength < 8) return undefined;
+    const value = reader.view.getBigInt64(reader.readableStart);
+    reader.readableStart += 8;
+    return value;
+  },
 };
 
-function decodeNumeric(value: Uint8Array): string {
-  const view = new DataView(value.buffer, value.byteOffset, value.byteLength);
-  if (value.byteLength < 8) throw new RangeError("Invalid numeric value");
-  const digitCount = view.getUint16(0);
-  const weight = view.getInt16(2);
-  const sign = view.getUint16(4);
-  const scale = view.getUint16(6);
-  if (value.byteLength !== 8 + digitCount * 2) throw new RangeError("Invalid numeric value");
+export const uInt32: PgColumnDataDecoder<number> = {
+  decodeText: (value: string) => Number(value),
+  decodeBinary(reader) {
+    if (reader.readableLength < 4) return undefined;
+    const value = reader.view.getUint32(reader.readableStart);
+    reader.readableStart += 4;
+    return value;
+  },
+};
+
+export const uInt64: PgColumnDataDecoder<bigint> = {
+  decodeText: (value: string) => BigInt(value),
+  decodeBinary(reader) {
+    if (reader.readableLength < 8) return undefined;
+    const value = reader.view.getBigUint64(reader.readableStart);
+    reader.readableStart += 8;
+    return value;
+  },
+};
+
+export const float32: PgColumnDataDecoder<number> = {
+  decodeText: (value: string) => Number(value),
+  decodeBinary(reader) {
+    if (reader.readableLength < 4) return undefined;
+    const value = reader.view.getFloat32(reader.readableStart);
+    reader.readableStart += 4;
+    return value;
+  },
+};
+export const float64: PgColumnDataDecoder<number> = {
+  decodeText: (value: string) => Number(value),
+  decodeBinary(reader) {
+    if (reader.readableLength < 8) return undefined;
+    const value = reader.view.getFloat64(reader.readableStart);
+    reader.readableStart += 8;
+    return value;
+  },
+};
+export const numeric: PgColumnDecoder<string> = () => {
+  let digitCount: number | undefined;
+  let weight = 0;
+  let sign = 0;
+  let scale = 0;
+  let groups: number[] = [];
+  return {
+    decodeText: (value) => value,
+    decodeBinary(reader) {
+      if (digitCount === undefined) {
+        if (reader.readableLength < 8) return undefined;
+        digitCount = reader.view.getUint16(reader.readableStart);
+        reader.readableStart += 2;
+        weight = reader.view.getInt16(reader.readableStart);
+        reader.readableStart += 2;
+        sign = reader.view.getUint16(reader.readableStart);
+        reader.readableStart += 2;
+        scale = reader.view.getUint16(reader.readableStart);
+        reader.readableStart += 2;
+      }
+      while (groups.length < digitCount) {
+        if (reader.readableLength < 2) return undefined;
+        groups.push(reader.view.getUint16(reader.readableStart));
+        reader.readableStart += 2;
+      }
+      const result = formatNumeric(groups, weight, sign, scale);
+      digitCount = undefined;
+      groups = [];
+      return result;
+    },
+  };
+};
+
+function formatNumeric(groups: number[], weight: number, sign: number, scale: number): string {
   if (sign === 0xc000) return "NaN";
   if (sign === 0xd000) return "Infinity";
   if (sign === 0xf000) return "-Infinity";
   if (sign !== 0 && sign !== 0x4000) throw new RangeError(`Invalid numeric sign: ${sign}`);
 
-  const groups = Array.from({ length: digitCount }, (_, index) => view.getUint16(8 + index * 2));
   const integerGroups = Math.max(weight + 1, 0);
   let integer = integerGroups === 0 ? "0" : Array.from({ length: integerGroups }, (_, index) => {
     const group = groups[index] ?? 0;

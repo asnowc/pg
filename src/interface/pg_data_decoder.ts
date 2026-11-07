@@ -9,9 +9,10 @@ export type PgDataDecoder<T = unknown> = {
 /** @public */
 export type PgColumnDataDecoder<T = unknown> = {
   decodeText(value: string): T;
+  /** 返回 undefined，表示数组不足，需等待更多数据。返回其他值表示成功解码。 */
   decodeBinary(value: StreamReader, remainingByteLength: number): T | undefined;
 };
 /** @public */
 export type PgColumnDecoder<T> =
   | PgColumnDataDecoder<T>
-  | (new (info: Readonly<FieldInfo>) => PgColumnDataDecoder<T>);
+  | ((info: Readonly<FieldInfo>) => PgColumnDataDecoder<T>);

@@ -2,21 +2,12 @@ import { PgAuthenticationExchangeOptions } from "@asla/pg";
 import { startAuth } from "@/protocol/connect.ts";
 import { BufferWriter } from "@/_utils/BufferWriter.ts";
 import { MessageParsers } from "@/protocol/parsers/MessageParser.ts";
-import {
-  BackendMessageCode,
-  DescribeTarget,
-  encodeBindMessage,
-  encodeDescribeMessage,
-  encodeExecuteMessage,
-  encodeParseMessage,
-  encodeTerminateMessage,
-  FRAME,
-} from "@/protocol.ts";
+import { BackendMessageCode, DescribeTarget, FRAME } from "@/protocol.ts";
 import { Buffer } from "node:buffer";
 import { BufferReader } from "@/_utils/StreamReader.ts";
 import { eachLink, LinkList } from "@/_utils/LinkList.ts";
-import { InternalTextSqlStatementEncoder } from "@/codec/StatementEncoder.ts";
 import { BufferWriterQueue } from "@/_utils/BufferWriterQueue.ts";
+import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
 
 export class FakeRequest {
   constructor(private connections: Conn[]) {
@@ -110,7 +101,7 @@ class Conn {
   }
 }
 function getQueryData(textStatement: string) {
-  const statement = new InternalTextSqlStatementEncoder(textStatement);
+  const statement = new TypedSqlStatement(textStatement);
   const parse = encodeParseMessage(statement);
   const bind = encodeBindMessage(statement);
   const portal = encodeDescribeMessage(DescribeTarget.Portal);

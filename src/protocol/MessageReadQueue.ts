@@ -125,7 +125,7 @@ export class QueryReadQueue extends CountLinkList<ResultReceiver> {
       this.parameters[name] = value;
     });
     parser.setFullParser(BackendMessageCode.NotificationResponse, (data) => {
-      const message = decodeNotification(data);
+      const message = decodeNotification(data, new DataView(data.buffer, data.byteOffset, data.byteLength));
       const asyncData = {
         type: AsyncMessageType.Notification,
         processId: message.processId,

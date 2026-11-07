@@ -8,7 +8,7 @@ import type {
   TransactionMode,
 } from "@/interface/Query.ts";
 import QueryReaderImpl from "./QueryReader.ts";
-import { sqlStatementToSqlEncoder } from "./sql_statement.ts";
+import { createTypedSqlStatement } from "./sql_statement.ts";
 
 export class TransactionImpl implements Transaction {
   private ended = false;
@@ -21,7 +21,7 @@ export class TransactionImpl implements Transaction {
   }
 
   query<T>(queryable: SqlStatement, options?: QueryOptions): IQueryReader<T> {
-    const encoder = sqlStatementToSqlEncoder(queryable, options);
+    const encoder = createTypedSqlStatement(queryable, options);
     return new QueryReaderImpl<T>(async () => {
       throw new Error("Not implemented");
     });

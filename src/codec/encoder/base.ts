@@ -1,50 +1,65 @@
-import { encodeInt32BE } from "@/_utils/number.ts";
-import { calcCStringByteLength, encodeUTF16StringInto } from "@/_utils/string.ts";
-import type { JsDataEncoder } from "@/interface/js_data_encoder.ts";
+import { calcCStringByteLength } from "@/_utils/string.ts";
+import type { JsDataEncoder, WriterBuffer } from "@/interface/js_data_encoder.ts";
 import { PgOid } from "@/util/pg_oid.ts";
+
+const textEncoder = new TextEncoder();
 
 export const stringEncoder: JsDataEncoder<string> = {
   oid: PgOid.TEXT,
   encodeToText: String,
-  calculateByteLength: calcCStringByteLength,
-  encodeInto: (buffer, offset, value) => encodeUTF16StringInto(value, buffer.subarray(offset)),
+  startEncode(value) {
+    const byteLength = calcCStringByteLength(value);
+    return {
+      byteLength,
+      encodeInto(writer) {
+        const { read, written } = textEncoder.encodeInto(
+          value,
+          writer.buffer.subarray(writer.writeOffset, writer.writeOffset + writer.writableLength),
+        );
+        writer.writeOffset += written;
+        value = value.substring(read);
+        return value.length > 0;
+      },
+    };
+  },
 };
-export const numberEncoder: JsDataEncoder<number> = {
+export const int4Encoder: JsDataEncoder<number> = {
   oid: PgOid.INT4,
   encodeToText: String,
   byteLength: 4,
-  encodeInto(buffer, offset, value) {
-    return encodeInt32BE(buffer, offset, value);
+  encodeInto(writer, value) {
+    writer.view.setInt32(writer.writeOffset, value), writer.writeOffset += 4;
   },
 };
-export const floatEncoder: JsDataEncoder<number> = {
+export const f64Encoder: JsDataEncoder<number> = {
   oid: PgOid.FLOAT8,
   encodeToText: String,
   byteLength: 8,
-  encodeInto(buffer, offset, value) {
-    new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength).setFloat64(offset, value);
-    return 8;
+  encodeInto(writer, value) {
+    writer.view.setFloat64(writer.writeOffset, value), writer.writeOffset += 8;
   },
 };
 export const booleanEncoder: JsDataEncoder<boolean> = {
   oid: PgOid.BOOL,
   encodeToText: (value) => value ? "true" : "false",
   byteLength: 1,
-  encodeInto(buffer, offset, value) {
-    buffer[offset] = value ? 1 : 0;
-    return 1;
+  encodeInto(writer, value) {
+    writer.buffer[writer.writeOffset++] = value ? 1 : 0;
   },
 };
 export const bytesEncoder: JsDataEncoder<Uint8Array> = {
   oid: PgOid.BYTEA,
-  encodeToText: (value) => `\\x${toHex(value)}`,
-  calculateByteLength: (value) => value.byteLength,
-  encodeInto(buffer, offset, value) {
-    buffer.set(value, offset);
-    return value.byteLength;
+  encodeToText: (value) => `\\x${value.toHex()}`,
+  startEncode(value) {
+    return {
+      byteLength: value.byteLength,
+      encodeInto(writer: WriterBuffer) {
+        const byteLength = Math.min(value.byteLength, writer.writableLength);
+        writer.buffer.set(value.subarray(0, byteLength), writer.writeOffset);
+        writer.writeOffset += byteLength;
+        value = value.subarray(byteLength);
+        return value.byteLength > 0;
+      },
+    };
   },
 };
-
-function toHex(value: Uint8Array): string {
-  return Array.from(value, (byte) => byte.toString(16).padStart(2, "0")).join("");
-}

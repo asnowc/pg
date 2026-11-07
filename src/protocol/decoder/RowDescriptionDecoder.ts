@@ -14,7 +14,8 @@ export class RowDescriptionDecoder implements MessageParser<DecodeRowDescription
   next(reader: StreamReader) {
     if (!this.fields) {
       if (reader.readableLength < 2) return undefined;
-      this.fields = new Array(reader.readUInt16BE());
+      this.fields = new Array(reader.view.getUint16(reader.readableStart));
+      reader.readableStart += 2;
     }
     if (!this.fieldName) {
       this.fieldName = this.cStringDecoder.next(reader);
@@ -25,12 +26,19 @@ export class RowDescriptionDecoder implements MessageParser<DecodeRowDescription
       name: this.fieldName,
       index: this.nextIndex,
     };
-    item.tableOID = reader.readUInt32BE();
-    item.columnAttribute = reader.readInt16BE();
-    item.typeOID = reader.readUInt32BE();
-    item.typeSize = reader.readInt16BE();
-    item.typeModifier = reader.readInt32BE();
-    item.format = getFormat(reader.readInt16BE());
+    item.tableOID = reader.view.getUint32(reader.readableStart);
+    reader.readableStart += 4;
+    item.columnAttribute = reader.view.getInt16(reader.readableStart);
+    reader.readableStart += 2;
+    item.typeOID = reader.view.getUint32(reader.readableStart);
+    reader.readableStart += 4;
+    item.typeSize = reader.view.getInt16(reader.readableStart);
+    reader.readableStart += 2;
+    item.typeModifier = reader.view.getInt32(reader.readableStart);
+    reader.readableStart += 4;
+    const format = reader.view.getInt16(reader.readableStart);
+    reader.readableStart += 2;
+    item.format = getFormat(format);
     this.fields[this.nextIndex++] = item as DecodeRowDescriptionResult;
     this.fieldName = undefined;
     if (this.nextIndex === this.fields.length) return this.fields;

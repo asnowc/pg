@@ -1,7 +1,7 @@
 import { DB_CONNECT_INFO } from "../utils/db.ts";
 import { PoolHandler, PoolQueryTest, TestQueries } from "..//utils/common.ts";
 import { PgSession } from "@/protocol.ts";
-import { sqlStatementToSqlEncoder } from "@/implement/private/sql_statement.ts";
+import { createTypedSqlStatement } from "@/implement/private/sql_statement.ts";
 import { connectPgSession } from "@/protocol/connect.ts";
 
 export const LIB_NAME = "调度模拟";
@@ -12,7 +12,7 @@ class Pool {
   count = 0;
   async query(sql: string): Promise<any> {
     const conn = this.conn[this.count++ % this.conn.length];
-    const encoder = sqlStatementToSqlEncoder(sql);
+    const encoder = createTypedSqlStatement(sql);
     const promise = conn.queryWriter.extendedQuery(encoder);
     conn.queryWriter.sync();
     return promise;

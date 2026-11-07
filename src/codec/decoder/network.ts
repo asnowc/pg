@@ -1,41 +1,50 @@
-import type { PgDataDecoder } from "@/interface/pg_data_decoder.ts";
+import type { PgColumnDataDecoder } from "@/interface/pg_data_decoder.ts";
 
-export const inet: PgDataDecoder = {
-  decodeText: (value: string) => value,
-  decodeBinary: decodeInet,
+export const inet: PgColumnDataDecoder<string> = {
+  decodeText: (value) => value,
+  decodeBinary(reader, remainingByteLength) {
+    if (reader.readableLength < remainingByteLength) return undefined;
+    const family = reader.view.getUint8(reader.readableStart);
+    const mask = reader.view.getUint8(reader.readableStart + 1);
+    const isCidr = reader.view.getUint8(reader.readableStart + 2) !== 0;
+    const addressLength = reader.view.getUint8(reader.readableStart + 3);
+
+    reader.readableStart += 4;
+    const groups: string[] = [];
+    switch (family) {
+      case 2: {
+        for (let index = 0; index < addressLength; index += 1) {
+          groups.push(String(reader.view.getUint8(reader.readableStart)));
+          reader.readableStart += 1;
+        }
+        return isCidr || mask !== 32 ? `${groups.join(".")}/${mask}` : groups.join(".");
+      }
+      case 3: {
+        for (let index = 0; index < addressLength; index += 2) {
+          groups.push(reader.view.getUint16(reader.readableStart).toString(16));
+          reader.readableStart += 2;
+        }
+        return isCidr || mask !== 128 ? `${compressIpv6(groups)}/${mask}` : compressIpv6(groups);
+      }
+      default:
+        throw new RangeError(`Unsupported inet family: ${family}`);
+    }
+  },
 };
 
-export const macaddr: PgDataDecoder = {
+export const macaddr: PgColumnDataDecoder<string> = {
   decodeText: (value: string) => value,
-  decodeBinary: (value: Uint8Array) => Array.from(value, (byte) => byte.toString(16).padStart(2, "0")).join(":"),
+  decodeBinary(reader, remainingByteLength) {
+    if (reader.readableLength < remainingByteLength) return undefined;
+
+    const groups: string[] = [];
+    for (let i = 0; i < remainingByteLength; i++) {
+      groups.push(reader.view.getUint8(reader.readableStart).toString(16).padStart(2, "0"));
+      reader.readableStart++;
+    }
+    return groups.join(":");
+  },
 };
-
-function decodeInet(value: Uint8Array): string {
-  if (value.byteLength < 4) throw new RangeError("Invalid inet value");
-  const family = value[0];
-  const mask = value[1];
-  const isCidr = value[2] !== 0;
-  const length = value[3];
-  const address = value.subarray(4);
-  if (address.byteLength !== length) throw new RangeError("Invalid inet address length");
-
-  let output: string;
-  let fullMask: number;
-  if (family === 2 && length === 4) {
-    output = address.join(".");
-    fullMask = 32;
-  } else if (family === 3 && length === 16) {
-    const groups = Array.from(
-      { length: 8 },
-      (_, index) => new DataView(address.buffer, address.byteOffset + index * 2, 2).getUint16(0).toString(16),
-    );
-    output = compressIpv6(groups);
-    fullMask = 128;
-  } else {
-    throw new RangeError(`Unsupported inet family: ${family}`);
-  }
-  return isCidr || mask !== fullMask ? `${output}/${mask}` : output;
-}
 
 function compressIpv6(groups: string[]): string {
   let bestStart = -1;
