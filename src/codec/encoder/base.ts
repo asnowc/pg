@@ -8,17 +8,18 @@ export const stringEncoder: JsDataEncoder<string> = {
   oid: PgOid.TEXT,
   encodeToText: String,
   startEncode(value) {
-    const byteLength = calcCStringByteLength(value);
+    let byteLength = calcCStringByteLength(value);
     return {
       byteLength,
       encodeInto(writer) {
         const { read, written } = textEncoder.encodeInto(
           value,
-          writer.buffer.subarray(writer.writeOffset, writer.writeOffset + writer.writableLength),
+          writer.buffer.subarray(writer.writeOffset, writer.buffer.byteLength),
         );
         writer.writeOffset += written;
+        byteLength -= written;
         value = value.substring(read);
-        return value.length > 0;
+        return byteLength > 0;
       },
     };
   },
