@@ -20,7 +20,9 @@ export const SERIES: Library[] = [
   "@asla/pg-node",
   "postgres",
   "pg",
-  // "fake2",
+  "fake2",
+  "slonik",
+  "pg-promise",
 ];
 export const META: Meta = {
   poolSize: 4,
