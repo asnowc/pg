@@ -5,12 +5,12 @@ import type { BenchManifest } from "../../collector/BenchCollector.ts";
  * 报告区块，始终按此顺序渲染，选项只决定是否出现：
  * - `environment`：运行环境、测试参数与 meta
  * - `summary`：整个正式测量窗口的汇总排行（操作数、错误率、ops/s、延迟）
- * - `throughput`：各并发档 ops/s 分组柱状图及在途数/吞吐曲线
+ * - `throughput`：各 stage 独立的 ops/s 柱状图及在途数/吞吐曲线
  * - `latency`：各并发档的延迟明细表
  * - `distribution`：各并发档紧凑纵向排列的水平延迟增量堆叠条，横轴从该档所有系列的最小请求延迟开始
  * - `resource`：资源摘要、每请求 CPU 与平均 RSS 柱状图
  * - `cpu`：User/System/Total CPU 时间与使用率四张阶梯图，以及每档每请求 CPU 堆叠柱状图
- * - `memory`：`metrics` 指定的内存时间曲线
+ * - `memory`：`metrics` 指定的内存时间曲线，RSS 曲线后显示各 stage 平均 RSS / 平均实际在途数柱状图
  * - `notes`：附注与口径说明
  */
 const SVG_SECTIONS = [
@@ -67,7 +67,7 @@ export type SvgReportOptions = {
   /** 可选曲线：inFlight/ops 属于 throughput，cpu 属于 cpu，其余属于 memory，按给定顺序渲染。 */
   metrics?: readonly IntervalMetric[];
   /**
-   * 是否在吞吐柱状图和内存曲线下方显示各并发档的平均值排行，不影响 CPU 柱状图。
+   * 是否在内存曲线及其相关柱状图下方显示各并发档的平均内存排行，不影响柱状图或吞吐量。
    * 所有排行统一按数值从高到低排序，倍数为相对同表最低值的比值。
    */
   rankings?: boolean;

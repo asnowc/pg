@@ -13,6 +13,7 @@ import {
   CONTENT_WIDTH,
   FONT,
   format,
+  formatRatio,
   MARGIN,
   MUTED_COLOR,
   rankDescending,
@@ -34,36 +35,97 @@ const METRIC_INFO: Record<IntervalMetric, MetricInfo> = {
 };
 
 export function throughputSection(context: RenderContext) {
-  const { layout, results, colors, options, stageConcurrencies } = context;
-  const stageCount = stageConcurrencies.length;
-  if (stageCount <= 0) return;
-  const categories = stageConcurrencies.map((concurrency) => `concurrency ${concurrency}`);
-  layout.heading(
+  stageBars(
+    context,
     "Throughput by concurrency",
-    15,
-    `successful ${options.labels.throughput} · ${BETTER_HINT.higher}`,
+    `successful ${context.options.labels.throughput}`,
+    "higher",
+    (series, stage) => context.results[series].stages[stage]?.averages.ops ?? null,
   );
-  layout.grid(
-    { left: MARGIN + 50, top: layout.top, width: CONTENT_WIDTH - 50, height: CHART_HEIGHT },
-    { type: "category", data: categories },
-    { type: "value", min: 0 },
-    results.map((result, i): BarSeriesOption => ({
-      name: result.name,
-      type: "bar",
-      barMaxWidth: 56,
-      itemStyle: { color: colors[i] },
-      label: {
-        show: true,
-        position: "top",
-        fontSize: 10,
-        color: MUTED_COLOR,
-        formatter: (params: { value?: unknown }) => format(params.value as number, 0),
+}
+
+const barNumberFormat = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function stageBars(
+  context: RenderContext,
+  title: string,
+  unit: string,
+  better: "higher" | "lower",
+  value: (series: number, stage: number) => number | null,
+) {
+  const { layout, results, colors, stageConcurrencies } = context;
+  const stageCount = stageConcurrencies.length;
+  if (!stageCount || !results.length) return;
+  const stages = stageConcurrencies.map((_, stage) =>
+    rankDescending(results.map((_, series) => value(series, stage)), (value) => value).sort((a, b) => a.index - b.index)
+  );
+  const labels = stages.map((rows) =>
+    rows.map(({ value, ratio }) => value === null ? "N/A" : `(${formatRatio(ratio)})\n${barNumberFormat.format(value)}`)
+  );
+  const largest = Math.max(0, ...stages.flat().flatMap(({ value }) => value === null ? [] : [value]));
+  const max = largest > 0 ? largest * 1.25 : 1;
+  const axisWidth = Math.max(48, format(max).length * 7 + 12);
+  const labelWidth = Math.max(
+    56,
+    ...labels.flatMap((stage) =>
+      stage.flatMap((label) =>
+        label.split("\n").map(
+          (line) => line.length * 6 + 12,
+        )
+      )
+    ),
+  );
+  const gap = 20;
+  const minimumWidth = Math.max(240, axisWidth + results.length * labelWidth + 12);
+  const perRow = Math.min(stageCount, Math.max(1, Math.floor((CONTENT_WIDTH + gap) / (minimumWidth + gap))));
+  const width = (CONTENT_WIDTH - gap * (perRow - 1)) / perRow;
+  const plotWidth = width - axisWidth - 12;
+  const rowHeight = CHART_HEIGHT + 84;
+  layout.heading(title, 15, `${unit} · ${BETTER_HINT[better]}`);
+  const top = layout.top;
+  for (let stage = 0; stage < stageCount; stage++) {
+    const left = MARGIN + stage % perRow * (width + gap);
+    const rowTop = top + Math.floor(stage / perRow) * rowHeight;
+    layout.top = rowTop;
+    layout.text(`Stage #${stage + 1} · concurrency ${stageConcurrencies[stage]}`, {
+      x: left,
+      font: `bold 12px ${FONT}`,
+    });
+    layout.grid(
+      { left: left + axisWidth, top: rowTop + 40, width: plotWidth, height: CHART_HEIGHT },
+      {
+        type: "category",
+        data: results.map((result) => result.name),
+        axisLabel: { interval: 0, width: Math.max(24, plotWidth / results.length - 8), overflow: "truncate" },
       },
-      data: categories.map((_, stage) => result.stages[stage]?.averages.ops ?? "-"),
-    })),
-  );
-  layout.top += CHART_HEIGHT + 36;
-  if (options.rankings) rankingTables(context, "ops");
+      { type: "value", min: 0, max, axisLabel: { formatter: (value: number) => format(value) } },
+      results.map((result, series): BarSeriesOption => ({
+        name: result.name,
+        type: "bar",
+        barMaxWidth: 48,
+        barGap: "-100%",
+        itemStyle: { color: colors[series] },
+        label: {
+          show: true,
+          position: "top",
+          fontSize: 10,
+          lineHeight: 14,
+          color: MUTED_COLOR,
+          formatter: () => labels[stage][series],
+        },
+        data: results.map((_, category) => category === series ? stages[stage][series].value ?? "-" : "-"),
+      })),
+    );
+    stages[stage].forEach(({ value }, series) => {
+      if (value !== null) return;
+      layout.top = rowTop + 40 + CHART_HEIGHT / 2;
+      layout.text("N/A", {
+        x: left + axisWidth + plotWidth * (series + 0.5) / results.length - 12,
+        color: MUTED_COLOR,
+      });
+    });
+  }
+  layout.top = top + Math.ceil(stageCount / perRow) * rowHeight;
 }
 
 const CPU_METRICS: readonly CpuMetric[] = ["user", "system", "total"];
@@ -176,7 +238,7 @@ export function cpuSection(context: RenderContext) {
             type: "line",
             step: "end",
             showSymbol: false,
-            lineStyle: { color: colors[index], width: 2 },
+            lineStyle: { color: colors[index], type: "dashed", width: 1 },
             itemStyle: { color: colors[index] },
             data: points,
             markLine: {
@@ -243,7 +305,7 @@ function metricSeries(
     // 在途数是离散采样值，显示采样点以免被误读为连续测量
     showSymbol: metric === "inFlight",
     symbolSize: 4,
-    lineStyle: { color },
+    lineStyle: metric === "cpu" ? { color, type: "dashed", width: 1 } : { color },
     itemStyle: { color },
     data: points,
     markLine: {
@@ -264,7 +326,7 @@ function metricHint(metric: IntervalMetric, stageConcurrencies: number[]): strin
   return better ? BETTER_HINT[better] : undefined;
 }
 
-export function timelineSection(context: RenderContext, metrics: readonly IntervalMetric[], opsRanked: boolean) {
+export function timelineSection(context: RenderContext, metrics: readonly IntervalMetric[]) {
   const { layout, results, colors, options } = context;
   for (const metric of metrics) {
     const info = METRIC_INFO[metric];
@@ -277,7 +339,19 @@ export function timelineSection(context: RenderContext, metrics: readonly Interv
       results.map((result, i) => metricSeries(result, metric, colors[i], context.warmupSeconds)),
     );
     layout.top += CHART_HEIGHT + 40;
-    const duplicate = metric === "ops" && opsRanked;
-    if (options.rankings && info.better && !duplicate && results.length) rankingTables(context, metric);
+    if (metric === "rss") {
+      stageBars(
+        context,
+        "Process RSS per in-flight operation by stage",
+        "MiB / in-flight operation",
+        "lower",
+        (series, stage) => {
+          const averages = results[series].stages[stage]?.averages;
+          if (!averages || averages.rss === null || averages.inFlight === null || averages.inFlight <= 0) return null;
+          return averages.rss / averages.inFlight;
+        },
+      );
+    }
+    if (options.rankings && isInstantMetric(metric) && info.better && results.length) rankingTables(context, metric);
   }
 }

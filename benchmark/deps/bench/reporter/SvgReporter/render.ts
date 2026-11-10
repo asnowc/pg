@@ -70,13 +70,13 @@ async function renderSvgString(input: Omit<SvgReportInput, "path">): Promise<str
   if (hasResults && sections.has("summary")) summarySection(context);
   if (hasResults && sections.has("throughput")) {
     throughputSection(context);
-    timelineSection(context, operationMetrics, options.rankings);
+    timelineSection(context, operationMetrics);
   }
   if (hasResults && sections.has("latency")) latencySection(context);
   if (hasResults && sections.has("distribution")) distributionSection(context);
   if (hasResults && sections.has("resource")) resourceSection(context);
   if (hasResults && sections.has("cpu")) cpuSection(context);
-  if (hasResults && sections.has("memory")) timelineSection(context, memoryMetrics, false);
+  if (hasResults && sections.has("memory")) timelineSection(context, memoryMetrics);
   if (sections.has("notes")) notesSection(context, notes);
   layout.top += 20;
 

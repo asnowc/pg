@@ -118,7 +118,7 @@ bench-cli report results/my-bench --sections summary,latency --latency-columns p
 | `-p, --preset <name>`          | `default`、`compact`、`throughput`、`latency`、`resource`                           |
 | `--section, --sections <list>` | `environment,summary,throughput,latency,distribution,resource,cpu,memory,notes`     |
 | `--metrics <list>`             | 可选曲线：`inFlight,ops,cpu,rss,memoryExtended,arrayBuffers,jsHeap`                 |
-| `--rankings/--no-rankings`     | 是否在吞吐柱状图与内存曲线下方显示各并发档排行，不影响 CPU 柱状图                   |
+| `--rankings/--no-rankings`     | 是否在内存曲线及其相关柱状图下方显示各并发档平均内存排行，不影响柱状图或吞吐量      |
 | `--latency-columns <list>`     | 延迟明细列：`min,p50,p75,p90,p95,p99,p995,p999,max,mean,rme`                        |
 | `--latency-sort <field>`       | 延迟明细的排序与倍数依据，默认 `mean`                                               |
 | `--distribution <list>`        | 延迟分布图的百分位点，例如 `p50,p90,p99,p999`                                       |
@@ -132,19 +132,21 @@ bench-cli report results/my-bench --sections summary,latency --latency-columns p
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `environment`  | 运行时、机器、测试参数、meta 与创建时间                                                                                                                                      |
 | `summary`      | 整个测量窗口的汇总：操作数、错误数、错误率、ops/s、mean/p50/p99                                                                                                              |
-| `throughput`   | 各并发档 ops/s 分组柱状图，以及 `metrics` 选择的 inFlight/ops 时间曲线                                                                                                       |
+| `throughput`   | 各 stage 独立的 ops/s 柱状图，以及 `metrics` 选择的 inFlight/ops 时间曲线；不显示 stage 吞吐排行表                                                                           |
 | `latency`      | 各并发档延迟明细；RME 为 95% 均值置信区间的相对半宽                                                                                                                          |
 | `distribution` | 各 stage 纵向紧凑排列，每系列一根水平延迟增量堆叠条；横轴为延迟（ms），起点为该 stage 所有系列的最小请求延迟，条末为最高选定值                                               |
 | `resource`     | 资源摘要：每请求 User/System/Total CPU（µs），正式测量窗口内时间加权平均 JS Heap、External、ArrayBuffer（MiB）；每请求平均 Total CPU 和平均 RSS 两张柱状图左右并排           |
 | `cpu`          | `metrics` 包含 cpu 时分别显示 User/System/Total CPU 时间差（ms）和 CPU 使用率四张阶梯图；随后各 stage 一张每请求 CPU 堆叠柱状图，每系列一根 User/System 堆叠柱，柱顶为 Total |
-| `memory`       | `metrics` 选择的 rss/memoryExtended/arrayBuffers/jsHeap 快照折线图及可选 stage 排行                                                                                          |
+| `memory`       | `metrics` 选择的 rss/memoryExtended/arrayBuffers/jsHeap 快照折线图及可选 stage 内存排行；RSS 曲线后增加各 stage 平均 RSS / 平均实际在途数柱状图                              |
 | `notes`        | 附注与统计口径                                                                                                                                                               |
 
 - CPU、内存及吞吐/在途时间图的横轴保留运行经过时间，以预热结束为起点，虚线标记 stage 边界。
   延迟分布图的横轴则表示请求耗时。CPU 的不同指标各占一张图，颜色区分系列。
 - 在途数与内存为快照时刻的瞬时值；吞吐曲线为区间完成成功操作数除以区间时长。
-- CPU 的 stage 小图按输入顺序横向排列，空间不足时换行，同组 stage 使用相同纵轴范围。 延迟的 stage
-  按输入顺序纵向紧凑排列，每系列一行，横轴范围由各 stage 的数据决定。
+- 吞吐、CPU 和 RSS / 实际在途数的 stage 小图按输入顺序紧凑横向排列，空间不足时换行，同指标使用相同纵轴范围。 延迟的
+  stage 按输入顺序纵向紧凑排列，每系列一行，横轴范围由各 stage 的数据决定。
+- 吞吐和 RSS / 实际在途数柱顶分两行显示相对该 stage 最低有效值的倍数和平均值，例如 `(1.28x)` 换行 `7,512.44`；
+  倍数和值固定保留两位小数，值带千位分隔。该标注不受 `rankings` 开关影响。
 - 堆叠柱按系列着色，同色系深浅区分增量段，白色描边突出分段边界； CPU 的两段为
   User/System，延迟的各段为相邻选定统计值的增量。
 - Deno 的 `arrayBuffers` 恒为 0（计入 external）；全部系列均报告 0 时省略该曲线，资源摘要显示 N/A，并在附注中说明。
@@ -283,6 +285,7 @@ console.log(result.stageSamples, success.length, failed.length);
   这是整个窗口的进程 CPU 消耗均摊，不是逐个请求独立计时。
 - User CPU、System CPU、Total CPU 分别使用独立阶梯图，展示相邻快照的 CPU 时间差，换算为 ms， 而非从进程启动累计的 CPU
   时间。边界附近采样间隔较短时，区间 CPU 耗时也可能较小。
+- 所有 CPU 时间和使用率曲线采用 1px 细虚线，保留阶梯连接方式，减少多系列重叠时的遮挡。
 - 第四张阶梯图显示 CPU 使用率：`CPU utilization = 区间 Total CPU 时间 / 区间墙钟时间 × 100%`， 以一个逻辑核心为
   100%，可能超过 100%。各图对比全部系列，`--metrics cpu` 同时控制这四张阶梯图。
 - 每 stage 的 CPU 柱状图按系列显示 User/System 两段堆叠，柱顶标注两者之和 Total。
@@ -297,6 +300,9 @@ console.log(result.stageSamples, success.length, failed.length);
   `平均内存 = Σ(右端快照内存 × wᵢ) / Σwᵢ`，最后换算为 MiB。stage 内存排行采用同样的时间加权方式。
 - 无采样覆盖时内存均值为 N/A；完成请求数为零不会使有有效采样覆盖的内存均值失效。 Deno 的 `arrayBuffers` 恒为 0（计入
   external）；全部系列均报告 0 时摘要显示 N/A，并省略该内存曲线。
+- Process RSS 曲线后按 stage 显示 `平均 RSS（MiB）/ 平均实际在途操作数`，单位为 MiB / in-flight operation，
+  越低越好。分子、分母分别按同一正式 stage 窗口作时间加权；不是除以目标并发，也不是逐快照相除后再平均，
+  不扣内存基线。任一均值缺失或平均实际在途数不大于 0 时显示 N/A。仅启用 `memory` 区块和 `rss` 指标时显示。
 
 ### 窗口边界、缺失数据与排行
 
