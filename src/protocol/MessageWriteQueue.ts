@@ -36,8 +36,8 @@ export class QueryWriteQueue {
     }).catch((e) => throwRewrittenError(e));
   }
 
-  sync(onReady?: () => void): void {
-    this.readQueue.enqueueSync(onReady);
+  sync(): void {
+    this.readQueue.enqueueSync();
     this.writer.pushData(FRAME.SYNC);
   }
 

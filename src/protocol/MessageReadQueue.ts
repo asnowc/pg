@@ -34,8 +34,8 @@ export class QueryReadQueue {
     this.pendingQueyNumber = 0;
     this.completedQueryNumber = 0;
   }
-  enqueueSync(onReady?: () => void): void {
-    this.push({ taskType: ReceiverType.Sync, onReady });
+  enqueueSync(): void {
+    this.push({ taskType: ReceiverType.Sync });
   }
   enqueueSimpleQuery(result: QueryResultParser): void {
     this.push(result);
@@ -108,7 +108,6 @@ export class QueryReadQueue {
       this.transactionStatus = status;
       this.pendingQueyNumber -= this.completedQueryNumber;
       this.completedQueryNumber = 0;
-      current.onReady?.();
       if (!this.head) this.onIdle?.();
     });
     parsers.set(BackendMessageCode.BindComplete, (body) => {

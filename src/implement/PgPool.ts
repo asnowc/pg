@@ -1,47 +1,27 @@
-import { PgSession } from "@/protocol.ts";
 import { connectPgSession } from "@/protocol/connect.ts";
-import type {
-  ConnectionSource,
-  PgConnectOptions,
-  PgPoolConnection as IPgPoolConnection,
-} from "@/interface/Connection.ts";
+import type { PgPoolConnection as IPgPoolConnection } from "@/interface/Connection.ts";
 import { PgPoolConnection } from "./PgConnection.ts";
 import { QueryOptions, QueryReader, SingleQueryOperation, SqlStatement } from "@/interface/Query.ts";
 import { createTypedSqlStatement } from "./private/sql_statement.ts";
 import QueryReaderImpl from "./private/QueryReader.ts";
 import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
 import { QueryOptionsWithDecoder } from "@/interface/Query/_internal.ts";
-import { closeByteStream, Pool, PoolPgSession } from "./Pool.ts";
+import {
+  checkOptions,
+  checkTimeout,
+  clearWaitQueue,
+  closeByteStream,
+  getMinQueryNumberSession,
+  PoolPgSession,
+  release,
+  shiftSet,
+  TimeoutChecker,
+  WaitQueueItem,
+} from "./Pool.ts";
+import type { CreatePoolOptions } from "./Pool.ts";
+import { LinkList } from "@/_utils/LinkList.ts";
 
-/**
- * 原生连接池配置。调用方建立流，连接池执行认证。
- * @public
- * @since 0.3.0
- */
-export interface CreatePoolOptions {
-  /**
-   * 每次调用返回一个新的已连接流及认证选项，无需预先执行 PostgreSQL 认证。
-   */
-  create: () => Promise<{ stream: ConnectionSource; connectOptions: PgConnectOptions<ConnectionSource> }>;
-  /**
-   * 最大连接数，默认 3。必须是正整数。
-   */
-  maxCount?: number;
-  /**
-   * 每条连接最多同时承载的池级 query 请求数，默认 1。
-   * 必须是正整数或 Infinity（不限制）；等待到对应 ReadyForQuery 后释放名额。
-   * PostgreSQL 仍顺序执行这些请求。borrow() 借出的连接保持独占，不受此限制。
-   */
-  maxPipeline?: number;
-  /**
-   * 空闲回收时间（毫秒），默认 0（不回收）。
-   */
-  idleTimeout?: number;
-  /**
-   * 创建连接失败时的重试次数，默认 0（不重试）。
-   */
-  createRetry?: number;
-}
+export type { CreatePoolOptions } from "./Pool.ts";
 
 /** @public */
 export class PgPool implements SingleQueryOperation, AsyncDisposable {
@@ -57,11 +37,24 @@ export class PgPool implements SingleQueryOperation, AsyncDisposable {
     this.#maxPipeline = options.maxPipeline ?? 1;
     this.#createRetry = options.createRetry ?? 0;
     this.#createConnection = options.create;
-    this.#poolCore = new Pool(options.idleTimeout ?? 0);
+    this.#timeoutChecker = new TimeoutChecker((time) => {
+      checkTimeout(this.#pool, this.#free, time);
+      return this.#free.size > 0 && !this.closed;
+    }, options.idleTimeout ?? 0);
   }
-  #poolCore: Pool;
+  #pool = new Set<PoolPgSession>();
+  /**
+   * 空闲的连接，未被借用
+   */
+  #free = new Set<PoolPgSession>(); // 空闲的连接
+  /**
+   * 正在执行池级 pipeline 查询的连接
+   */
+  #pipeline = new Set<PoolPgSession>();
+  get connectedCount(): number {
+    return this.#pool.size;
+  }
   #connecting = 0;
-  #pipelineQueue = new Set<PoolPgSession>();
   /** 最大连接数 */
   #maxConnection: number;
   #maxPipeline: number;
@@ -69,14 +62,20 @@ export class PgPool implements SingleQueryOperation, AsyncDisposable {
   #createRetry: number;
   /** 空闲连接数 */
   get idleCount(): number {
-    return this.#poolCore.free.size;
+    return this.#free.size;
   }
   /** 总连接数 */
   get totalCount(): number {
-    return this.#poolCore.connectedCount + this.#connecting;
+    return this.#pool.size + this.#connecting;
   }
-
+  #timeoutChecker: TimeoutChecker;
+  private clearTimer() {
+    this.#timeoutChecker.clearTimer();
+  }
   #createConnection: CreatePoolOptions["create"];
+  #checkCreate() {
+    if (this.totalCount < this.#maxConnection) this.#create();
+  }
   async #create() {
     let session: PoolPgSession;
     this.#connecting++;
@@ -84,107 +83,145 @@ export class PgPool implements SingleQueryOperation, AsyncDisposable {
       const { connectOptions, stream } = await this.#createConnection();
       session = await connectPgSession(stream, connectOptions) as PoolPgSession;
       this.#createRetry = 0;
+      if (this.#destroyed) return closeByteStream(session);
     } catch (e) {
+      if (this.#destroyed) {
+        this.#createRetry = 0;
+        return;
+      }
       this.#createRetry++;
-      if (this.#createRetry < this.#createRetry) this.#create();
+      if (this.#createRetry < this.#createRetry) this.#create(); // 重试
       else {
         this.#createRetry = 0;
-        this.#poolCore.clearWaitQueue(e instanceof Error ? e : new Error(String(e)));
+        clearWaitQueue(this.#waitQueue, e instanceof Error ? e : new Error(String(e)));
+        if (this.#closedWaitingQueueClear && this.totalCount === 1) {
+          this.#closedWaitingQueueClear.resolve();
+        }
       }
       return;
     } finally {
       this.#connecting--;
-      if (this.#closed && this.totalCount === 0 && !this.#poolCore.waitQueue.head) this.#closed.resolve();
     }
-    session.meta = { date: Date.now(), borrowed: false, idle: true };
+    session.meta = { date: Date.now() };
 
-    if (this.#destroyed) {
-      closeByteStream(session);
-      return;
-    }
     session.on("close", () => {
-      this.#poolCore.pool.delete(session);
-      this.#poolCore.free.delete(session);
-      this.#pipelineQueue.delete(session);
-      if (this.#closed && this.totalCount === 0) {
-        this.#poolCore.clearWaitQueue(new Error("Pool is closed"));
-        this.#closed.resolve();
+      this.#pool.delete(session);
+      this.#free.delete(session);
+      this.#pipeline.delete(session);
+      if (this.#closedWaitingQueueClear && this.totalCount === 0) {
+        this.#closedWaitingQueueClear.resolve();
       }
     });
-    session.on("release", () => this.#onRelease(session));
-    session.on("idle", () => this.#onIdle(session));
-    this.#poolCore.addItem(session);
+    session.on("release", () => {
+      if (session.pendingQueyNumber === 0) this.#onSessionFree(session);
+      else this.#pipeline.add(session);
+    });
+    session.on("idle", () => {
+      if (this.#pipeline.delete(session)) {
+        this.#onSessionFree(session);
+      }
+    });
+    this.#pool.add(session);
+    this.#onSessionFree(session);
   }
-  #onRelease(session: PoolPgSession) {
-    session.meta.borrowed = false;
-    if (session.meta.idle) this.#poolCore.freeItem(session);
-  }
-  #onIdle(session: PoolPgSession) {
-    session.meta.idle = true;
-    this.#pipelineQueue.delete(session);
-    if (!session.meta.borrowed) this.#poolCore.freeItem(session);
-  }
-  #onPipelineReady(session: PoolPgSession) {
-    this.#pipelineQueue.delete(session);
-    if (this.closed || session.pendingQueyNumber === 0) return;
-    this.#offerPipelineSlot(session);
-  }
-  #offerPipelineSlot(session: PoolPgSession) {
-    if (session.pendingQueyNumber >= this.#maxPipeline) return;
-    let prev;
-    let item = this.#poolCore.waitQueue.head;
-    while (item) {
-      if (item.pipeline) {
-        session.meta.idle = false;
-        this.#poolCore.waitQueue.remove(item, prev);
-        item.resolve(session);
+
+  #onSessionFree(session: PoolPgSession) {
+    let next = this.#waitQueue.head;
+    if (next) {
+      if (next.pipeline) {
+        this.#pipeline.add(session);
+        do {
+          this.#waitQueue.shift();
+          next.resolve(session);
+          next = this.#waitQueue.head;
+        } while (next && next.pipeline && session.pendingQueyNumber < next.pipeline);
+      } else {
+        this.#waitQueue.shift();
+        next.resolve(session);
         return;
       }
-      prev = item;
-      item = item.next;
+      return;
     }
-    this.#pipelineQueue.add(session);
+    if (this.closed) return void closeByteStream(session);
+    session.meta.date = Date.now();
+    this.#free.add(session);
+    this.#timeoutChecker.setTimeIfNoSet();
   }
 
-  #getSession(resolve: (session: PoolPgSession) => void, reject: (error: unknown) => void): boolean {
+  #getSession(
+    resolve: (session: PoolPgSession) => void,
+    reject: (error: unknown) => void,
+    maxPipeline?: number,
+  ): boolean {
     if (this.closed) throw new Error("Pool is closed");
-
-    if (this.#poolCore.free.size) {
-      const session = shiftSet(this.#poolCore.free);
-      session.meta.borrowed = true;
+    if (this.#free.size) {
+      const session = shiftSet(this.#free);
+      if (maxPipeline) this.#pipeline.add(session);
       resolve(session);
       return true;
     }
-    this.#pushWait({ resolve, reject, pipeline: false });
+    if (maxPipeline) {
+      const minSession = getMinQueryNumberSession(this.#pipeline, maxPipeline);
+      if (minSession) {
+        this.#checkCreate();
+        resolve(minSession);
+        return true;
+      }
+    }
+    this.#waitQueue.push({ pipeline: maxPipeline, resolve, reject });
+    this.#checkCreate();
     return false;
   }
-  #getSessionForPipeLine(resolve: (session: PoolPgSession) => void, reject: (error: unknown) => void): boolean {
-    if (this.closed) throw new Error("Pool is closed");
+  /** 等待队列，存放等待获取连接的请求 */
+  readonly #waitQueue = new LinkList<WaitQueueItem>();
 
-    if (this.#poolCore.free.size) {
-      const session = shiftSet(this.#poolCore.free);
-      session.meta.idle = false;
-      resolve(session);
-      return true;
-    }
-    if (this.#pipelineQueue.size) {
-      const session = shiftSet(this.#pipelineQueue);
-      session.meta.idle = false;
-      resolve(session);
-      return true;
-    }
-    this.#pushWait({ pipeline: true, resolve, reject });
-    return false;
+  #closedWaitingQueueClear?: PromiseWithResolvers<void>;
+  #closed?: true | Promise<void>;
+  get closed(): boolean {
+    return !!(this.#closedWaitingQueueClear || this.#closed);
   }
-  #pushWait(item: {
-    pipeline: boolean;
-    resolve(session: PoolPgSession): void;
-    reject(reason: unknown): void;
-  }) {
-    this.#poolCore.waitQueue.push(item);
-    if (this.totalCount < this.#maxConnection) {
-      this.#create();
+  /** 关闭连接池。关闭后不再接受新的连接请求。Promise 在所有连接关闭后完成。 */
+  async close(): Promise<void> {
+    if (this.#closedWaitingQueueClear) return this.#closedWaitingQueueClear.promise;
+    if (this.#closed) {
+      if (this.#closed === true) return;
+      return this.#closed;
     }
+    this.#closedWaitingQueueClear = Promise.withResolvers();
+    this.clearTimer();
+    if (!this.#waitQueue.head) {
+      const promises: Promise<void>[] = [];
+      for (const item of this.#free) promises.push(item.close().catch(() => item.destroy()));
+      for (const item of this.#pipeline) promises.push(item.close().catch(() => item.destroy()));
+      await Promise.all(promises);
+    }
+    if (this.totalCount === 0) {
+      this.#closedWaitingQueueClear.resolve();
+      this.#closed = true;
+      this.#closedWaitingQueueClear = undefined;
+    } else {
+      await this.#closedWaitingQueueClear.promise;
+      this.#closed = true;
+      this.#closedWaitingQueueClear = undefined;
+    }
+  }
+  #destroyed = false;
+  /** 销毁连接池，立即关闭所有连接并释放资源。 */
+  destroy(): void {
+    this.#destroyed = true;
+    this.#closedWaitingQueueClear ??= Promise.withResolvers();
+    this.clearTimer();
+    this.#pipeline.clear();
+    const error = new Error("Pool is destroyed");
+    this.#closedWaitingQueueClear.resolve();
+    clearWaitQueue(this.#waitQueue, error);
+    for (const session of this.#pool) {
+      session.destroy(error);
+    }
+    this.#free.clear();
+  }
+  [Symbol.asyncDispose](): Promise<void> {
+    return this.close();
   }
 
   /** 借用连接；必须 release() 或使用 using / await using 释放。 */
@@ -193,88 +230,30 @@ export class PgPool implements SingleQueryOperation, AsyncDisposable {
       this.#getSession((session) => resolve(new PgPoolConnection(session, release)), reject);
     });
   }
-
-  #closed?: PromiseWithResolvers<void>;
-  get closed(): boolean {
-    return this.#poolCore.closed;
-  }
-  /** 关闭连接池。关闭后不再接受新的连接请求。Promise 在所有连接关闭后完成。 */
-  async close(): Promise<void> {
-    const promises = this.#poolCore.close();
-    if (!promises) return this.#closed?.promise;
-
-    this.#pipelineQueue.clear();
-    this.#closed = Promise.withResolvers();
-    try {
-      await Promise.all(promises);
-    } catch (e) {
-      this.#closed.reject(e);
-    }
-    if (this.totalCount === 0) this.#closed.resolve();
-    return this.#closed.promise;
-  }
-  #destroyed = false;
-  /** 销毁连接池，立即关闭所有连接并释放资源。 */
-  destroy(): void {
-    this.#destroyed = true;
-    this.#closed ??= Promise.withResolvers();
-    this.#poolCore.closed = true;
-    this.#poolCore.clearTimer();
-    this.#pipelineQueue.clear();
-    const error = new Error("Pool is destroyed");
-    this.#closed.resolve();
-    this.#poolCore.clearWaitQueue(error);
-    for (const session of this.#poolCore.pool) {
-      session.destroy(error);
-    }
-    this.#poolCore.free.clear();
-  }
-  [Symbol.asyncDispose](): Promise<void> {
-    return this.close();
-  }
+  query<T>(queryable: TypedSqlStatement<T>, options?: PoopQueryOptions): QueryReader<T>;
+  query<T>(queryable: SqlStatement, options?: PoopQueryOptions & QueryOptionsWithDecoder): QueryReader<T>;
   query<T>(
     queryable: SqlStatement | TypedSqlStatement<T>,
-    options?: QueryOptions & QueryOptionsWithDecoder,
+    options?: PoopQueryOptions & QueryOptionsWithDecoder,
   ): QueryReader<T> {
     const encoder = createTypedSqlStatement(queryable, options);
     return new QueryReaderImpl<T>(() => {
       return new Promise((resolve, reject) => {
-        this.#getSessionForPipeLine((session) => {
-          const queryWriteQueue = session.queryWriter;
-          const promise = queryWriteQueue.extendedQuery<T>(encoder);
-          queryWriteQueue.sync(() => this.#onPipelineReady(session));
-          this.#offerPipelineSlot(session);
-          promise.then(resolve).catch(reject);
-        }, reject);
+        const maxPipeline = options?.maxPipeline ?? this.#maxPipeline;
+        this.#getSession(
+          (session) => {
+            const queryWriteQueue = session.queryWriter;
+            const promise = queryWriteQueue.extendedQuery<T>(encoder);
+            queryWriteQueue.sync();
+            promise.then(resolve).catch(reject);
+          },
+          reject,
+          maxPipeline,
+        );
       });
     });
   }
 }
-function checkOptions(options: CreatePoolOptions) {
-  if (options.maxCount !== undefined && (!Number.isSafeInteger(options.maxCount) || options.maxCount <= 0)) {
-    throw new RangeError("maxCount must be a positive integer");
-  }
-  if (
-    options.maxPipeline !== undefined && options.maxPipeline !== Infinity &&
-    (!Number.isSafeInteger(options.maxPipeline) || options.maxPipeline <= 0)
-  ) {
-    throw new RangeError("maxPipeline must be a positive integer or Infinity");
-  }
-  if (options.createRetry !== undefined && (!Number.isSafeInteger(options.createRetry) || options.createRetry < 0)) {
-    throw new RangeError("createRetry must be a non-negative integer");
-  }
-  if (options.idleTimeout !== undefined && (!Number.isFinite(options.idleTimeout) || options.idleTimeout < 0)) {
-    throw new RangeError("idleTimeout must be non-negative and finite");
-  }
-}
-
-function shiftSet<T>(set: Set<T>): T {
-  for (const element of set) {
-    set.delete(element);
-    return element;
-  }
-  throw new Error("Set is empty");
-}
-function release(session: PgSession) {
-  session.emit("release");
-}
+export type PoopQueryOptions = QueryOptions & {
+  maxPipeline?: number;
+};
