@@ -33,23 +33,6 @@ export interface SingleQueryOperation {
   query<T>(queryable: TypedSqlStatement<T>, options?: QueryOptions): QueryReader<T>;
   query<T>(queryable: SqlStatement, options?: QueryOptions & QueryOptionsWithDecoder): QueryReader<T>;
 }
-export interface PipelineQueryOperation {
-  /**
-   * 通过 Promise.all 执行流水线查询
-   * 不能通过该方法开启事务。
-   *
-   * @param queryable 单条 SQL 语句。
-   * @since 0.3.0
-   * @example
-   * ```ts
-   * await Promise.all([
-   *   conn.pipeline(sql).getRows(),
-   *   conn.pipeline(sql).getRows(),
-   * ]);
-   * ```
-   */
-  pipeline<T>(queryable: TypedSqlStatement<T> | SqlStatement, options?: QueryOptions): QueryReader<T>;
-}
 
 /**
  * 支持简单查询的操作。

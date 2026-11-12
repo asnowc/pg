@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { connect, PgAuthenticationError, type PgConnectOptions } from "@asla/pg";
+import { connectFromNet, PgAuthenticationError, type PgConnectOptions } from "@asla/pg";
 
 import { PUBLIC_DB_CONNECT_INFO } from "@test/utils/db.ts";
 const TLS_CA_FILE = "./test/fixtures/tls/ca.crt";
@@ -12,7 +12,7 @@ const USER = {
 } as const;
 
 function authenticate(options: Omit<PgConnectOptions<Deno.Conn>, "database"> & { database?: string }) {
-  return connect({
+  return connectFromNet({
     database: PUBLIC_DB_CONNECT_INFO.database,
     hostname: PUBLIC_DB_CONNECT_INFO.hostname,
     port: PUBLIC_DB_CONNECT_INFO.port,
@@ -69,7 +69,7 @@ test("服务端拒绝客户端选择的不支持 SASL 机制", async () => {
   })).rejects.toThrow();
 });
 test("TLS fixture 使用受信 CA 建立连接", async () => {
-  await using db = await connect({
+  await using db = await connectFromNet({
     user: USER.tls,
     hostname: PUBLIC_DB_CONNECT_INFO.hostname,
     port: PUBLIC_DB_CONNECT_INFO.port,

@@ -6,8 +6,8 @@ import { connect as connectTls } from "node:tls";
 import { connect, Socket } from "node:net";
 import { once } from "node:events";
 import { Buffer } from "node:buffer";
-import { PgConnection, PgConnectOptions, PgNetConnectOptions } from "@/interface/Connection.ts";
-import { createSession } from "@/implement.ts";
+import { PgConnectOptions, PgNetConnectOptions } from "@/interface/Connection.ts";
+import { PgConnection } from "@/class/PgConnection.ts";
 
 export class DuplexBufferStream extends BufferReader implements ConnectionStream {
   constructor(private duplex: Duplex, readerBufferSize?: number) {
@@ -94,7 +94,7 @@ export async function connectFromNodeTCP(options: PgNetConnectOptions): Promise<
     const socket = connect({ port, host: hostname }, () => resolve(socket));
     socket.on("error", reject);
   });
-  return createSession(socket, {
+  return PgConnection.connect(socket, {
     ...rest,
     encryption: options.encryption?.map(mapEncryption),
   });

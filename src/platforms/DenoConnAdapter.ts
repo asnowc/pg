@@ -1,8 +1,8 @@
 import type { ConnectionStream } from "@/_utils/ConnectionStream.ts";
 import { InternalError } from "@/_utils/error.ts";
 import { BufferReader } from "@/_utils/StreamReader.ts";
-import type { PgConnection, PgConnectOptions, PgNetConnectOptions, PrunedDenoConn } from "@/interface/Connection.ts";
-import { createSession } from "@/implement.ts";
+import type { PgConnectOptions, PgNetConnectOptions, PrunedDenoConn } from "@/interface/Connection.ts";
+import { PgConnection } from "@/class/PgConnection.ts";
 
 const textDecoder = new TextDecoder();
 
@@ -65,7 +65,7 @@ export async function connectFromDenoTCP(options: PgNetConnectOptions): Promise<
   const { hostname, port, encryption, ...rest } = options;
 
   const stream = await Deno.connect({ hostname, port });
-  return createSession(stream, { ...rest, encryption: encryption?.map(mapEncryption) });
+  return PgConnection.connect(stream, { ...rest, encryption: encryption?.map(mapEncryption) });
 }
 
 function mapEncryption(

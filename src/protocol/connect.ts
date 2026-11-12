@@ -9,7 +9,7 @@ import { ConnectionStream, writeData } from "@/_utils/ConnectionStream.ts";
 import { ConnectionSource } from "@asla/pg";
 import { createConnectionStream } from "@/platforms/createConnectionStream.ts";
 
-export async function startAuth<T extends ConnectionSource>(
+async function startAuth<T extends ConnectionSource>(
   source: T,
   options: PgConnectOptions<T>,
 ): Promise<{ source: ConnectionSource; stream: ConnectionStream; authResult: AuthenticationResult }> {

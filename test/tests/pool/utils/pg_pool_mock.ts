@@ -1,16 +1,8 @@
 import { vi } from "vitest";
-import { type CreatePoolOptions, PgPool } from "@asla/pg";
+import { type CreatePoolOptions, type PgConnection, PgPool } from "@asla/pg";
+import { createPgConnection } from "@/class/PgConnection.ts";
 import { EventEmitter } from "@/_utils/EventEmitter.ts";
-
-const { connectSession } = vi.hoisted(() => ({
-  connectSession: vi.fn<() => Promise<MockSession>>(),
-}));
-
-export { connectSession };
-
-vi.mock("@/protocol/connect.ts", () => ({
-  connectPgSession: connectSession,
-}));
+import { PgSession } from "@/protocol.ts";
 
 type MockResult = { rows: unknown[]; notices: string[]; rowCount: number };
 
@@ -65,27 +57,15 @@ export class MockSession extends EventEmitter {
   }
 }
 
-export const pools = new Set<PgPool>();
+export function createMockConnection(sessions: MockSession[]): PgConnection {
+  const session = new MockSession(sessions.length + 1);
+  sessions.push(session);
+  return createPgConnection(session as unknown as PgSession);
+}
 
 export function createHarness(options: Omit<CreatePoolOptions, "create"> = {}) {
   const sessions: MockSession[] = [];
-  connectSession.mockReset();
-  connectSession.mockImplementation(async () => {
-    const session = new MockSession(sessions.length + 1);
-    sessions.push(session);
-    return session;
-  });
-  const source = {
-    stream: {
-      close() {},
-      read: async () => null,
-      write: async (data: Uint8Array) => data.length,
-      closeWrite: async () => {},
-    },
-    connectOptions: { user: "test", database: "test" },
-  };
-  const create = vi.fn(async () => source);
+  const create = vi.fn<CreatePoolOptions["create"]>(async () => createMockConnection(sessions));
   const pool = new PgPool({ ...options, create });
-  pools.add(pool);
-  return { pool, sessions, create, source };
+  return { pool, sessions, create };
 }

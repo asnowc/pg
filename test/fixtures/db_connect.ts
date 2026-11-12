@@ -1,5 +1,5 @@
 import { test as viTest } from "vitest";
-import { connect, DbManage, type DbQueryPool, type PgConnection, PgDbQueryPool, PgPool } from "@asla/pg";
+import { connectFromNet, DbManage, type DbQueryPool, type PgConnection, PgDbQueryPool, PgPool } from "@asla/pg";
 import process from "node:process";
 import { DB_CONNECT_INFO, PUBLIC_DB_CONNECT_INFO } from "@test/utils/db.ts";
 
@@ -40,7 +40,7 @@ export const test = viTest.extend<BaseContext>({
     await use(conn);
   },
   async conn({}, use) {
-    await using connection = await connect(PUBLIC_DB_CONNECT_INFO);
+    await using connection = await connectFromNet(PUBLIC_DB_CONNECT_INFO);
     connection.finished.catch((err) => {
       console.error(err);
     });
@@ -48,20 +48,7 @@ export const test = viTest.extend<BaseContext>({
   },
   async pool({}, use) {
     await using dbPool = new PgPool({
-      create: async () => {
-        const stream = await Deno.connect({
-          hostname: PUBLIC_DB_CONNECT_INFO.hostname,
-          port: PUBLIC_DB_CONNECT_INFO.port,
-        });
-        return {
-          stream: stream,
-          connectOptions: {
-            user: PUBLIC_DB_CONNECT_INFO.user,
-            database: PUBLIC_DB_CONNECT_INFO.database,
-            password: PUBLIC_DB_CONNECT_INFO.password,
-          },
-        };
-      },
+      create: () => connectFromNet(PUBLIC_DB_CONNECT_INFO),
     });
     await use(dbPool);
   },
@@ -84,23 +71,10 @@ function getManage() {
 }
 export function createPool() {
   const dbPool = new PgPool({
-    create: async () => {
-      const stream = await Deno.connect({
-        hostname: PUBLIC_DB_CONNECT_INFO.hostname,
-        port: PUBLIC_DB_CONNECT_INFO.port,
-      });
-      return {
-        stream: stream,
-        connectOptions: {
-          user: PUBLIC_DB_CONNECT_INFO.user,
-          database: PUBLIC_DB_CONNECT_INFO.database,
-          password: PUBLIC_DB_CONNECT_INFO.password,
-        },
-      };
-    },
+    create: () => connectFromNet(PUBLIC_DB_CONNECT_INFO),
   });
   return dbPool;
 }
 export function createConn() {
-  return connect(PUBLIC_DB_CONNECT_INFO);
+  return connectFromNet(PUBLIC_DB_CONNECT_INFO);
 }

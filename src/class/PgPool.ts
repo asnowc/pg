@@ -1,6 +1,4 @@
-import { connectPgSession } from "@/protocol/connect.ts";
-import type { PgPoolConnection as IPgPoolConnection } from "@/interface/Connection.ts";
-import { PgPoolConnection } from "./PgConnection.ts";
+import { createPgPoolConnection, getSessionFromPgConnection, PgPoolConnection } from "./PgConnection.ts";
 import { QueryOptions, QueryReader, SingleQueryOperation, SqlStatement } from "@/interface/Query.ts";
 import { createTypedSqlStatement } from "./private/sql_statement.ts";
 import QueryReaderImpl from "./private/QueryReader.ts";
@@ -80,8 +78,8 @@ export class PgPool implements SingleQueryOperation, AsyncDisposable {
     let session: PoolPgSession;
     this.#connecting++;
     try {
-      const { connectOptions, stream } = await this.#createConnection();
-      session = await connectPgSession(stream, connectOptions) as PoolPgSession;
+      const connection = await this.#createConnection();
+      session = getSessionFromPgConnection(connection) as PoolPgSession;
       this.#createRetry = 0;
       if (this.#destroyed) return closeByteStream(session);
     } catch (e) {
@@ -225,9 +223,9 @@ export class PgPool implements SingleQueryOperation, AsyncDisposable {
   }
 
   /** 借用连接；必须 release() 或使用 using / await using 释放。 */
-  borrow(): Promise<IPgPoolConnection> {
+  borrow(): Promise<PgPoolConnection> {
     return new Promise((resolve, reject) => {
-      this.#getSession((session) => resolve(new PgPoolConnection(session, release)), reject);
+      this.#getSession((session) => resolve(createPgPoolConnection(session, release)), reject);
     });
   }
   query<T>(queryable: TypedSqlStatement<T>, options?: PoopQueryOptions): QueryReader<T>;

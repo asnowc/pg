@@ -1,5 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { connectSession, createHarness, MockSession, pools } from "./utils/pg_pool_mock.ts";
+import type { PgConnection } from "@asla/pg";
+import { createHarness, createMockConnection, MockSession } from "./utils/pg_pool_mock.ts";
 
 async function expectPending(promise: Promise<unknown>) {
   const settled = vi.fn();
@@ -8,18 +9,7 @@ async function expectPending(promise: Promise<unknown>) {
   expect(settled).not.toHaveBeenCalled();
 }
 
-afterEach(() => {
-  try {
-    for (const pool of pools) pool.destroy();
-    for (const pool of pools) {
-      expect(pool.totalCount).toBe(0);
-      expect(pool.idleCount).toBe(0);
-    }
-  } finally {
-    pools.clear();
-    vi.useRealTimers();
-  }
-});
+afterEach(() => vi.useRealTimers());
 
 test("惰性建连，空池关闭和重复关闭不会创建连接", async () => {
   const { pool, create } = createHarness();
@@ -87,8 +77,8 @@ test("关闭期间继续满足已排队的借用请求，最后一次归还后�
 });
 
 test("建连过程中关闭，成功建连后仍完成已有借用再关闭", async () => {
-  const { pool, create, source } = createHarness();
-  const creating = Promise.withResolvers<typeof source>();
+  const { pool, create, sessions } = createHarness();
+  const creating = Promise.withResolvers<PgConnection>();
   create.mockReturnValueOnce(creating.promise);
   const borrowing = pool.borrow();
   expect(pool.totalCount).toBe(1);
@@ -96,7 +86,7 @@ test("建连过程中关闭，成功建连后仍完成已有借用再关闭", as
   const closing = pool.close();
   await expectPending(closing);
 
-  creating.resolve(source);
+  creating.resolve(createMockConnection(sessions));
   const connection = await borrowing;
   await expectPending(closing);
   connection.release();
@@ -105,8 +95,8 @@ test("建连过程中关闭，成功建连后仍完成已有借用再关闭", as
 });
 
 test("关闭期间建连失败会拒绝借用请求并完成关闭", async () => {
-  const { pool, create, source } = createHarness();
-  const creating = Promise.withResolvers<typeof source>();
+  const { pool, create } = createHarness();
+  const creating = Promise.withResolvers<PgConnection>();
   create.mockReturnValueOnce(creating.promise);
   const borrowing = pool.borrow();
   const failed = expect(borrowing).rejects.toThrow("Connection failed");
@@ -119,9 +109,9 @@ test("关闭期间建连失败会拒绝借用请求并完成关闭", async () =>
 });
 
 test("一条连接创建失败不会提前结束对其他借用连接的关闭等待", async () => {
-  const { pool, create, source } = createHarness({ maxCount: 2 });
+  const { pool, create } = createHarness({ maxCount: 2 });
   const connection = await pool.borrow();
-  const creating = Promise.withResolvers<typeof source>();
+  const creating = Promise.withResolvers<PgConnection>();
   create.mockReturnValueOnce(creating.promise);
   const borrowing = pool.borrow();
   const failed = expect(borrowing).rejects.toThrow("Connection failed");
@@ -220,15 +210,15 @@ test("destroy 拒绝等待请求和在途查询，并可重复调用", async () 
 });
 
 test("destroy 后才完成的建连会被关闭，不会重新加入池", async () => {
-  const { pool, create, source, sessions } = createHarness();
-  const creating = Promise.withResolvers<typeof source>();
+  const { pool, create, sessions } = createHarness();
+  const creating = Promise.withResolvers<PgConnection>();
   create.mockReturnValueOnce(creating.promise);
   const borrowing = pool.borrow();
   const failed = expect(borrowing).rejects.toThrow("Pool is destroyed");
   pool.destroy();
   await failed;
 
-  creating.resolve(source);
+  creating.resolve(createMockConnection(sessions));
   await vi.waitFor(() => expect(sessions[0]?.close).toHaveBeenCalledTimes(1));
   expect(pool.totalCount).toBe(0);
   expect(pool.idleCount).toBe(0);
@@ -354,19 +344,19 @@ test("pipeline 的写端关闭完成后仍等待所有在途查询和 close 事�
 });
 
 test("多条连接乱序完成建连，关闭必须等待全部借用归还", async () => {
-  const { pool, create, source } = createHarness({ maxCount: 2 });
-  const firstCreating = Promise.withResolvers<typeof source>();
-  const secondCreating = Promise.withResolvers<typeof source>();
+  const { pool, create, sessions } = createHarness({ maxCount: 2 });
+  const firstCreating = Promise.withResolvers<PgConnection>();
+  const secondCreating = Promise.withResolvers<PgConnection>();
   create.mockReturnValueOnce(firstCreating.promise).mockReturnValueOnce(secondCreating.promise);
   const firstBorrowing = pool.borrow();
   const secondBorrowing = pool.borrow();
   expect(pool.totalCount).toBe(2);
   const closing = pool.close();
 
-  secondCreating.resolve(source);
+  secondCreating.resolve(createMockConnection(sessions));
   const first = await firstBorrowing;
   await expectPending(closing);
-  firstCreating.resolve(source);
+  firstCreating.resolve(createMockConnection(sessions));
   const second = await secondBorrowing;
   expect(second.processId).not.toBe(first.processId);
   first.release();
@@ -378,9 +368,9 @@ test("多条连接乱序完成建连，关闭必须等待全部借用归还", as
 });
 
 test("所有并行建连失败时，最后一个失败任务结束后关闭才完成", async () => {
-  const { pool, create, source } = createHarness({ maxCount: 2 });
-  const firstCreating = Promise.withResolvers<typeof source>();
-  const secondCreating = Promise.withResolvers<typeof source>();
+  const { pool, create } = createHarness({ maxCount: 2 });
+  const firstCreating = Promise.withResolvers<PgConnection>();
+  const secondCreating = Promise.withResolvers<PgConnection>();
   create.mockReturnValueOnce(firstCreating.promise).mockReturnValueOnce(secondCreating.promise);
   const firstBorrowing = pool.borrow();
   const secondBorrowing = pool.borrow();
@@ -399,10 +389,10 @@ test("所有并行建连失败时，最后一个失败任务结束后关闭才�
   expect(pool.totalCount).toBe(0);
 });
 
-test("认证失败后计数归零，新请求仍可重新建连", async () => {
+test("连接工厂失败后计数归零，新请求仍可重新建连", async () => {
   const { pool, sessions, create } = createHarness();
-  connectSession.mockRejectedValueOnce(new Error("Authentication failed"));
-  await expect(pool.borrow()).rejects.toThrow("Authentication failed");
+  create.mockRejectedValueOnce(new Error("Connection failed"));
+  await expect(pool.borrow()).rejects.toThrow("Connection failed");
   expect(pool.totalCount).toBe(0);
   expect(pool.closed).toBe(false);
 
@@ -413,15 +403,15 @@ test("认证失败后计数归零，新请求仍可重新建连", async () => {
   await pool.close();
 });
 
-test("关闭期间认证失败会拒绝等待请求并完成关闭", async () => {
-  const { pool } = createHarness();
-  const authenticating = Promise.withResolvers<MockSession>();
-  connectSession.mockReturnValueOnce(authenticating.promise);
+test("关闭期间连接工厂失败会拒绝等待请求并完成关闭", async () => {
+  const { pool, create } = createHarness();
+  const creating = Promise.withResolvers<PgConnection>();
+  create.mockReturnValueOnce(creating.promise);
   const borrowing = pool.borrow();
-  const failed = expect(borrowing).rejects.toThrow("Authentication failed");
-  await vi.waitFor(() => expect(connectSession).toHaveBeenCalledTimes(1));
+  const failed = expect(borrowing).rejects.toThrow("Connection failed");
+  await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(1));
   const closing = pool.close();
-  authenticating.reject(new Error("Authentication failed"));
+  creating.reject(new Error("Connection failed"));
   await Promise.all([failed, closing]);
   expect(pool.totalCount).toBe(0);
 });
@@ -488,41 +478,36 @@ test("建连前 destroy 不创建连接，并拒绝已有未消费 reader", asyn
   expect(pool.closed).toBe(true);
 });
 
-test.each(["create", "authenticate"] as const)("destroy 后 %s 阶段失败不会重新建连", async (stage) => {
-  const { pool, create, source } = createHarness();
-  const creating = Promise.withResolvers<typeof source>();
-  const authenticating = Promise.withResolvers<MockSession>();
-  if (stage === "create") create.mockReturnValueOnce(creating.promise);
-  else connectSession.mockReturnValueOnce(authenticating.promise);
+test("destroy 后 create promise 失败不会触发重试", async () => {
+  const { pool, create } = createHarness();
+  const creating = Promise.withResolvers<PgConnection>();
+  create.mockReturnValueOnce(creating.promise);
   const borrowing = pool.borrow();
   const failed = expect(borrowing).rejects.toThrow("Pool is destroyed");
-  if (stage === "authenticate") {
-    await vi.waitFor(() => expect(connectSession).toHaveBeenCalledTimes(1));
-  }
   pool.destroy();
   await failed;
 
-  if (stage === "create") creating.reject(new Error("Late failure"));
-  else authenticating.reject(new Error("Late failure"));
+  creating.reject(new Error("Late failure"));
   await vi.waitFor(() => expect(pool.totalCount).toBe(0));
   await pool.close();
   expect(create).toHaveBeenCalledTimes(1);
 });
 
-test("destroy 后才完成的认证 session 会关闭而不会入池", async () => {
-  const { pool, sessions } = createHarness();
-  const authenticating = Promise.withResolvers<MockSession>();
-  connectSession.mockReturnValueOnce(authenticating.promise);
+test("destroy 后才完成的 create connection 会关闭而不会入池", async () => {
+  const { pool, create, sessions } = createHarness();
+  const creating = Promise.withResolvers<PgConnection>();
+  create.mockReturnValueOnce(creating.promise);
   const borrowing = pool.borrow();
   const failed = expect(borrowing).rejects.toThrow("Pool is destroyed");
-  await vi.waitFor(() => expect(connectSession).toHaveBeenCalledTimes(1));
+  await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(1));
   pool.destroy();
   await failed;
 
-  const session = new MockSession(99);
-  authenticating.resolve(session);
+  const connection = createMockConnection(sessions);
+  const session = sessions[0];
+  creating.resolve(connection);
   await vi.waitFor(() => expect(session.close).toHaveBeenCalledTimes(1));
-  expect(sessions).toHaveLength(0);
+  expect(sessions).toHaveLength(1);
   expect(pool.totalCount).toBe(0);
 });
 
@@ -598,14 +583,14 @@ test("查询失败与 idle 分离时，不会将尚未恢复的连接交给借�
 });
 
 test("连接数上限包括建连任务，多余借用请求按队列顺序复用连接", async () => {
-  const { pool, create, source } = createHarness({ maxCount: 1 });
-  const creating = Promise.withResolvers<typeof source>();
+  const { pool, create, sessions } = createHarness({ maxCount: 1 });
+  const creating = Promise.withResolvers<PgConnection>();
   create.mockReturnValueOnce(creating.promise);
   const borrowings = Array.from({ length: 5 }, () => pool.borrow());
   expect(create).toHaveBeenCalledTimes(1);
   expect(pool.totalCount).toBe(1);
   expect(pool.connectedCount).toBe(0);
-  creating.resolve(source);
+  creating.resolve(createMockConnection(sessions));
   const order: number[] = [];
   const releasing = borrowings.map(async (borrowing, index) => {
     const connection = await borrowing;

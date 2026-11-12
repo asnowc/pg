@@ -10,7 +10,7 @@ import {
   SqlLike,
   sqlLikeToString,
 } from "#abstract";
-import type { PgConnection as Connection } from "@/interface/Connection.ts";
+import { PgConnection as Connection } from "@/class.ts";
 
 export class PgConnection extends DbQuery implements DbConnection, DbQueryBase {
   constructor(connection: Connection) {

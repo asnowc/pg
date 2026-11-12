@@ -1,6 +1,6 @@
 import { PgSession } from "@/protocol.ts";
 import { eachLink, LinkList } from "@/_utils/LinkList.ts";
-import type { ConnectionSource, PgConnectOptions } from "@/interface/Connection.ts";
+import { PgConnection } from "@/class/PgConnection.ts";
 
 /**
  * 原生连接池配置。调用方建立流，连接池执行认证。
@@ -11,7 +11,7 @@ export interface CreatePoolOptions {
   /**
    * 每次调用返回一个新的已连接流及认证选项，无需预先执行 PostgreSQL 认证。
    */
-  create: () => Promise<{ stream: ConnectionSource; connectOptions: PgConnectOptions<ConnectionSource> }>;
+  create: () => Promise<PgConnection>;
   /**
    * 最大连接数，默认 3。必须是正整数。
    */

@@ -16,7 +16,7 @@ import { PgConnection as LegacyPgConnection } from "./_PgConnection.ts";
 import { parserDbConnectUrl } from "./connect.ts";
 import type { DbConnectOption } from "./connect.ts";
 import type { TransactionMode } from "@/interface/Query.ts";
-import type { PgConnection } from "@/interface/Connection.ts";
+import { PgConnection } from "@/class.ts";
 /**
  * @public
  * @deprecated 请直接使用 `PgConnection`，或在应用层管理原生连接池。

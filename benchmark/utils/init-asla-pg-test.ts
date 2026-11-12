@@ -1,7 +1,6 @@
 import { ConnectHandler, PoolHandler, PoolQueryTest, QueryTest, TestQueries } from "./common.ts";
 import { DB_CONNECT_INFO } from "../utils/db.ts";
 import type { PgConnection, PgPool } from "@asla/pg";
-import { connect as nodeConnect } from "node:net";
 
 const BUFFER_DATA = Buffer.from("awesome");
 const JSON_DATA = [{ some: "json" }, { array: "object" }];
@@ -11,7 +10,7 @@ export function initTest(
     createSqlBuilder,
     JS_DATA_ENCODER_V1,
     PG_DATA_DECODER_V1,
-    connect: rawConnect,
+    connectFromNet,
     connectFromNodeTCP,
     PgPool,
   }: typeof import("@asla/pg"),
@@ -19,7 +18,7 @@ export function initTest(
   node = false,
 ) {
   const sql = createSqlBuilder(JS_DATA_ENCODER_V1, PG_DATA_DECODER_V1);
-  const c = node ? connectFromNodeTCP : rawConnect;
+  const c = node ? connectFromNodeTCP : connectFromNet;
   function connect() {
     return c({
       hostname: DB_CONNECT_INFO.host,
@@ -67,25 +66,14 @@ export function initTest(
         maxCount: poolSize,
         maxPipeline: 100,
         create: async () => {
-          const conn = node
-            ? await new Promise<import("node:net").Socket>((resolve, reject) => {
-              const socket = nodeConnect({ host: DB_CONNECT_INFO.host, port: DB_CONNECT_INFO.port });
-              socket.once("error", reject);
-              socket.once("connect", () => {
-                socket.off("error", reject);
-                resolve(socket);
-              });
-            })
-            : await Deno.connect({ hostname: DB_CONNECT_INFO.host, port: DB_CONNECT_INFO.port });
-          conn.setNoDelay(true);
-          return {
-            stream: conn,
-            connectOptions: {
-              user: DB_CONNECT_INFO.user,
-              database: DB_CONNECT_INFO.database,
-              password: DB_CONNECT_INFO.password,
-            },
-          };
+          const conn = await c({
+            database: DB_CONNECT_INFO.database,
+            hostname: DB_CONNECT_INFO.host,
+            port: DB_CONNECT_INFO.port,
+            user: DB_CONNECT_INFO.user,
+            password: DB_CONNECT_INFO.password,
+          });
+          return conn;
         },
       }),
     closePool: (pool) => pool.close(),
