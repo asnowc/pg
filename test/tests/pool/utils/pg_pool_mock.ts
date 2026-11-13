@@ -11,14 +11,15 @@ export class MockSession extends EventEmitter {
   constructor(readonly processId: number) {
     super();
   }
-  pendingQueyNumber = 0;
+  get pendingQueyNumber() {
+    return this.queries.length;
+  }
   closed = false;
   queries: PromiseWithResolvers<MockResult>[] = [];
   queryWriter = {
     extendedQuery: vi.fn(() => {
       const query = Promise.withResolvers<MockResult>();
       this.queries.push(query);
-      this.pendingQueyNumber++;
       return query.promise;
     }),
     sync: vi.fn(),
@@ -31,20 +32,18 @@ export class MockSession extends EventEmitter {
     this.closed = true;
     for (const query of this.queries) query.reject(error ?? new Error("Session destroyed"));
     this.queries = [];
-    this.pendingQueyNumber = 0;
     this.emit("close", undefined);
   });
 
   completeQuery(error?: Error) {
-    const query = this.queries.shift();
+    const query = this.queries[0];
     if (!query) throw new Error("No pending query");
     if (error) query.reject(error);
     else query.resolve({ rows: [], notices: [], rowCount: 0 });
   }
 
   readyQuery() {
-    if (this.pendingQueyNumber === 0) throw new Error("No pending query");
-    this.pendingQueyNumber--;
+    if (!this.queries.shift()) throw new Error("No pending query");
     if (this.pendingQueyNumber === 0) {
       this.emit("idle", undefined);
       if (this.closed) this.emit("close", undefined);
@@ -56,16 +55,18 @@ export class MockSession extends EventEmitter {
     this.readyQuery();
   }
 }
-
-export function createMockConnection(sessions: MockSession[]): PgConnection {
-  const session = new MockSession(sessions.length + 1);
-  sessions.push(session);
-  return createPgConnection(session as unknown as PgSession);
+export function createMockConnection(id: number) {
+  const session = new MockSession(id);
+  return { session, conn: createPgConnection(session as unknown as PgSession) };
 }
 
 export function createHarness(options: Omit<CreatePoolOptions, "create"> = {}) {
   const sessions: MockSession[] = [];
-  const create = vi.fn<CreatePoolOptions["create"]>(async () => createMockConnection(sessions));
+  const create = vi.fn<CreatePoolOptions["create"]>(async () => {
+    const session = new MockSession(sessions.length + 1);
+    sessions.push(session);
+    return createPgConnection(session as unknown as PgSession);
+  });
   const pool = new PgPool({ ...options, create });
   return { pool, sessions, create };
 }
