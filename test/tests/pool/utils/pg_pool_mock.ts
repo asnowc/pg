@@ -15,7 +15,7 @@ export class MockSession extends EventEmitter {
     return this.queries.length;
   }
   closed = false;
-  queries: PromiseWithResolvers<MockResult>[] = [];
+  private queries: PromiseWithResolvers<MockResult>[] = [];
   queryWriter = {
     extendedQuery: vi.fn(() => {
       const query = Promise.withResolvers<MockResult>();

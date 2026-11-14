@@ -1,8 +1,8 @@
-import { StreamReader } from "@/_utils/StreamReader.ts";
+import { ReadableBuffer } from "@/_utils/ReadBuffer.ts";
 import { InternalError, PgProtocolError } from "@/_utils/error.ts";
 
 export interface MessageParser<T = unknown> {
-  next(reader: StreamReader, remainingByteLength: number): T | undefined;
+  next(reader: ReadableBuffer, remainingByteLength: number): T | undefined;
   reset(): void;
 }
 
@@ -33,7 +33,7 @@ export class MessageParsers {
   };
   private parser?: MessageParser;
   /** 如果 next 出错，需要重新初始化 MessageParsers，才能继续正确解析消息 */
-  next(reader: StreamReader) {
+  next(reader: ReadableBuffer) {
     while (reader.readableLength) {
       if (!this.parser) {
         if (reader.readableLength < 5) return;
@@ -73,7 +73,7 @@ export class MessageParsers {
   }
 }
 
-function decodeMessageLength(reader: StreamReader, maxLength: number) {
+function decodeMessageLength(reader: ReadableBuffer, maxLength: number) {
   const messageLength = reader.view.getUint32(reader.readableStart);
   reader.readableStart += 4;
   if (messageLength < 4) {
@@ -92,7 +92,7 @@ class MessageFullParser implements MessageParser {
   reset(): void {
     this.bodyChunks = undefined;
   }
-  next(reader: StreamReader, remainingByteLength: number): void {
+  next(reader: ReadableBuffer, remainingByteLength: number): void {
     const readableLength = reader.readableLength;
 
     if (readableLength >= remainingByteLength && !this.bodyChunks) {

@@ -11,7 +11,7 @@ import {
   ExecuteMessageEncoder,
   ParseMessageEncoder,
   QueryMessageEncoder,
-} from "./encoder/ExtendedQuery.ts";
+} from "./encode.ts";
 import { BufferWriterQueue } from "@/_utils/BufferWriterQueue.ts";
 import { TerminateFrame } from "@/protocol/encoder/Message.ts";
 

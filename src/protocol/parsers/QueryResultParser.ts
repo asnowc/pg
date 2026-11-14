@@ -1,12 +1,7 @@
 import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
-import {
-  DataRowDecoder,
-  decodeCommandComplete,
-  DecodeRowDescriptionResult,
-  RowDescriptionDecoder,
-} from "@/protocol.ts";
+import { DataRowDecoder, decodeCommandComplete, DecodeRowDescriptionResult, RowDescriptionDecoder } from "../decode.ts";
 import { ReceiverType } from "./QueryTask.ts";
-import { StreamReader } from "@/_utils/StreamReader.ts";
+import { ReadableBuffer } from "@/_utils/ReadBuffer.ts";
 import { PgColumnDataDecoder } from "@/interface/pg_data_decoder.ts";
 
 export class QueryResultParser<D = unknown> {
@@ -23,7 +18,7 @@ export class QueryResultParser<D = unknown> {
   rows: D[] = [];
   notices: string[] = [];
   rowCount?: number;
-  dataRow(reader: StreamReader, remainingByteLength: number) {
+  dataRow(reader: ReadableBuffer, remainingByteLength: number) {
     if (this.failed || !this.dataRowDecoder) return this.skipData(reader, remainingByteLength);
     let row: unknown;
     const start = reader.readableStart;
@@ -41,7 +36,7 @@ export class QueryResultParser<D = unknown> {
   }
   private readonly rowDescriptionDecoder = new RowDescriptionDecoder();
 
-  rowDescription(reader: StreamReader, remainingByteLength: number) {
+  rowDescription(reader: ReadableBuffer, remainingByteLength: number) {
     if (this.failed) return this.skipData(reader, remainingByteLength);
     const statement = this.statement;
     if (!statement.getResultDecoder) {
@@ -53,7 +48,7 @@ export class QueryResultParser<D = unknown> {
     const decoders: PgColumnDataDecoder[] = this.fields.map((item) => statement.getResultDecoder!(item));
     this.dataRowDecoder = new DataRowDecoder(decoders, this.fields);
   }
-  private skipData(reader: StreamReader, remainingByteLength: number) {
+  private skipData(reader: ReadableBuffer, remainingByteLength: number) {
     if (reader.readableLength < remainingByteLength) reader.readableStart = reader.readableEnd;
     else reader.readableStart += remainingByteLength;
   }

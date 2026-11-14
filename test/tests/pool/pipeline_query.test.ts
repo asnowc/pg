@@ -1,7 +1,6 @@
 import { expect, test, vi } from "vitest";
 import { createHarness } from "./utils/pg_pool_mock.ts";
-import { PgPool } from "@/class/PgPool.ts";
-import { poolForTest } from "@/class/PgPoolForTest.ts";
+
 async function expectPending(promise: Promise<unknown>) {
   const settled = vi.fn();
   void promise.then(settled, settled);

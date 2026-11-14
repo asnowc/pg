@@ -116,9 +116,6 @@ export function shiftSet<T>(set: Set<T>): T {
   }
   throw new Error("Set is empty");
 }
-export function release(session: PgSession) {
-  session.emit("release");
-}
 
 export function getMinQueryNumberSession(pool: Set<PoolPgSession>, maxPipeline: number) {
   let minSession: PoolPgSession | undefined;

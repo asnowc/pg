@@ -1,5 +1,13 @@
 import { test as viTest } from "vitest";
-import { connectFromNet, DbManage, type DbQueryPool, type PgConnection, PgDbQueryPool, PgPool } from "@asla/pg";
+import {
+  connectFromNet,
+  DbManage,
+  type DbQueryPool,
+  type PgConnection,
+  PgDbQueryPool,
+  PgPool,
+  SingleQueryOperation,
+} from "@asla/pg";
 import process from "node:process";
 import { DB_CONNECT_INFO, PUBLIC_DB_CONNECT_INFO } from "@test/utils/db.ts";
 
@@ -77,4 +85,26 @@ export function createPool() {
 }
 export function createConn() {
   return connectFromNet(PUBLIC_DB_CONNECT_INFO);
+}
+
+export const PUBLIC_TABLE = {
+  name: "test_public",
+  columns: {
+    id: "id",
+    c: "c",
+  },
+};
+export function getPublicTestTableById(conn: SingleQueryOperation, id: string) {
+  return conn.query<{ id: number; c: string }>(
+    `SELECT * FROM ${PUBLIC_TABLE.name} WHERE ${PUBLIC_TABLE.columns.id} = '${id}'`,
+  ).firstRow();
+}
+export function createPublicTestTable(conn: SingleQueryOperation) {
+  return conn.query(
+    `CREATE TABLE IF NOT EXISTS ${PUBLIC_TABLE.name} (${PUBLIC_TABLE.columns.id} SERIAL PRIMARY KEY, ${PUBLIC_TABLE.columns.c} VARCHAR)`,
+  );
+}
+export function insetPublicTable(data: string[]) {
+  const values = data.map((d) => `('${d}')`).join(",");
+  return `INSERT INTO ${PUBLIC_TABLE.name} (${PUBLIC_TABLE.columns.c}) VALUES ${values} RETURNING *`;
 }

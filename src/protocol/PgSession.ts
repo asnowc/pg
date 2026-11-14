@@ -2,25 +2,16 @@ import { QueryReadQueue } from "./MessageReadQueue.ts";
 import { QueryWriteQueue } from "./MessageWriteQueue.ts";
 import { AuthenticationResult } from "./auth.ts";
 import { MessageParsers } from "./parsers/MessageParser.ts";
-import { ConnectionStream } from "@/_utils/ConnectionStream.ts";
-import { BufferWriter } from "@/_utils/BufferWriter.ts";
+import type { DataStream } from "@/_utils/DataStream.ts";
 import { EventEmitter, Listener } from "@/_utils/EventEmitter.ts";
 import { SessionDestroyedError, UnexpectedEOFError } from "@/_utils/error.ts";
 import { BufferWriterQueue } from "@/_utils/BufferWriterQueue.ts";
 
 const DEFAULT_MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
 
-function createBufferWriter(stream: ConnectionStream) {
-  const flushThreshold = 8 * 1024;
-  return new BufferWriter(
-    stream.write.bind(stream),
-    new Uint8Array(flushThreshold * 2),
-    flushThreshold,
-  );
-}
 export class PgSession<T = unknown> extends EventEmitter {
   constructor(
-    private readonly stream: ConnectionStream,
+    private readonly stream: DataStream,
     config: {
       maxMessageSize?: number;
       authResult: AuthenticationResult;
@@ -35,8 +26,7 @@ export class PgSession<T = unknown> extends EventEmitter {
     this.processId = backendKey?.processId ?? null;
     this.secretKey = backendKey?.secretKey ?? null;
 
-    const writer = createBufferWriter(stream);
-    const bufferWriterQueue = new BufferWriterQueue(writer, () => stream.closeWrite(), (cause: unknown) => {
+    const bufferWriterQueue = new BufferWriterQueue(stream, () => stream.closeWrite(), (cause: unknown) => {
       const error = cause instanceof Error ? cause : new Error("PostgreSQL query write failed", { cause });
       this.readQueue.fail(error);
       this.destroy(error);
@@ -45,21 +35,21 @@ export class PgSession<T = unknown> extends EventEmitter {
     const parser = new MessageParsers(maxMessageSize);
     this.readQueue.init(parser, this.queryWriter);
 
-    stream.startReadLoop(() => parser.next(this.stream), () => {
-      if (this.readQueue.head) {
-        this.readQueue.fail(new UnexpectedEOFError());
-      }
-      if (!this.closed) {
-        this.destroy(new UnexpectedEOFError());
-      }
-      this.emit("close");
-    });
     stream.listenOnError((err) => {
       if (this.closed) {
         //这里可能是 this.destroy() 被调用导致 write error
         this.readQueue.fail(err);
       } else {
         this.destroy(err);
+      }
+      this.emit("close");
+    });
+    stream.startReadLoop((buffer) => parser.next(buffer), () => {
+      if (this.readQueue.head) {
+        this.readQueue.fail(new UnexpectedEOFError());
+      }
+      if (!this.closed) {
+        this.destroy(new UnexpectedEOFError());
       }
       this.emit("close");
     });
@@ -72,12 +62,10 @@ export class PgSession<T = unknown> extends EventEmitter {
   get parameters(): Record<string, string> {
     return this.readQueue.parameters;
   }
-  get pendingQueyNumber() {
+  get pendingQueyNumber(): number {
     return this.readQueue.pendingQueyNumber;
   }
-  get idle(): boolean {
-    return !this.readQueue.head;
-  }
+
   readonly queryWriter: QueryWriteQueue;
   private readonly readQueue = new QueryReadQueue(() => this.emit("idle"));
 

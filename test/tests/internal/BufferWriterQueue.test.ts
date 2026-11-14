@@ -1,12 +1,12 @@
 import { expect, test, vi } from "vitest";
-import { BufferWriter } from "@/_utils/BufferWriter.ts";
+import { WriteBuffer } from "@/_utils/WriterBuffer.ts";
 import { BufferWriterQueue } from "@/_utils/BufferWriterQueue.ts";
 
 function createWriter(size = 8, maxWrite = Infinity) {
   const output: number[] = [];
   const errors: unknown[] = [];
   const writer = new BufferWriterQueue(
-    new BufferWriter(async (buffer) => {
+    new WriteBuffer(async (buffer) => {
       const written = Math.min(buffer.byteLength, maxWrite);
       output.push(...buffer.subarray(0, written));
       return written;
@@ -55,7 +55,7 @@ test("定时刷新不会与未完成的底层写入并发", async () => {
   const release: Array<() => void> = [];
   const errors: unknown[] = [];
   const writer = new BufferWriterQueue(
-    new BufferWriter(
+    new WriteBuffer(
       async (_buffer) =>
         new Promise<number>((resolve) => {
           release.push(() => resolve(_buffer.byteLength));

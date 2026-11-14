@@ -4,14 +4,14 @@ import { decodeUTF16String } from "@/_utils/string.ts";
 import { AuthCode } from "../const.ts";
 import { encodePasswordMessage } from "../encode.ts";
 import { PgProtocolError } from "@/_utils/error.ts";
-import { StreamReader } from "@/_utils/StreamReader.ts";
+import { ReadableBuffer } from "@/_utils/ReadBuffer.ts";
 import { BufferWriterQueue } from "@/_utils/BufferWriterQueue.ts";
 
 export type AuthenticationData = true | Promise<void>;
 
 export interface AuthParser<T> {
   authCode: string;
-  next(reader: StreamReader, code?: number): undefined | T;
+  next(reader: ReadableBuffer, code?: number): undefined | T;
 }
 export function getAuthParser(
   code: number,
@@ -45,7 +45,7 @@ class AuthSASLParser implements AuthParser<Promise<void> | true> {
     mechanisms: string[];
     exchange?: PgSaslExchange;
   };
-  next(reader: StreamReader, code?: number): Promise<void> | true | undefined {
+  next(reader: ReadableBuffer, code?: number): Promise<void> | true | undefined {
     if (!this.f1) {
       this.f1 = this.start(reader);
       return;
@@ -73,7 +73,7 @@ class AuthSASLParser implements AuthParser<Promise<void> | true> {
         throw new PgAuthenticationError(`Unexpected SASL authentication code: ${code}`);
     }
   }
-  start(reader: StreamReader): NonNullable<typeof this.f1> {
+  start(reader: ReadableBuffer): NonNullable<typeof this.f1> {
     const data = reader.buffer.subarray(reader.readableStart, reader.readableEnd);
     reader.readableStart = reader.readableEnd;
     const mechanisms = decodeSASLMechanisms(data, 0);
@@ -98,7 +98,7 @@ class AuthCleartextPasswordParser implements AuthParser<true> {
   constructor(private writer: BufferWriterQueue, private options: PgAuthenticationExchangeOptions) {
   }
   authCode = "CLEAR_TEXT";
-  next(reader: StreamReader): true | undefined {
+  next(reader: ReadableBuffer): true | undefined {
     this.writer.pushWrite(async (writer) => {
       let password = this.options.password;
       if (typeof password === "function") password = await password();

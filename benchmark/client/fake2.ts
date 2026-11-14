@@ -1,8 +1,8 @@
 import { DB_CONNECT_INFO } from "../utils/db.ts";
 import { PoolHandler, PoolQueryTest, TestQueries } from "..//utils/common.ts";
 import { PgSession } from "@/protocol.ts";
-import { createTypedSqlStatement } from "@/implement/private/sql_statement.ts";
-import { connectPgSession } from "@/protocol/connect.ts";
+import { createTypedSqlStatement } from "@/class/private/sql_statement.ts";
+import { connectPgSession } from "@/protocol/connect_session.ts";
 
 export const LIB_NAME = "调度模拟";
 

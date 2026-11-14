@@ -1,7 +1,8 @@
 import { Duplex } from "node:stream";
-import type { ConnectionStream } from "@/_utils/ConnectionStream.ts";
+import type { DataStream } from "@/_utils/DataStream.ts";
 import { InternalError } from "@/_utils/error.ts";
-import { BufferReader } from "@/_utils/StreamReader.ts";
+import { type ReadableBuffer, ReadBuffer } from "@/_utils/ReadBuffer.ts";
+import { WriteBuffer } from "@/_utils/WriterBuffer.ts";
 import { connect as connectTls } from "node:tls";
 import { connect, Socket } from "node:net";
 import { once } from "node:events";
@@ -9,20 +10,28 @@ import { Buffer } from "node:buffer";
 import { PgConnectOptions, PgNetConnectOptions } from "@/interface/Connection.ts";
 import { PgConnection } from "@/class/PgConnection.ts";
 
-export class DuplexBufferStream extends BufferReader implements ConnectionStream {
-  constructor(private duplex: Duplex, readerBufferSize?: number) {
-    readerBufferSize = readerBufferSize ?? 16 * 1024;
-    super(new Uint8Array(readerBufferSize));
+export class DuplexBufferStream extends WriteBuffer implements DataStream {
+  constructor(private duplex: Duplex, options: { readBufferSize?: number; writeBufferSize?: number } = {}) {
+    super(
+      (data) => {
+        return new Promise<number>((resolve, reject) => {
+          this.duplex.write(data, (err) => err ? reject(err) : resolve(data.byteLength));
+        });
+      },
+      options.writeBufferSize ?? 16 * 1024,
+    );
+    this.reader = new ReadBuffer(new Uint8Array(options.readBufferSize ?? 16 * 1024));
   }
+  private readonly reader: ReadBuffer;
 
-  private onDataNotice: () => boolean | void = noListener;
+  private onDataNotice: (buffer: ReadableBuffer) => boolean | void = noListener;
   private onEnd: () => void = noListener;
   private onError?: (error: Error) => void;
   listenOnError(onError?: (error: Error) => void): void {
     if (onError && this.onError) throw new InternalError("Error listener already set");
     this.onError = onError;
   }
-  startReadLoop(onData: () => boolean | void, onEnd: () => void): void {
+  startReadLoop(onData: (buffer: ReadableBuffer) => boolean | void, onEnd: () => void): void {
     this.onDataNotice = onData;
     this.onEnd = onEnd;
     const rest = this.rest;
@@ -37,19 +46,20 @@ export class DuplexBufferStream extends BufferReader implements ConnectionStream
    * 如果返回 true ，表示暂停处理数据；如果返回 false ，表示继续处理数据。
    */
   private onData = (chunk: Uint8Array): boolean => {
+    const reader = this.reader;
     while (chunk.byteLength) {
-      this.gc();
-      const length = this.pushReaderBufferData(chunk);
+      reader.compact();
+      const length = reader.pushReadBufferData(chunk);
       chunk = chunk.subarray(length);
 
       let shouldStop = false;
       while (true) {
-        const readableLength = this.readableLength;
-        if (this.onDataNotice()) {
+        const readableLength = reader.readableLength;
+        if (this.onDataNotice(reader)) {
           shouldStop = true;
           break;
         }
-        if (this.readableLength === readableLength) break;
+        if (reader.readableLength === readableLength) break;
       }
       if (shouldStop) {
         if (chunk.byteLength) {
@@ -65,16 +75,9 @@ export class DuplexBufferStream extends BufferReader implements ConnectionStream
   };
   private rest?: Uint8Array;
 
-  write(data: Uint8Array): Promise<number> {
-    return new Promise<number>((resolve, reject) => {
-      this.duplex.write(data, (err) => {
-        err ? reject(err) : resolve(data.byteLength);
-      });
-    });
-  }
-
-  closeWrite(): Promise<void> {
-    return new Promise((resolve, reject) => {
+  async closeWrite(): Promise<void> {
+    await this.flush();
+    await new Promise<void>((resolve, reject) => {
       this.duplex.end((err: unknown) => {
         err ? reject(err) : resolve();
       });

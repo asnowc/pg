@@ -8,7 +8,7 @@ import type {
   CursorQueryOperation,
   MultipleQueryOperation,
   QueryOptions,
-  QueryReader,
+  QueryReader as IQueryReader,
   SampleQueryReader,
   SingleQueryOperation,
   SqlStatement,
@@ -18,11 +18,25 @@ import type {
   TransactionQueryOperation,
 } from "@/interface/Query.ts";
 import { createTypedSqlStatement } from "./private/sql_statement.ts";
-import QueryReaderImpl from "./private/QueryReader.ts";
+import QueryReader from "./private/QueryReader.ts";
 import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
 import { QueryOptionsWithDecoder } from "@/interface/Query/_internal.ts";
 import { PgSession } from "@/protocol/PgSession.ts";
-import type { PgConnection } from "./PgConnection.ts";
+
+export type GetSession = (resolve: (session: PgSession) => void, reject: (error: unknown) => void) => void;
+
+export class SessionRef {
+  constructor(public session?: PgSession) {}
+  getSession(): PgSession {
+    if (!this.session) throw new Error("Session is already released");
+    return this.session;
+  }
+  transferSession(): PgSession {
+    const session = this.getSession();
+    this.session = undefined;
+    return session;
+  }
+}
 
 export class QueryOperation
   implements
@@ -31,19 +45,21 @@ export class QueryOperation
     CopyQueryOperation,
     CursorQueryOperation,
     TransactionQueryOperation {
-  constructor(getSession: () => PgSession) {
-    this.#getSession = getSession;
+  constructor(private core: SessionRef) {
   }
-  #getSession: () => PgSession;
+
   query<T>(
     queryable: SqlStatement | TypedSqlStatement<T>,
     options?: QueryOptions & QueryOptionsWithDecoder,
-  ): QueryReader<T> {
+  ): IQueryReader<T> {
     const encoder = createTypedSqlStatement(queryable, options);
-    return new QueryReaderImpl(() => {
-      const promise = this.#getSession().queryWriter.extendedQuery<T>(encoder);
-      this.#getSession().queryWriter.sync();
-      return promise;
+    return new QueryReader(() => {
+      return new Promise((resolve) => {
+        const session = this.core.getSession();
+        const promise = session.queryWriter.extendedQuery<T>(encoder);
+        session.queryWriter.sync();
+        resolve(promise);
+      });
     });
   }
 

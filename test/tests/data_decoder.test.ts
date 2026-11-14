@@ -4,7 +4,7 @@ import { PG_DATA_DECODER_V1 } from "@/codec/pg_data_decoder.ts";
 import type { JsDataEncoder } from "@/interface/js_data_encoder.ts";
 import type { FieldInfo } from "@/interface/Query/QueryReader.ts";
 import { PgOid } from "@/util/pg_oid.ts";
-import { BufferReader } from "@/_utils/StreamReader.ts";
+import { ReadBuffer } from "@/_utils/ReadBuffer.ts";
 const encoderV1 = JS_DATA_ENCODER_V1;
 
 const context: FieldInfo = { typeOID: 0, typeSize: -1, typeModifier: -1, index: 0, name: "" };
@@ -15,7 +15,7 @@ function getDecoder(oid: PgOid) {
 }
 
 function decodeBinary(oid: PgOid, value: Uint8Array): unknown {
-  const reader = new BufferReader(value, value.byteLength);
+  const reader = new ReadBuffer(value, value.byteLength);
   const result = getDecoder(oid).decodeBinary(reader, value.byteLength);
   expect(reader.readableLength).toBe(0);
   return result;
@@ -130,28 +130,28 @@ test("列解码器支持分段读取、列状态隔离及重复解码", () => {
     const decoder = getDecoder(oid);
     const otherColumn = getDecoder(oid);
     if (value.byteLength === 0) {
-      expect(decoder.decodeBinary(new BufferReader(value), 0)).toEqual(expected);
+      expect(decoder.decodeBinary(new ReadBuffer(value), 0)).toEqual(expected);
       continue;
     }
     const bufferLength = typeof PG_DATA_DECODER_V1.get(oid) === "object" ? Math.max(16, value.byteLength) : 16;
-    const reader = new BufferReader(new Uint8Array(bufferLength + 2).subarray(1, bufferLength + 1));
+    const reader = new ReadBuffer(new Uint8Array(bufferLength + 2).subarray(1, bufferLength + 1));
     let consumed = 0;
     for (let offset = 0; offset < value.byteLength; offset++) {
-      expect(reader.pushReaderBufferData(value.subarray(offset, offset + 1))).toBe(1);
+      expect(reader.pushReadBufferData(value.subarray(offset, offset + 1))).toBe(1);
       const start = reader.readableStart;
       const result = decoder.decodeBinary(reader, value.byteLength - consumed);
       consumed += reader.readableStart - start;
       if (offset + 1 < value.byteLength) {
         expect(result).toBeUndefined();
-        expect(otherColumn.decodeBinary(new BufferReader(value, value.byteLength), value.byteLength)).toEqual(expected);
+        expect(otherColumn.decodeBinary(new ReadBuffer(value, value.byteLength), value.byteLength)).toEqual(expected);
       } else {
         expect(result).toEqual(expected);
         expect(consumed).toBe(value.byteLength);
         expect(reader.readableLength).toBe(0);
       }
-      reader.gc();
+      reader.compact();
     }
-    const nextRow = new BufferReader(value, value.byteLength);
+    const nextRow = new ReadBuffer(value, value.byteLength);
     expect(decoder.decodeBinary(nextRow, value.byteLength)).toEqual(expected);
     expect(nextRow.readableLength).toBe(0);
   }
@@ -185,7 +185,7 @@ test("无状态列解码器直接使用对象并在数据不足时保持读取�
   for (const [oid, length] of cases) {
     expect(typeof PG_DATA_DECODER_V1.get(oid)).toBe("object");
     if (length === 0) continue;
-    const reader = new BufferReader(new Uint8Array(length), length - 1);
+    const reader = new ReadBuffer(new Uint8Array(length), length - 1);
     expect(getDecoder(oid).decodeBinary(reader, length)).toBeUndefined();
     expect(reader.readableStart).toBe(0);
   }
@@ -202,14 +202,14 @@ test("动态长度列解码器边读边解码且不越过列边界", () => {
   for (const [oid, value, split, expected] of cases) {
     expect(typeof PG_DATA_DECODER_V1.get(oid)).toBe("function");
     const decoder = getDecoder(oid);
-    const first = new BufferReader(value.subarray(0, split), split);
+    const first = new ReadBuffer(value.subarray(0, split), split);
     expect(decoder.decodeBinary(first, value.byteLength)).toBeUndefined();
     expect(first.readableStart).toBe(split);
     const remaining = value.byteLength - split;
     const tail = new Uint8Array(remaining + 1);
     tail.set(value.subarray(split));
     tail[remaining] = 0xff;
-    const reader = new BufferReader(tail, tail.byteLength);
+    const reader = new ReadBuffer(tail, tail.byteLength);
     const result = decoder.decodeBinary(reader, remaining);
     expect(result).toEqual(expected);
     expect(reader.readableLength).toBe(1);

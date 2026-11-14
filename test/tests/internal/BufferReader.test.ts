@@ -1,15 +1,15 @@
 import { expect, test } from "vitest";
-import { BufferReader } from "@/\u005futils/StreamReader.ts";
+import { ReadBuffer } from "@/\u005futils/ReadBuffer.ts";
 
 test("gc 保留未读字节并允许继续追加", () => {
-  const reader = new BufferReader(new Uint8Array(6));
-  expect(reader.pushReaderBufferData(Uint8Array.of(1, 2, 3, 4))).toBe(4);
+  const reader = new ReadBuffer(new Uint8Array(6));
+  expect(reader.pushReadBufferData(Uint8Array.of(1, 2, 3, 4))).toBe(4);
   expect(reader.buffer.subarray(reader.readableStart, reader.readableStart + 2)).toEqual(Uint8Array.of(1, 2));
   reader.readableStart += 2;
 
-  reader.gc();
+  reader.compact();
   expect(reader.readableLength).toBe(2);
-  expect(reader.pushReaderBufferData(Uint8Array.of(5, 6, 7, 8))).toBe(4);
+  expect(reader.pushReadBufferData(Uint8Array.of(5, 6, 7, 8))).toBe(4);
   expect(reader.buffer.subarray(reader.readableStart, reader.readableStart + 6)).toEqual(
     Uint8Array.of(3, 4, 5, 6, 7, 8),
   );
@@ -18,9 +18,9 @@ test("gc 保留未读字节并允许继续追加", () => {
 });
 
 test("gc 在尚未读取时不丢弃数据", () => {
-  const reader = new BufferReader(new Uint8Array(4));
-  reader.pushReaderBufferData(Uint8Array.of(1, 2));
-  reader.gc();
+  const reader = new ReadBuffer(new Uint8Array(4));
+  reader.pushReadBufferData(Uint8Array.of(1, 2));
+  reader.compact();
   expect(reader.readableLength).toBe(2);
   expect(reader.buffer.subarray(reader.readableStart, reader.readableStart + 2)).toEqual(Uint8Array.of(1, 2));
   reader.readableStart += 2;
@@ -29,7 +29,7 @@ test("gc 在尚未读取时不丢弃数据", () => {
 
 test("从非零 byteOffset 缓冲区读取大小端整数", () => {
   const backing = new Uint8Array(36);
-  const reader = new BufferReader(backing.subarray(3, 33));
+  const reader = new ReadBuffer(backing.subarray(3, 33));
   const view = new DataView(backing.buffer, 3, 30);
   view.setInt8(0, -1);
   view.setUint8(1, 255);
@@ -61,8 +61,8 @@ test("从非零 byteOffset 缓冲区读取大小端整数", () => {
 });
 
 test("subarray 借用缓冲区，slice 保留独立副本", () => {
-  const reader = new BufferReader(new Uint8Array(4));
-  reader.pushReaderBufferData(Uint8Array.of(1, 2, 3, 4));
+  const reader = new ReadBuffer(new Uint8Array(4));
+  reader.pushReadBufferData(Uint8Array.of(1, 2, 3, 4));
   const borrowed = reader.buffer.subarray(reader.readableStart, reader.readableStart + 2);
   reader.readableStart += 2;
   const copied = reader.buffer.slice(reader.readableStart, reader.readableStart + 2);

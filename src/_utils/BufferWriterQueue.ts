@@ -1,10 +1,10 @@
-import { BufferWriter } from "./BufferWriter.ts";
+import { WriteBuffer } from "./WriterBuffer.ts";
 
 export class BufferWriterQueue {
-  constructor(writer: BufferWriter, private onClose: () => Promise<void>, private onError: (error: unknown) => void) {
+  constructor(writer: WriteBuffer, private onClose: () => Promise<void>, private onError: (error: unknown) => void) {
     this.#writer = writer;
   }
-  #writer: BufferWriter;
+  #writer: WriteBuffer;
 
   #head?: Link<QueueItem>;
   #tail?: Link<QueueItem>;
@@ -49,7 +49,7 @@ export class BufferWriterQueue {
    * 将写入操作添加到队列中。
    * @param getData 生成数据的函数。返回的数据在被写入到底层前，请勿修改其内容。
    */
-  pushWrite(write: (writer: BufferWriter) => Promise<void>): void {
+  pushWrite(write: (writer: WriteBuffer) => Promise<void>): void {
     this.pushItem({ type: QueueItemType.WriteFn, write });
   }
   pushClose() {
@@ -142,7 +142,7 @@ export interface BufferEncoder {
    * 返回 false, 编码结束，返回 true 表示缓冲区需要更多空间继续编码。
    * 应在缓冲区有足够空间时继续调用 encodeInto 继续编码
    */
-  encodeInto(writer: BufferWriter): boolean | void;
+  encodeInto(writer: WriteBuffer): boolean | void;
 }
 type Link<T extends object = object> = T & {
   next?: Link<T>;
@@ -159,7 +159,7 @@ enum QueueItemType {
 
 type WriteFnQueueItem = {
   type: QueueItemType.WriteFn;
-  write: (writer: BufferWriter) => Promise<void>;
+  write: (writer: WriteBuffer) => Promise<void>;
 };
 
 type DataQueueItem = {

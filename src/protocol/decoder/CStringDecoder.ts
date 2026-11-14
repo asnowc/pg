@@ -1,11 +1,11 @@
-import { StreamReader } from "@/_utils/StreamReader.ts";
+import { ReadableBuffer } from "@/_utils/ReadBuffer.ts";
 import { concatU8ArrayList, StreamDecoder } from "./_common.ts";
 
 const textDecoder = new TextDecoder();
 class CStringDecoder implements StreamDecoder<string> {
   private nameChunksSize = 0;
   private nameChunks: Uint8Array[] = [];
-  next(reader: StreamReader) {
+  next(reader: ReadableBuffer) {
     let chunk = reader.buffer.subarray(reader.readableStart, reader.readableEnd);
     const index = chunk.indexOf(0);
     if (index === -1) {

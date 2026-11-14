@@ -1,8 +1,8 @@
-import { BufferWriter } from "@/_utils/BufferWriter.ts";
+import { WriteBuffer } from "@/_utils/WriterBuffer.ts";
 import { FrontendMessageCode } from "../const.ts";
 
 export function encodeFrameHeaderInto(
-  writer: BufferWriter,
+  writer: WriteBuffer,
   code: FrontendMessageCode,
   bodyLength: number,
 ) {
@@ -15,7 +15,7 @@ export interface BufferEncoder {
    * 返回 false, 编码结束，返回 true 表示缓冲区需要更多空间继续编码。
    * 应在缓冲区有足够空间时继续调用 encodeInto 继续编码
    */
-  encodeInto(writer: BufferWriter): boolean | void;
+  encodeInto(writer: WriteBuffer): boolean | void;
 }
 
 const textEncoder = new TextEncoder();
@@ -28,7 +28,7 @@ export class UTF16BufferEncoder implements BufferEncoder {
   static readonly UTF16_ENCODE_FREE_BUFFER_SIZE = 10;
   constructor(private value: string) {}
   private offset: number = 0;
-  encodeInto(writer: BufferWriter): boolean | void {
+  encodeInto(writer: WriteBuffer): boolean | void {
     if (this.offset >= this.value.length) return false;
     if (writer.writableLength === 0) return true;
     const { read, written } = textEncoder.encodeInto(
@@ -46,7 +46,7 @@ export class UTF16BufferEncoder implements BufferEncoder {
 }
 export class Uint8ArrayEncoder implements BufferEncoder {
   constructor(private value: Uint8Array) {}
-  encodeInto(writer: BufferWriter): boolean | void {
+  encodeInto(writer: WriteBuffer): boolean | void {
     const rest = writer.setDataToThreshold(this.value);
     if (rest) {
       this.value = rest;
@@ -57,7 +57,7 @@ export class Uint8ArrayEncoder implements BufferEncoder {
 export class CStringEncoder implements BufferEncoder {
   constructor(private value: string) {}
   private offset: number = 0;
-  encodeInto(writer: BufferWriter): boolean | void {
+  encodeInto(writer: WriteBuffer): boolean | void {
     if (this.offset < this.value.length) {
       if (writer.writableLength === 0) return true;
       const { read, written } = textEncoder.encodeInto(
@@ -79,7 +79,7 @@ export class CStringEncoder implements BufferEncoder {
 }
 
 export abstract class StageBufferEncoder implements BufferEncoder {
-  encodeInto(writer: BufferWriter): boolean {
+  encodeInto(writer: WriteBuffer): boolean {
     let nextStage: StageEncode | boolean;
     do {
       nextStage = this.encodeStage(writer);
@@ -91,5 +91,5 @@ export abstract class StageBufferEncoder implements BufferEncoder {
   protected abstract encodeStage: StageEncode;
 }
 export interface StageEncode {
-  (writer: BufferWriter): StageEncode | boolean;
+  (writer: WriteBuffer): StageEncode | boolean;
 }

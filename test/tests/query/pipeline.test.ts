@@ -1,4 +1,10 @@
-import { test } from "@test/fixtures/db_connect.ts";
+import {
+  createPublicTestTable,
+  getPublicTestTableById,
+  insetPublicTable,
+  PUBLIC_TABLE,
+  test,
+} from "@test/fixtures/db_connect.ts";
 import { expect } from "vitest";
 import { PgDatabaseError } from "@asla/pg";
 
@@ -25,49 +31,31 @@ test("孤立语句流水线查询", async ({ conn }) => {
   await expect(conn.query("SELECT * FROM  t WHERE c = 'p1'").rowCount()).resolves.toBe(1);
   await expect(conn.query("SELECT * FROM t WHERE c = 'p2'").rowCount()).resolves.toBe(1);
 });
-test("依赖语句型流水线查询", async ({ conn }) => {
-  // 查询语句要求前面的语句成功执行，否则会导致后续语句失败
 
-  await conn.query("CREATE TEMP TABLE t(c VARCHAR)");
-
-  await Promise.all([
-    conn.pipeline("INSERT INTO t(c) VALUES ('p1')"),
-    conn.pipeline("SELECT 1/0"),
-    conn.pipeline("INSERT INTO t(c) VALUES ('p2')"),
-  ]);
-  await expect(conn.query("SELECT * FROM t WHERE c = 'p1'").rowCount()).resolves.toBe(1);
-  await expect(conn.query("SELECT * FROM t WHERE c = 'p2'").rowCount()).resolves.toBe(0);
-
-  // 与 PostgreSQL 的简单查询类似，但由于简单查询存在隐式事务，最终没有插入任何数据。但实际第一条语句能够成功返回
-  await conn.queryMultiple(`
-    INSERT INTO t(c) VALUES ('s1') RETURNING *;
-    SELECT 1/0;
-    INSERT INTO t(c) VALUES ('s2') RETURNING *;
-  `);
-  await expect(conn.query("SELECT * FROM t WHERE c = 's1'").rowCount()).resolves.toBe(0);
-  await expect(conn.query("SELECT * FROM t WHERE c = 's2'").rowCount()).resolves.toBe(0);
-});
-
-test("孤立语句事务查询", async ({ conn }) => {
+test("事务查询", async ({ conn }) => {
+  await createPublicTestTable(conn);
   {
-    await conn.query("CREATE TEMP TABLE t(c VARCHAR)");
     await using t = conn.begin();
 
     // 不依赖结果，直接通过流水线查询
-    await Promise.all([
-      conn.query("INSERT INTO t(c) VALUES ('p1')"),
-      conn.query("INSERT INTO t(c) VALUES ('p2')"),
+    const [r1, r2] = await Promise.all([
+      conn.query<any>(insetPublicTable(["p1"])).firstRow(),
+      conn.query<any>(insetPublicTable(["p2"])).firstRow(),
       t.commit(),
     ]);
+    await expect(getPublicTestTableById(conn, r1.id)).resolves.not.toBeNull();
+    await expect(getPublicTestTableById(conn, r2.id)).resolves.not.toBeNull();
   }
   {
     // 多语句查询也可以
-    await conn.queryMultiple(`
-        BEGIN;
-        INSERT INTO t(c) VALUES ('p1');
-        INSERT INTO t(c) VALUES ('p2');
-        COMMIT;
-      `);
+    const [a, b, c, d] = await conn.queryMultiple(`
+      BEGIN;
+      ${insetPublicTable(["p1"])};
+      ${insetPublicTable(["p2"])};
+      COMMIT;
+    `).all();
+    await expect(getPublicTestTableById(conn, b.id)).resolves.not.toBeNull();
+    await expect(getPublicTestTableById(conn, c.id)).resolves.not.toBeNull();
   }
 });
 

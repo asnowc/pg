@@ -1,16 +1,18 @@
-import type { ConnectionStream } from "@/_utils/ConnectionStream.ts";
+import type { DataStream } from "@/_utils/DataStream.ts";
 import { InternalError } from "@/_utils/error.ts";
-import { BufferReader } from "@/_utils/StreamReader.ts";
+import { type ReadableBuffer, ReadBuffer } from "@/_utils/ReadBuffer.ts";
+import { WriteBuffer } from "@/_utils/WriterBuffer.ts";
 import type { PgConnectOptions, PgNetConnectOptions, PrunedDenoConn } from "@/interface/Connection.ts";
 import { PgConnection } from "@/class/PgConnection.ts";
 
 const textDecoder = new TextDecoder();
 
-export class DenoConnBufferStream extends BufferReader implements ConnectionStream {
-  constructor(private conn: PrunedDenoConn, readerBufferSize?: number) {
-    readerBufferSize = readerBufferSize ?? 16 * 1024;
-    super(new Uint8Array(readerBufferSize));
+export class DenoConnBufferStream extends WriteBuffer implements DataStream {
+  constructor(private conn: PrunedDenoConn, options: { readBufferSize?: number; writeBufferSize?: number } = {}) {
+    super((data) => this.conn.write(data), options.writeBufferSize ?? 16 * 1024);
+    this.reader = new ReadBuffer(new Uint8Array(options.readBufferSize ?? 16 * 1024));
   }
+  private readonly reader: ReadBuffer;
   #onError = (err: unknown) => {
     if (this.onError) this.onError(err instanceof Error ? err : new Error(String(err)));
     else console.error(new InternalError("Unhandled error in DenoBufferStream"));
@@ -21,16 +23,17 @@ export class DenoConnBufferStream extends BufferReader implements ConnectionStre
     if (onError && this.onError) throw new InternalError("Error listener already set");
     this.onError = onError;
   }
-  startReadLoop(onData: () => boolean | void, onEnd: () => void) {
+  startReadLoop(onData: (buffer: ReadableBuffer) => boolean | void, onEnd: () => void) {
     this.#startReadLoop(onData, onEnd).catch(this.#onError);
     return;
   }
-  async #startReadLoop(onData: () => boolean | void, onEnd: () => void) {
+  async #startReadLoop(onData: (buffer: ReadableBuffer) => boolean | void, onEnd: () => void) {
+    const reader = this.reader;
     let isEnd: boolean | void | undefined;
     let size: number | null;
     do {
-      this.gc();
-      const chunk = this.buffer.subarray(this.readableEnd);
+      reader.compact();
+      const chunk = reader.buffer.subarray(reader.readableEnd);
       if (chunk.byteLength === 0) {
         throw new InternalError("The BufferReader did not read any data when the onData method was called");
       }
@@ -38,16 +41,14 @@ export class DenoConnBufferStream extends BufferReader implements ConnectionStre
       if (size === null) return onEnd();
       if (size === 0) continue;
 
-      this.readableEnd += size;
-      isEnd = onData();
+      reader.readableEnd += size;
+      isEnd = onData(reader);
     } while (!isEnd);
   }
 
-  write(data: Uint8Array): Promise<number> {
-    return this.conn.write(data);
-  }
-  closeWrite(): Promise<void> {
-    return this.conn.closeWrite();
+  async closeWrite(): Promise<void> {
+    await this.flush();
+    await this.conn.closeWrite();
   }
   private destroyed = false;
   destroy(): void {

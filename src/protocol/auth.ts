@@ -3,11 +3,10 @@ import { AuthCode, BackendMessageCode, PgTransactionStatus } from "./const.ts";
 import { decodeBackendKeyData, decodeError, decodeNegotiateProtocolVersion, type PgBackendKeyData } from "./decode.ts";
 import { PgProtocolError, UnexpectedEOFError } from "@/_utils/error.ts";
 import { MessageParsers } from "./parsers/MessageParser.ts";
-import { ConnectionStream } from "@/_utils/ConnectionStream.ts";
+import type { DataStream } from "@/_utils/DataStream.ts";
 import { AuthenticationData, AuthParser, getAuthParser } from "./parsers/AuthParser.ts";
-import { BufferReader } from "@/_utils/StreamReader.ts";
+import { ReadBuffer } from "@/_utils/ReadBuffer.ts";
 import { PgAuthenticationError } from "@/error.ts";
-import { BufferWriter } from "@/_utils/BufferWriter.ts";
 import { BufferWriterQueue } from "@/_utils/BufferWriterQueue.ts";
 
 const DEFAULT_MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
@@ -16,7 +15,7 @@ const DEFAULT_MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
  * 执行密码/SASL 认证并读取到首个 ReadyForQuery。调用前必须已发送 StartupMessage。
  */
 export async function startAuthentication(
-  conn: ConnectionStream,
+  conn: DataStream,
   options: PgAuthenticationExchangeOptions,
 ): Promise<AuthenticationResult> {
   const parser = new MessageParsers(DEFAULT_MAX_MESSAGE_SIZE);
@@ -38,12 +37,12 @@ export async function startAuthentication(
 
   await new Promise<void>((resolve, reject) => {
     const writer = new BufferWriterQueue(
-      new BufferWriter((data) => conn.write(data), 8 * 1024),
+      conn,
       () => conn.closeWrite(),
       reject,
     );
     parser.setFullParser(BackendMessageCode.Authentication, (data) => {
-      const reader = new BufferReader(data, data.byteLength);
+      const reader = new ReadBuffer(data, data.byteLength);
       const code = reader.view.getUint32(reader.readableStart);
       reader.readableStart += 4;
       if (code === AuthCode.OK) return;
@@ -56,10 +55,6 @@ export async function startAuthentication(
     });
     let isDone = false;
     conn.listenOnError(reject);
-    conn.startReadLoop(() => {
-      parser.next(conn);
-      return isDone;
-    }, () => reject(new UnexpectedEOFError()));
     parser.setFullParser(BackendMessageCode.ErrorResponse, (data) => {
       const errorMessage = decodeError(data);
       throw new PgAuthenticationError(errorMessage.fields.message);
@@ -73,6 +68,10 @@ export async function startAuthentication(
       conn.listenOnError(undefined);
       resolve();
     });
+    conn.startReadLoop((buffer) => {
+      parser.next(buffer);
+      return isDone;
+    }, () => reject(new UnexpectedEOFError()));
   });
   await authOk;
   return {

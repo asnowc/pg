@@ -1,4 +1,4 @@
-import { StreamReader } from "@/_utils/StreamReader.ts";
+import { ReadableBuffer } from "@/_utils/ReadBuffer.ts";
 import { MessageParser } from "./_common.ts";
 import { PgProtocolError } from "@/_utils/error.ts";
 import { PgColumnDataDecoder } from "@/interface/pg_data_decoder.ts";
@@ -21,7 +21,7 @@ export class DataRowDecoder<T extends object> implements MessageParser<T> {
 
   private nextIndex: number = 0;
 
-  next(reader: StreamReader, remainingByteLength: number): T | undefined {
+  next(reader: ReadableBuffer, remainingByteLength: number): T | undefined {
     if (!this.currentRow) {
       if (reader.readableLength < 2) return undefined;
       const columnCount = reader.view.getUint16(reader.readableStart);
@@ -77,7 +77,7 @@ export class DataRowDecoder<T extends object> implements MessageParser<T> {
   }
   private textDecodeBuffer?: Uint8Array;
   private textDecodeOffset: number = 0;
-  private nextForText(reader: StreamReader, remaining: number): string | undefined {
+  private nextForText(reader: ReadableBuffer, remaining: number): string | undefined {
     if (!this.textDecodeBuffer) {
       if (reader.readableLength >= remaining) {
         const chunk = reader.buffer.subarray(reader.readableStart, reader.readableStart + remaining);

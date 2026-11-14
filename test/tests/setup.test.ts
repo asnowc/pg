@@ -6,8 +6,9 @@ import { expect } from "vitest";
 test("使用示例", async () => {
   const sql = createSqlBuilder(JS_DATA_ENCODER_V1, PG_DATA_DECODER_V1);
   const connectInfo = PUBLIC_DB_CONNECT_INFO;
+
   await using dbPool = new PgPool({
-    create: async () => connectFromNet(connectInfo),
+    create: () => connectFromNet(connectInfo),
     maxCount: 4,
   });
 
@@ -18,6 +19,7 @@ test("使用示例", async () => {
 test("使用示例", async () => {
   const sql = createSqlBuilder(JS_DATA_ENCODER_V1, PG_DATA_DECODER_V1);
   const connectInfo = PUBLIC_DB_CONNECT_INFO;
+
   await using conn = await connectFromNet(connectInfo);
   conn.finished.catch((e) => {
     console.error(e);

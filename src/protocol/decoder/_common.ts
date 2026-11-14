@@ -1,13 +1,13 @@
-import { StreamReader } from "@/_utils/StreamReader.ts";
+import { ReadableBuffer } from "@/_utils/ReadBuffer.ts";
 import { PgFormat } from "../const.ts";
 import { PgProtocolError } from "@/_utils/error.ts";
 
 export interface StreamDecoder<T> {
-  next(reader: StreamReader): T | undefined;
+  next(reader: ReadableBuffer): T | undefined;
   reset(): void;
 }
 export interface MessageParser<T> {
-  next(reader: StreamReader, remainingByteLength: number): T | undefined;
+  next(reader: ReadableBuffer, remainingByteLength: number): T | undefined;
   reset(): void;
 }
 export function getFormat(format: number): PgFormat {

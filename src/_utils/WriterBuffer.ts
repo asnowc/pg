@@ -4,7 +4,7 @@
  *                  ^
  *             writeOffset
  */
-export class BufferWriter {
+export class WriteBuffer {
   constructor(
     private callWrite: (buffer: Uint8Array) => Promise<number>,
     bufferOrSize: Uint8Array | number,

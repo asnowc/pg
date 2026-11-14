@@ -1,7 +1,7 @@
 /**
  * 字节流读取器。执行读取操作前需要确保有足够的可读字节。
  */
-export interface StreamReader {
+export interface ReadableBuffer {
   readonly buffer: Uint8Array;
   readonly view: DataView;
   get readableEnd(): number;
@@ -11,7 +11,7 @@ export interface StreamReader {
   get readableLength(): number;
 }
 
-export class BufferReader implements StreamReader {
+export class ReadBuffer implements ReadableBuffer {
   constructor(buffer: Uint8Array, dataSize: number = 0) {
     this.buffer = buffer;
     this.readableEnd = dataSize;
@@ -31,15 +31,12 @@ export class BufferReader implements StreamReader {
   }
 
   /** 将数据推入缓冲区，返回实际写入缓冲区的字节数 */
-  pushReaderBufferData(chunk: Uint8Array): number {
+  pushReadBufferData(chunk: Uint8Array): number {
     const availableLength = this.buffer.byteLength - this.readableEnd;
     const writtenLength = Math.min(chunk.byteLength, availableLength);
     this.buffer.set(chunk.subarray(0, writtenLength), this.readableEnd);
     this.readableEnd += writtenLength;
     return writtenLength;
-  }
-  getIdleFreeReaderBuffer(): Uint8Array {
-    return this.buffer.subarray(this.readableEnd);
   }
 
   get readableLength(): number {
@@ -49,7 +46,7 @@ export class BufferReader implements StreamReader {
   /**
    * 重置偏移量，将未读数据移动到缓冲区开头并更新偏移量。
    */
-  gc() {
+  compact() {
     if (this.#readOffset === 0) {
       return;
     }
