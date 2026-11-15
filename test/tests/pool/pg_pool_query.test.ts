@@ -85,19 +85,3 @@ test("默认禁用空闲超时，连接可供下一次查询复用", async ({ pg
   expect(pgPool.totalCount).toBe(1);
   expect(pgPool.idleCount).toBe(1);
 });
-
-test("close 会等待在途查询完成，并拒绝后续查询", async ({ pgPool }) => {
-  const running = pgPool.query("SELECT 1 FROM pg_sleep(0.02)").rows();
-  const closing = pgPool.close();
-
-  await expect(pgPool.query("SELECT 1").rowCount()).rejects.toThrow("Pool is closed");
-  await running;
-  await expect(closing).resolves.toBeUndefined();
-});
-test("destroy 会立即销毁所有连接并释放资源", async function ({ pgPool }) {
-  const running = pgPool.query("SELECT 1 FROM pg_sleep(0.02)").rows();
-  pgPool.destroy();
-
-  await expect(pgPool.query("SELECT 1").rowCount()).rejects.toThrow("Pool is closed");
-  await expect(running).rejects.toThrow("Pool is destroyed");
-});

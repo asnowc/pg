@@ -1,72 +1,67 @@
-import { vi } from "vitest";
-import { type CreatePoolOptions, type PgConnection, PgPool } from "@asla/pg";
+import { expect, onTestFinished, vi } from "vitest";
+import { type CreatePoolOptions, PgPool } from "@asla/pg";
 import { createPgConnection } from "@/class/PgConnection.ts";
-import { EventEmitter } from "@/_utils/EventEmitter.ts";
 import { PgSession } from "@/protocol.ts";
+import {
+  encodeBindComplete,
+  encodeCommandComplete,
+  encodeParseComplete,
+  encodeReadyForQuery,
+  encodeRowDescription,
+  MockDataStream,
+} from "@test/utils/mock_data_stream.ts";
 
-type MockResult = { rows: unknown[]; notices: string[]; rowCount: number };
-
-export class MockSession extends EventEmitter {
-  meta = { date: 0 };
-  constructor(readonly processId: number) {
-    super();
-  }
-  get pendingQueyNumber() {
-    return this.queries.length;
-  }
-  closed = false;
-  private queries: PromiseWithResolvers<MockResult>[] = [];
-  queryWriter = {
-    extendedQuery: vi.fn(() => {
-      const query = Promise.withResolvers<MockResult>();
-      this.queries.push(query);
-      return query.promise;
-    }),
-    sync: vi.fn(),
-  };
-  close = vi.fn(async () => {
-    this.closed = true;
-    if (this.pendingQueyNumber === 0) this.emit("close", undefined);
-  });
-  destroy = vi.fn((error?: Error) => {
-    this.closed = true;
-    for (const query of this.queries) query.reject(error ?? new Error("Session destroyed"));
-    this.queries = [];
-    this.emit("close", undefined);
-  });
-
-  completeQuery(error?: Error) {
-    const query = this.queries[0];
-    if (!query) throw new Error("No pending query");
-    if (error) query.reject(error);
-    else query.resolve({ rows: [], notices: [], rowCount: 0 });
-  }
-
-  readyQuery() {
-    if (!this.queries.shift()) throw new Error("No pending query");
-    if (this.pendingQueyNumber === 0) {
-      this.emit("idle", undefined);
-      if (this.closed) this.emit("close", undefined);
-    }
-  }
-
-  finishQuery(error?: Error) {
-    this.completeQuery(error);
-    this.readyQuery();
-  }
-}
 export function createMockConnection(id: number) {
-  const session = new MockSession(id);
-  return { session, conn: createPgConnection(session as unknown as PgSession) };
+  const onServerEnd = vi.fn(() => stream.serverCloseWrite());
+  const stream = new MockDataStream({ onServerEnd });
+  vi.spyOn(stream, "closeWrite");
+  const destroy = stream.destroy.bind(stream);
+  vi.spyOn(stream, "destroy").mockImplementation(() => {
+    destroy();
+    stream.serverCloseWrite();
+  });
+  const session = new PgSession(stream, {
+    authResult: {
+      backendKey: { processId: id, secretKey: id },
+      newestMinorVersion: 0,
+      unsupportedOptions: [],
+    },
+    meta: { date: 0 },
+  });
+  const conn = createPgConnection(session);
+  const finished = Promise.allSettled([conn.finished]).then(([result]) => result);
+
+  function completeQuery() {
+    stream.serverPushData(encodeParseComplete());
+    stream.serverPushData(encodeBindComplete());
+    stream.serverPushData(encodeRowDescription());
+    stream.serverPushData(encodeCommandComplete("SELECT 0"));
+  }
+
+  function readyQuery() {
+    stream.serverPushData(encodeReadyForQuery());
+  }
+
+  function finishQuery() {
+    completeQuery();
+    readyQuery();
+  }
+
+  return { session, stream, conn, finished, onServerEnd, completeQuery, readyQuery, finishQuery };
 }
 
 export function createHarness(options: Omit<CreatePoolOptions, "create"> = {}) {
-  const sessions: MockSession[] = [];
+  const connections: ReturnType<typeof createMockConnection>[] = [];
   const create = vi.fn<CreatePoolOptions["create"]>(async () => {
-    const session = new MockSession(sessions.length + 1);
-    sessions.push(session);
-    return createPgConnection(session as unknown as PgSession);
+    const connection = createMockConnection(connections.length + 1);
+    connections.push(connection);
+    return connection.conn;
   });
   const pool = new PgPool({ ...options, create });
-  return { pool, sessions, create };
+  onTestFinished(() => {
+    pool.destroy();
+    expect(pool.totalCount).toBe(0);
+    expect(pool.queueLength).toBe(0);
+  });
+  return { pool, connections, create };
 }

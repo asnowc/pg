@@ -40,16 +40,16 @@ test("空池关闭和重复关闭不会创建连接", async () => {
 });
 
 test("close 等待借用连接释放，并让重复关闭共同等待", async () => {
-  const { pool, sessions } = createHarness();
+  const { pool, connections } = createHarness();
   const connection = await pool.borrow();
   const closing = pool.close();
   const closingAgain = pool.close();
   expect(pool.closed).toBe(true);
-  expect(sessions[0].close).not.toHaveBeenCalled();
+  expect(connections[0].stream.closeWrite).not.toHaveBeenCalled();
 
   connection.release();
   await Promise.all([closing, closingAgain]);
-  expect(sessions[0].close).toHaveBeenCalledTimes(1);
+  expect(connections[0].stream.closeWrite).toHaveBeenCalledTimes(1);
   expect(pool.totalCount).toBe(0);
 });
 
@@ -79,7 +79,7 @@ test("建连过程中关闭，成功建连后仍完成已有借用再关闭", as
   expect(pool.connectedCount).toBe(0);
   const closing = pool.close();
 
-  const { conn, session } = createMockConnection(97);
+  const { conn } = createMockConnection(97);
   creating.resolve(conn);
   const connection = await borrowing;
   await expectPending(closing);
@@ -124,33 +124,41 @@ test("一条连接创建失败后，关闭会复用已借出的连接执行排�
   await closing;
 });
 
-test("close 在 session 真正触发 close 前不会完成", async () => {
-  const { pool, sessions } = createHarness();
+test("close 在服务端 EOF 到达前不会完成", async () => {
+  const { pool, connections } = createHarness();
   const connection = await pool.borrow();
   connection.release();
-  sessions[0].close.mockImplementation(async () => {});
+  const { stream, onServerEnd, session } = connections[0];
+  onServerEnd.mockImplementationOnce(() => {});
   const closing = pool.close();
+  await vi.waitFor(() => expect(stream.closeWrite).toHaveBeenCalledTimes(1));
+  expect(session.closed).toBe(true);
+  expect(pool.totalCount).toBe(1);
   await expectPending(closing);
 
-  sessions[0].emit("close", undefined);
+  stream.serverCloseWrite();
   await closing;
   expect(pool.totalCount).toBe(0);
 });
 
 test("空闲连接关闭失败时销毁该连接", async () => {
-  const { pool, sessions } = createHarness();
+  const { pool, connections } = createHarness();
   await pool.prepareConnection(1);
-  sessions[0].close.mockRejectedValueOnce(new Error("Close failed"));
+  const { stream } = connections[0];
+  vi.mocked(stream.closeWrite).mockRejectedValueOnce(new Error("Close failed"));
 
   await pool.close();
-  expect(sessions[0].destroy).toHaveBeenCalledTimes(1);
+  expect(stream.destroy).toHaveBeenCalledTimes(1);
   expect(pool.totalCount).toBe(0);
 });
 
 test("空闲连接意外断开后从集合移除，后续请求重新建连", async () => {
-  const { pool, sessions, create } = createHarness();
+  const { pool, connections, create } = createHarness();
   await pool.prepareConnection(1);
-  sessions[0].destroy(new Error("Disconnected"));
+  const { stream, finished } = connections[0];
+  const error = new Error("Disconnected");
+  stream.mockStreamError(error);
+  await expect(finished).resolves.toEqual({ status: "rejected", reason: error });
   expect(pool.totalCount).toBe(0);
   expect(pool.idleCount).toBe(0);
 
@@ -161,7 +169,7 @@ test("空闲连接意外断开后从集合移除，后续请求重新建连", as
 });
 
 test("destroy 拒绝等待请求和在途查询，并可重复调用", async () => {
-  const { pool, sessions } = createHarness({ maxCount: 1 });
+  const { pool, connections } = createHarness({ maxCount: 1 });
   const connection = await pool.borrow();
   const failedQuery = expect(connection.query("SELECT 1").rows()).rejects.toThrow("Pool is destroyed");
   const failedBorrow = expect(pool.borrow()).rejects.toThrow("Pool is destroyed");
@@ -171,7 +179,11 @@ test("destroy 拒绝等待请求和在途查询，并可重复调用", async () 
   pool.destroy();
   await Promise.all([failedQuery, failedBorrow, closing]);
   await pool.close();
-  expect(sessions[0].destroy).toHaveBeenCalledTimes(1);
+  expect(connections[0].stream.destroy).toHaveBeenCalledTimes(1);
+  await expect(connections[0].finished).resolves.toMatchObject({
+    status: "rejected",
+    reason: new Error("Pool is destroyed"),
+  });
   await expect(pool.borrow()).rejects.toThrow("Pool is closed");
 });
 test("destroy 后才完成的建连会被关闭，不会重新加入池", async () => {
@@ -182,9 +194,9 @@ test("destroy 后才完成的建连会被关闭，不会重新加入池", async 
   pool.destroy();
   await expect(borrowing).rejects.toThrow("Pool is destroyed");
 
-  const { conn, session } = createMockConnection(97);
+  const { conn, stream } = createMockConnection(97);
   creating.resolve(conn);
-  await vi.waitFor(() => expect(session.destroy).toHaveBeenCalledTimes(1));
+  await vi.waitFor(() => expect(stream.destroy).toHaveBeenCalledTimes(1));
   expect(pool.totalCount).toBe(0);
   expect(pool.idleCount).toBe(0);
 });

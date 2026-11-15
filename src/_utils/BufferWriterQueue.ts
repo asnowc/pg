@@ -1,4 +1,4 @@
-import { WriteBuffer } from "./WriterBuffer.ts";
+import { WritableBuffer, WriteBuffer } from "./WriterBuffer.ts";
 
 export class BufferWriterQueue {
   constructor(writer: WriteBuffer, private onClose: () => Promise<void>, private onError: (error: unknown) => void) {
@@ -52,7 +52,7 @@ export class BufferWriterQueue {
   pushWrite(write: (writer: WriteBuffer) => Promise<void>): void {
     this.pushItem({ type: QueueItemType.WriteFn, write });
   }
-  pushClose() {
+  pushClose(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       this.pushItem({ type: QueueItemType.Close, resolve, reject });
     });
@@ -78,12 +78,7 @@ export class BufferWriterQueue {
           this.shift();
           return;
         case QueueItemType.Data: {
-          const rest = this.#writer.setDataToThreshold(item.data);
-          if (rest) {
-            item.data = rest;
-            this.setPendingWrite(this.#writer.transferBuffer());
-            return;
-          }
+          this.setPendingWrite(this.#writer.writeData(item.data));
           this.shift();
           break;
         }
@@ -142,7 +137,7 @@ export interface BufferEncoder {
    * 返回 false, 编码结束，返回 true 表示缓冲区需要更多空间继续编码。
    * 应在缓冲区有足够空间时继续调用 encodeInto 继续编码
    */
-  encodeInto(writer: WriteBuffer): boolean | void;
+  encodeInto(writer: WritableBuffer): boolean | void;
 }
 type Link<T extends object = object> = T & {
   next?: Link<T>;
@@ -161,7 +156,6 @@ type WriteFnQueueItem = {
   type: QueueItemType.WriteFn;
   write: (writer: WriteBuffer) => Promise<void>;
 };
-
 type DataQueueItem = {
   type: QueueItemType.Data;
   data: Uint8Array;

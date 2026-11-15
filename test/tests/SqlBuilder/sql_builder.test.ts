@@ -11,10 +11,10 @@ test("NULL 无需编码器，保留 Bind null 和 OID 0", async ({ conn }) => {
 });
 
 test("NULL、普通参数和 raw 片段混合时参数编号与 OID 不移位", async ({ conn }) => {
-  const statement = sql`SELECT ${null}, ${42}, ${sql.raw("CURRENT_DATE")}, ${null}, ${"hello"}, ${null}`;
-  expect(statement.toTemplate()).toBe("SELECT $1, $2, CURRENT_DATE, $3, $4, $5");
+  const statement = sql`SELECT ${null} a, ${42} b, ${sql.raw("CURRENT_DATE")} c, ${null} d, ${"hello"} e, ${null} f`;
+  expect(statement.toTemplate()).toBe("SELECT $1 a, $2 b, CURRENT_DATE c, $3 d, $4 e, $5 f");
   const result = await conn.query(statement).firstRow();
-  expect(result).toEqual({ a: null, b: 42, c: expect.any(Date), d: null, e: "hello", f: null });
+  expect(result).toEqual({ a: null, b: 42, c: expect.any(Temporal.PlainDate), d: null, e: "hello", f: null });
 });
 
 test("空字符串、空字节、零和 false 不会被当作 NULL", async ({ conn }) => {

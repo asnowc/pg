@@ -1,10 +1,21 @@
+export interface WritableBuffer {
+  readonly buffer: Uint8Array;
+  readonly view: DataView;
+  writeOffset: number;
+  get writableLength(): number;
+  /**
+   * 将数据写入缓冲区。返回剩余未写入数据，如果全部写入，则返回 null。
+   */
+  setData(data: Uint8Array): Uint8Array | null;
+}
+
 /**
  * | buffered data | writable space |
  * |0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 |
  *                  ^
  *             writeOffset
  */
-export class WriteBuffer {
+export class WriteBuffer implements WritableBuffer {
   constructor(
     private callWrite: (buffer: Uint8Array) => Promise<number>,
     bufferOrSize: Uint8Array | number,
@@ -51,6 +62,7 @@ export class WriteBuffer {
 
   /**
    * 从缓冲区写入数据，直到累计写入量严格大于 minimumBytesToWrite。
+   * 无论 minimumBytesToWrite 的值是多少，至少调用 callWrite 一次。
    */
   async transferBuffer(minimumBytesToWrite: number = 0): Promise<number> {
     let totalWritten = 0;
@@ -63,10 +75,14 @@ export class WriteBuffer {
     else this.buffer.copyWithin(0, totalWritten, this.writeOffset), this.writeOffset -= totalWritten;
     return totalWritten;
   }
+
+  setData(data: Uint8Array): Uint8Array | null {
+    return this.setDataToThreshold(data);
+  }
   /**
    * 将数据写入缓冲区，如果缓冲区数据加上新写入的数据超过阈值，则只写入部分数据，返回剩余数据，否则返回 null
    */
-  setDataToThreshold(data: Uint8Array): Uint8Array | null {
+  private setDataToThreshold(data: Uint8Array): Uint8Array | null {
     if (this.writeOffset >= this.callWriteThreshold) return data;
     const totalSize = this.writeOffset + data.byteLength;
     if (totalSize < this.callWriteThreshold) {
@@ -80,7 +96,7 @@ export class WriteBuffer {
   /**
    * 写入数据；达到阈值时发送缓冲数据，未达到阈值的尾部数据留在缓冲区，直到后续写入或 flush()。
    */
-  async writeData(data: Uint8Array) {
+  async writeData(data: Uint8Array): Promise<void> {
     let rest: Uint8Array | null = data;
     do {
       rest = this.setDataToThreshold(rest);
