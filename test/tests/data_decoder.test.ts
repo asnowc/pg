@@ -2,16 +2,13 @@ import { expect, test } from "vitest";
 import { getJsDataEncoder, JS_DATA_ENCODER_V1 } from "@/codec/js_data_encoder.ts";
 import { PG_DATA_DECODER_V1 } from "@/codec/pg_data_decoder.ts";
 import type { JsDataEncoder } from "@/interface/js_data_encoder.ts";
-import type { FieldInfo } from "@/interface/Query/QueryReader.ts";
 import { PgOid } from "@/util/pg_oid.ts";
 import { ReadBuffer } from "@/_utils/ReadBuffer.ts";
 const encoderV1 = JS_DATA_ENCODER_V1;
 
-const context: FieldInfo = { typeOID: 0, typeSize: -1, typeModifier: -1, index: 0, name: "" };
-
 function getDecoder(oid: PgOid) {
   const decoder = PG_DATA_DECODER_V1.get(oid)!;
-  return typeof decoder === "function" ? decoder({ ...context, typeOID: oid }) : decoder;
+  return typeof decoder === "function" ? decoder() : decoder;
 }
 
 function decodeBinary(oid: PgOid, value: Uint8Array): unknown {

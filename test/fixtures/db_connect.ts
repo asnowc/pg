@@ -10,15 +10,14 @@ import {
 } from "@asla/pg";
 import process from "node:process";
 import { DB_CONNECT_INFO, PUBLIC_DB_CONNECT_INFO } from "@test/utils/db.ts";
+import { PgSession } from "@/protocol.ts";
+import { getSessionFromPgConnection } from "@/class/PgConnection.ts";
 
 export interface BaseContext {
   emptyDbPool: DbQueryPool;
-  /** @deprecated 改用 conn */
-  connect: PgConnection;
   conn: PgConnection;
-  /** @deprecated 改用 pool */
-  pgPool: PgPool;
   pool: PgPool;
+  session: PgSession;
 }
 const VITEST_WORKER_ID = +process.env.VITEST_WORKER_ID!;
 let databaseSequence = 0;
@@ -44,8 +43,9 @@ export const test = viTest.extend<BaseContext>({
       if (useCount !== 0) throw new Error("存在未释放的连接");
     }
   },
-  async connect({ conn }, use) {
-    await use(conn);
+  async session({ conn }, use) {
+    const session = getSessionFromPgConnection(conn);
+    await use(session);
   },
   async conn({}, use) {
     await using connection = await connectFromNet(PUBLIC_DB_CONNECT_INFO);
@@ -59,9 +59,6 @@ export const test = viTest.extend<BaseContext>({
       create: () => connectFromNet(PUBLIC_DB_CONNECT_INFO),
     });
     await use(dbPool);
-  },
-  async pgPool({ pool }, use) {
-    await use(pool);
   },
 });
 

@@ -59,7 +59,7 @@ export class PgSession<T = unknown> extends EventEmitter {
 
   meta: T;
 
-  get parameters(): Record<string, string> {
+  get parameters(): Readonly<Record<string, string>> {
     return this.readQueue.parameters;
   }
   get pendingQueyNumber(): number {
@@ -96,15 +96,18 @@ export interface PgSession {
   on(event: "error", callback: () => void): void;
   on(event: "close", callback: () => void): void;
   on(event: "release", callback: () => void): void;
+  on(event: "idle", callback: () => void): void;
   on(event: string, callback: Listener): void;
 
   off(event: "error", callback: Listener): void;
   off(event: "close", callback: Listener): void;
   off(event: "release", callback: Listener): void;
+  off(event: "idle", callback: Listener): void;
   off(event: string, callback: Listener): void;
 
   emit(event: "error", error: unknown): boolean;
   emit(event: "close"): boolean;
   emit(event: "release"): boolean;
+  emit(event: "idle"): boolean;
   emit(event: string, ...args: unknown[]): boolean;
 }

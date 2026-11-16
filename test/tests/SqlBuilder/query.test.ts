@@ -9,7 +9,7 @@ type QueryResult = {
   empty: string;
   number: number;
 };
-test("模板字符串查询", async ({ connect }) => {
+test("模板字符串查询", async ({ conn }) => {
   const statement = sql<QueryResult>`
     SELECT 
       ${"42"}::int AS value,
@@ -17,7 +17,7 @@ test("模板字符串查询", async ({ connect }) => {
       ${""}::text AS empty,
       ${"123"}::int AS number`;
 
-  await expect(connect.query(statement).firstRow()).resolves.toEqual({
+  await expect(conn.query(statement).firstRow()).resolves.toEqual({
     value: 42,
     nullable: null,
     empty: "",

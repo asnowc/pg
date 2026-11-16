@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { ReadBuffer } from "@/\u005futils/ReadBuffer.ts";
 
-test("gc 保留未读字节并允许继续追加", () => {
+test("compact 保留未读字节并允许继续追加", () => {
   const reader = new ReadBuffer(new Uint8Array(6));
   expect(reader.pushReadBufferData(Uint8Array.of(1, 2, 3, 4))).toBe(4);
   expect(reader.buffer.subarray(reader.readableStart, reader.readableStart + 2)).toEqual(Uint8Array.of(1, 2));
@@ -17,7 +17,7 @@ test("gc 保留未读字节并允许继续追加", () => {
   expect(reader.readableLength).toBe(0);
 });
 
-test("gc 在尚未读取时不丢弃数据", () => {
+test("compact 在尚未读取时不丢弃数据", () => {
   const reader = new ReadBuffer(new Uint8Array(4));
   reader.pushReadBufferData(Uint8Array.of(1, 2));
   reader.compact();

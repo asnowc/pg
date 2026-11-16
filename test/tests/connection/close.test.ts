@@ -2,8 +2,7 @@ import { createConn, test } from "@test/fixtures/db_connect.ts";
 import { expect } from "vitest";
 import { SessionClosedError, SessionDestroyedError } from "@/_utils/error.ts";
 
-test("重复关闭已关闭的连接会被忽略", async () => {
-  await using conn = await createConn();
+test("重复关闭已关闭的连接会被忽略", async ({ conn }) => {
   await conn.close();
   expect(conn.closed).toBe(true);
   await conn.close();
@@ -13,9 +12,7 @@ test("重复关闭已关闭的连接会被忽略", async () => {
   await Promise.all([conn2.close(), conn2.close()]);
   expect(conn2.closed).toBe(true);
 });
-test("关闭连接会等待查询响应完毕后再关闭，关闭后再执行查询会报错", async () => {
-  await using conn = await createConn();
-
+test("关闭连接会等待查询响应完毕后再关闭，关闭后再执行查询会报错", async ({ conn }) => {
   const r1 = conn.query("SELECT 1 AS v").firstRow();
   const count = conn.query("SELECT pg_sleep(1)").rowCount();
   const r2 = conn.query("SELECT 2 AS v").firstRow();
@@ -33,8 +30,7 @@ test("关闭连接会等待查询响应完毕后再关闭，关闭后再执行�
   await expect(conn.query("SELECT 4 AS v").firstRow()).rejects.toThrow(SessionClosedError);
 });
 
-test("重复销毁连接将被忽略，销毁后再执行查询会报错", async () => {
-  await using conn = await createConn();
+test("重复销毁连接将被忽略，销毁后再执行查询会报错", async ({ conn }) => {
   conn.destroy();
   expect(conn.closed).toBe(true);
   conn.destroy();
@@ -43,8 +39,7 @@ test("重复销毁连接将被忽略，销毁后再执行查询会报错", async
   await expect(conn.query("SELECT 4 AS v").firstRow()).rejects.toThrow(SessionClosedError);
 });
 
-test("查询中销毁连接", async () => {
-  await using conn = await createConn();
+test("查询中销毁连接", async ({ conn }) => {
   const p1 = conn.query("SELECT pg_sleep(1)").rowCount();
   const p2 = conn.query("SELECT 2 AS v").rowCount();
   await new Promise((resolve) => setTimeout(resolve, 100));

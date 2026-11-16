@@ -3,48 +3,104 @@ import { ConnectionSource, PgConnectOptions } from "@/interface/Connection.ts";
 import { connectPgSession } from "@/protocol/connect_session.ts";
 import { SingleQueryOperation } from "@/interface/Query.ts";
 import { QueryOperation, SessionRef } from "@/class/_connection.ts";
+import { QueryWriteQueue } from "@/protocol/MessageWriteQueue.ts";
 
 export let getSessionFromPgConnection: (operation: PgConnection) => PgSession;
 export let createPgConnection: (session: PgSession) => PgConnection;
 
+class SessionRefImpl implements SessionRef {
+  constructor(private session?: PgSession) {
+    session?.on("release", this.onRelease);
+  }
+  private onRelease = () => {
+    this.stack.pop();
+  };
+  private get currentLock() {
+    return this.stack[this.stack.length - 1];
+  }
+  private readonly stack: (object | undefined)[] = [];
+  get released(): boolean {
+    return !this.session;
+  }
+  get processId(): number | null {
+    if (!this.session) return null;
+    return this.session.processId;
+  }
+  get closed(): boolean {
+    if (!this.session) return true;
+    return this.session.closed;
+  }
+  close(): Promise<void> {
+    if (!this.session) return Promise.resolve();
+    return this.getWriter().close();
+  }
+  destroy(): void {
+    if (!this.session) return;
+    return this.session.destroy();
+  }
+  release(): void {
+    const session = this.session;
+    if (!session) return;
+    this.session = undefined;
+    session.emit("release");
+  }
+  getSession() {
+    if (!this.session) throw new Error("Session is not available");
+    return this.session;
+  }
+  getWriter(key?: object): QueryWriteQueue {
+    const session = this.getSession();
+    if (key !== this.currentLock) throw new Error("Session is locked by another handle");
+    return session.queryWriter;
+  }
+  lock(lock: object) {
+    this.stack.push(lock);
+  }
+  transferSession(): PgSession {
+    const session = this.getSession();
+    const writer = this.getWriter();
+    this.stack.length = 0;
+    return session;
+  }
+  transferWriter(): QueryWriteQueue {
+    const writer = this.getWriter();
+    return writer;
+  }
+}
 /**
  * @public
  */
 export class PgConnection extends QueryOperation implements AsyncDisposable, SingleQueryOperation {
   private constructor(session: PgSession) {
-    const ref = new SessionRef(session);
+    const ref = new SessionRefImpl(session);
     super(ref);
     this.#ref = ref;
     this.finished = new Promise<void>((resolve, reject) => {
       session.on("close", resolve);
       session.on("error", reject);
+      this.#clearListener = () => {
+        session.off("close", resolve);
+        session.off("error", reject);
+      };
     });
   }
-  #ref: SessionRef;
-
+  #ref: SessionRefImpl;
+  #clearListener!: () => void;
   get processId(): number | null {
-    if (!this.#ref.session) return null;
-    return this.#ref.session.processId;
-  }
-  get parameters(): Record<string, string> {
-    if (!this.#ref.session) return {};
-    return { ...this.#ref.session.parameters };
+    return this.#ref.processId;
   }
   get closed(): boolean {
-    if (!this.#ref.session) return true;
-    return this.#ref.session.closed;
+    return this.#ref.closed;
   }
   readonly finished: Promise<void>;
   close(): Promise<void> {
-    if (!this.#ref.session) return Promise.resolve();
-    return this.#ref.session.close();
+    return this.#ref.close();
   }
   [Symbol.asyncDispose](): Promise<void> {
     return this.close();
   }
   destroy(): void {
-    if (!this.#ref.session) return;
-    return this.#ref.session.destroy();
+    return this.#ref.destroy();
   }
 
   static async connect<T extends ConnectionSource>(source: T, options: PgConnectOptions<T>) {
@@ -53,6 +109,7 @@ export class PgConnection extends QueryOperation implements AsyncDisposable, Sin
   }
   static {
     getSessionFromPgConnection = (operation: PgConnection) => {
+      operation.#clearListener();
       return operation.#ref.transferSession();
     };
     createPgConnection = (session) => {
@@ -60,30 +117,29 @@ export class PgConnection extends QueryOperation implements AsyncDisposable, Sin
     };
   }
 }
+
 export let createPgPoolConnection: (session: PgSession) => PgPoolConnection;
 /**
  * @public
  */
 export class PgPoolConnection extends QueryOperation implements Disposable {
   private constructor(session: PgSession) {
-    const ref = new SessionRef(session);
+    const ref = new SessionRefImpl(session);
     super(ref);
     this.#ref = ref;
+    this.#session = session;
   }
-  #ref: SessionRef;
+  #session: PgSession;
+  #ref: SessionRefImpl;
 
   get processId(): number | null {
-    if (!this.#ref.session) return null;
-    return this.#ref.session.processId;
+    return this.#session.processId;
   }
   release(): void {
-    const session = this.#ref.session;
-    if (!session) return;
-    this.#ref.session = undefined;
-    session.emit("release");
+    return this.#ref.release();
   }
   get released(): boolean {
-    return !this.#ref.session;
+    return this.#ref.released;
   }
 
   [Symbol.dispose](): void {
