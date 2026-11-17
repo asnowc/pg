@@ -50,12 +50,6 @@ export function checkOptions(options: CreatePoolOptions) {
   }
 }
 
-export type PoolConnState = {
-  /** 最后一次进入 free 队列的时间 */
-  date: number;
-};
-export type PoolPgSession = PgSession<PoolConnState>;
-
 export class TimeoutChecker {
   constructor(private onCheck: (idleTimeout: number) => boolean, idleTimeout: number) {
     this.idleTimeout = idleTimeout;
@@ -82,14 +76,13 @@ export class TimeoutChecker {
   }
 }
 
-export function checkTimeout(map: Set<PgSession>, free: Set<PoolPgSession>, timeout: number) {
+export function checkTimeout(map: Set<PgSession>, idle: Map<PgSession, number>, timeout: number) {
   const now = Date.now();
-  for (const session of free) {
-    const state = session.meta;
-    if (now - state.date > timeout) {
-      free.delete(session);
-      map.delete(session);
-      closeByteStream(session);
+  for (const [item, times] of idle) {
+    if (now - times > timeout) {
+      idle.delete(item);
+      map.delete(item);
+      closeByteStream(item);
     }
   }
 }
@@ -106,19 +99,19 @@ export function clearWaitQueue(queue: LinkList<WaitQueueItem>, error: Error) {
 
 export type WaitQueueItem = {
   pipeline?: number;
-  resolve(session: PoolPgSession): void;
+  resolve(session: PgSession): void;
   reject(reason: unknown): void;
 };
-export function shiftSet<T>(set: Set<T>): T {
+export function shiftSet<T>(set: Iterable<T>, target: { delete(value: T): boolean }): T {
   for (const element of set) {
-    set.delete(element);
+    target.delete(element);
     return element;
   }
   throw new Error("Set is empty");
 }
 
-export function getMinQueryNumberSession(pool: Set<PoolPgSession>, maxPipeline: number) {
-  let minSession: PoolPgSession | undefined;
+export function getMinQueryNumberSession(pool: Set<PgSession>, maxPipeline: number) {
+  let minSession: PgSession | undefined;
   for (const session of pool) {
     if (session.pendingQueyNumber >= maxPipeline) continue;
     if (!minSession || session.pendingQueyNumber < minSession.pendingQueyNumber) {

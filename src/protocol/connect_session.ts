@@ -55,7 +55,7 @@ export async function connectPgSession<T extends ConnectionSource>(
 ): Promise<PgSession> {
   const { maxMessageSize } = options;
   const { stream, authResult } = await startAuth(source, options);
-  return new PgSession(stream, { maxMessageSize, authResult, meta: undefined });
+  return new PgSession(stream, { maxMessageSize, authResult });
 }
 
 /**

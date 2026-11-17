@@ -1,14 +1,14 @@
+import { PgSession } from "@/protocol.ts";
 import type { PgPool } from "./PgPool.ts";
-import { PoolPgSession } from "@/class/Pool.ts";
 
 function noImpl(...args: any[]): never {
   throw new Error("Not implemented");
 }
 export const poolForTest: {
   getPooInternalPool: (pool: PgPool) => {
-    pool: Set<PoolPgSession>;
-    idle: Set<PoolPgSession>;
-    inPipeline: Set<PoolPgSession>;
+    pool: Set<PgSession>;
+    idle: Map<PgSession, number>;
+    inPipeline: Set<PgSession>;
   };
 } = {
   getPooInternalPool: noImpl,

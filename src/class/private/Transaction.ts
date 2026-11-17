@@ -4,28 +4,29 @@ import type {
   QueryOptions,
   QueryReader as IQueryReader,
   SqlStatement,
-  Transaction,
+  Transaction as ITransaction,
   TransactionMode,
 } from "@/interface/Query.ts";
-import QueryReaderImpl from "./QueryReader.ts";
-import { createTypedSqlStatement } from "./sql_statement.ts";
 import { QueryOptionsWithDecoder } from "@/interface/Query/_internal.ts";
+import { QueryWriter, relatedQuery } from "./QueryFunction.ts";
 
-export class TransactionImpl implements Transaction {
-  private ended = false;
-
-  constructor(private readonly pool: unknown, readonly mode: TransactionMode = "READ COMMITTED") {
+export default class Transaction implements ITransaction {
+  constructor(
+    private getWriter: QueryWriter | undefined,
+    private readonly onRelease: () => void,
+    readonly mode: TransactionMode = "READ COMMITTED",
+  ) {
   }
-
+  private getWriterStrict(): QueryWriter {
+    if (!this.getWriter) throw new Error("Transaction writer is not available");
+    return this.getWriter;
+  }
   get released(): boolean {
-    return this.ended;
+    return !this.getWriter;
   }
 
   query<T>(queryable: SqlStatement, options?: QueryOptions & QueryOptionsWithDecoder): IQueryReader<T> {
-    const encoder = createTypedSqlStatement(queryable, options);
-    return new QueryReaderImpl<T>(async () => {
-      throw new Error("Not implemented");
-    });
+    return relatedQuery(this.getWriterStrict(), queryable, options);
   }
 
   open<T>(_queryable: SqlStatement, _options?: CursorOpenOptions): Promise<Cursor<T>> {
@@ -42,13 +43,21 @@ export class TransactionImpl implements Transaction {
 
   async commit(): Promise<void> {
     await this.query("COMMIT");
+    this.release();
   }
 
   async rollback(): Promise<void> {
     await this.query("ROLLBACK");
+    this.release();
+  }
+  private release(): void {
+    if (!this.getWriter) return;
+    this.getWriter = undefined;
+    this.onRelease();
   }
 
   [Symbol.asyncDispose](): Promise<void> {
+    if (!this.getWriter) return Promise.resolve();
     return this.rollback();
   }
 }

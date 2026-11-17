@@ -8,8 +8,8 @@ export class PgProtocolError extends Error {
   }
 }
 export class UnexpectedEOFError extends Error {
-  constructor() {
-    super("Unexpected end of file");
+  constructor(message = "Unexpected end of file") {
+    super(message);
     this.name = "UnexpectedEOFError";
   }
 }

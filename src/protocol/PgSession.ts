@@ -9,19 +9,17 @@ import { BufferWriterQueue } from "@/_utils/BufferWriterQueue.ts";
 
 const DEFAULT_MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
 
-export class PgSession<T = unknown> extends EventEmitter {
+export class PgSession extends EventEmitter {
   constructor(
     private readonly stream: DataStream,
     config: {
       maxMessageSize?: number;
       authResult: AuthenticationResult;
-      meta: T;
     },
   ) {
     super();
-    const { authResult, maxMessageSize = DEFAULT_MAX_MESSAGE_SIZE, meta } = config;
+    const { authResult, maxMessageSize = DEFAULT_MAX_MESSAGE_SIZE } = config;
     this.stream = stream;
-    this.meta = meta;
     const backendKey = authResult.backendKey;
     this.processId = backendKey?.processId ?? null;
     this.secretKey = backendKey?.secretKey ?? null;
@@ -46,18 +44,18 @@ export class PgSession<T = unknown> extends EventEmitter {
     });
     stream.startReadLoop((buffer) => parser.next(buffer), () => {
       if (this.readQueue.head) {
-        this.readQueue.fail(new UnexpectedEOFError());
+        this.readQueue.fail(
+          new UnexpectedEOFError("The EOF has been reached but the read queue has not been fully processed"),
+        );
       }
       if (!this.closed) {
-        this.destroy(new UnexpectedEOFError());
+        this.destroy(new UnexpectedEOFError("The EOF has been reached but the client has not called close"));
       }
       this.emit("close");
     });
   }
   readonly processId: number | null;
   readonly secretKey: number | null;
-
-  meta: T;
 
   get parameters(): Readonly<Record<string, string>> {
     return this.readQueue.parameters;

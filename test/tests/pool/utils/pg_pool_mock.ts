@@ -26,10 +26,13 @@ export function createMockConnection(id: number) {
       newestMinorVersion: 0,
       unsupportedOptions: [],
     },
-    meta: { date: 0 },
   });
   const conn = createPgConnection(session);
-  const finished = Promise.allSettled([conn.finished]).then(([result]) => result);
+  const sessionFinished = new Promise<void>((resolve, reject) => {
+    session.on("close", resolve);
+    session.on("error", reject);
+  });
+  const finished = Promise.allSettled([sessionFinished]).then(([result]) => result);
 
   function completeQuery() {
     stream.serverPushData(encodeParseComplete());

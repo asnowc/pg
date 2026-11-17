@@ -1,8 +1,6 @@
-import { createPgPoolConnection, getSessionFromPgConnection, PgPoolConnection } from "./PgConnection.ts";
+import { createPgPoolConnection, PgPoolConnection } from "./PgConnection.ts";
 import { QueryOptions, QueryReader, SingleQueryOperation, SqlStatement } from "@/interface/Query.ts";
-import { createTypedSqlStatement } from "./private/sql_statement.ts";
-import QueryReaderImpl from "./private/QueryReader.ts";
-import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
+import { TypedSqlStatement } from "./PreparedStatement.ts";
 import { QueryOptionsWithDecoder } from "@/interface/Query/_internal.ts";
 import {
   checkOptions,
@@ -10,7 +8,6 @@ import {
   clearWaitQueue,
   closeByteStream,
   getMinQueryNumberSession,
-  PoolPgSession,
   shiftSet,
   TimeoutChecker,
   WaitQueueItem,
@@ -18,9 +15,11 @@ import {
 import type { CreatePoolOptions } from "./Pool.ts";
 import { CountLinkList } from "@/_utils/LinkList.ts";
 import { poolForTest } from "./PgPoolForTest.ts";
+import { QueryOperation } from "./QueryOperation.ts";
+import { PgSession } from "@/protocol/PgSession.ts";
+import { isolationQuery } from "./private/QueryFunction.ts";
 
 export type { CreatePoolOptions } from "./Pool.ts";
-
 /** @public */
 export class PgPool implements SingleQueryOperation, AsyncDisposable {
   /**
@@ -40,15 +39,15 @@ export class PgPool implements SingleQueryOperation, AsyncDisposable {
       return this.#idle.size > 0 && !this.closed;
     }, options.idleTimeout ?? 0);
   }
-  #pool = new Set<PoolPgSession>();
+  #pool = new Set<PgSession>();
   /**
    * 空闲的连接，未被借用
    */
-  #idle = new Set<PoolPgSession>(); // 空闲的连接
+  #idle = new Map<PgSession, number>(); // 空闲的连接
   /**
    * 正在执行池级 pipeline 查询的连接
    */
-  #pipeline = new Set<PoolPgSession>();
+  #pipeline = new Set<PgSession>();
   get connectedCount(): number {
     return this.#pool.size;
   }
@@ -78,11 +77,11 @@ export class PgPool implements SingleQueryOperation, AsyncDisposable {
     if (this.totalCount < this.#maxConnection) this.#create();
   }
   async #create() {
-    let session: PoolPgSession;
+    let session: PgSession;
     this.#connecting++;
     try {
       const connection = await this.#createConnection();
-      session = getSessionFromPgConnection(connection) as PoolPgSession;
+      session = QueryOperation.transferSession(connection);
       this.#connecting--;
       this.#createRetry = 0;
       if (this.#closed) {
@@ -115,7 +114,6 @@ export class PgPool implements SingleQueryOperation, AsyncDisposable {
       }
       return;
     }
-    session.meta = { date: Date.now() };
     const onRelease = () => {
       if (session.closed) return;
       if (session.pendingQueyNumber === 0) this.#onSessionIdle(session);
@@ -155,7 +153,7 @@ export class PgPool implements SingleQueryOperation, AsyncDisposable {
     await Promise.all(promises);
   }
 
-  #onSessionIdle(session: PoolPgSession) {
+  #onSessionIdle(session: PgSession) {
     let next = this.#waitQueue.head;
     if (next) {
       if (next.pipeline) {
@@ -173,34 +171,35 @@ export class PgPool implements SingleQueryOperation, AsyncDisposable {
       return;
     }
     if (this.closed) return void closeByteStream(session);
-    session.meta.date = Date.now();
-    this.#idle.add(session);
+    this.#idle.set(session, Date.now());
     this.#timeoutChecker.setTimeIfNoSet();
   }
-
-  #getSession(
-    resolve: (session: PoolPgSession) => void,
-    reject: (error: unknown) => void,
-    maxPipeline?: number,
-  ): boolean {
+  #getSessionSync(maxPipeline: number = this.#maxPipeline): PgSession | undefined {
     if (this.closed) throw new Error("Pool is closed");
     if (this.#idle.size) {
-      const session = shiftSet(this.#idle);
+      const session = shiftSet(this.#idle.keys(), this.#idle);
       if (maxPipeline) this.#pipeline.add(session);
-      resolve(session);
-      return true;
+      return session;
     }
     if (maxPipeline) {
       const minSession = getMinQueryNumberSession(this.#pipeline, maxPipeline);
       if (minSession) {
         this.#checkCreate();
-        resolve(minSession);
-        return true;
+        return minSession;
       }
     }
+    return undefined;
+  }
+  #getSession<T>(
+    resolve: (session: PgSession) => T,
+    reject: (error: unknown) => void,
+    maxPipeline: number = this.#maxPipeline,
+  ): T | undefined {
+    const session = this.#getSessionSync(maxPipeline);
+    if (session) return resolve(session);
     this.#waitQueue.push({ pipeline: maxPipeline, resolve, reject });
     this.#checkCreate();
-    return false;
+    return;
   }
   /** 等待队列，存放等待获取连接的请求 */
   readonly #waitQueue = new CountLinkList<WaitQueueItem>();
@@ -221,7 +220,7 @@ export class PgPool implements SingleQueryOperation, AsyncDisposable {
     this.clearTimer();
     if (!this.#waitQueue.head) {
       const promises: Promise<void>[] = [];
-      for (const item of this.#idle) promises.push(item.close().catch(() => item.destroy()));
+      for (const item of this.#idle.keys()) promises.push(item.close().catch(() => item.destroy()));
       for (const item of this.#pipeline) promises.push(item.close().catch(() => item.destroy()));
       await Promise.all(promises);
     }
@@ -267,22 +266,16 @@ export class PgPool implements SingleQueryOperation, AsyncDisposable {
     queryable: SqlStatement | TypedSqlStatement<T>,
     options?: PoopQueryOptions & QueryOptionsWithDecoder,
   ): QueryReader<T> {
-    const encoder = createTypedSqlStatement(queryable, options);
-    return new QueryReaderImpl<T>(() => {
-      return new Promise((resolve, reject) => {
-        const maxPipeline = options?.maxPipeline ?? this.#maxPipeline;
-        this.#getSession(
-          (session) => {
-            const queryWriteQueue = session.queryWriter;
-            const promise = queryWriteQueue.extendedQuery<T>(encoder);
-            queryWriteQueue.sync();
-            resolve(promise);
-          },
-          reject,
-          maxPipeline,
-        );
-      });
-    });
+    const session = this.#getSessionSync();
+    if (session) return isolationQuery(session.queryWriter, queryable, options);
+    return isolationQuery(
+      () =>
+        new Promise((resolve, reject) => {
+          this.#getSession((session) => resolve(session.queryWriter), reject);
+        }),
+      queryable,
+      options,
+    );
   }
   static {
     poolForTest.getPooInternalPool = (pool: PgPool) => ({
