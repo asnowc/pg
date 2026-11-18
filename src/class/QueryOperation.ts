@@ -13,69 +13,42 @@ import type {
   TransactionMode,
   TransactionQueryOperation,
 } from "@/interface/Query.ts";
-import { createTypedSqlStatement } from "./private/sql_statement.ts";
-import QueryReader from "./private/QueryReader.ts";
 import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
 import { QueryOptionsWithDecoder } from "@/interface/Query/_internal.ts";
 import { PgSession } from "@/protocol/PgSession.ts";
 import Transaction from "./private/Transaction.ts";
-import { QueryWriteQueue } from "@/protocol/MessageWriteQueue.ts";
+import { HandleUnavailableError } from "@/_utils/error.ts";
+import { isolationQuery } from "@/class/private/QueryFunction.ts";
 
 export class QueryOperation
   implements MultipleQueryOperation, SingleQueryOperation, CursorQueryOperation, TransactionQueryOperation {
-  constructor(session: PgSession, onFinished?: () => void, onError?: () => void) {
-    this.#session = session;
-    this.#writer = session.queryWriter;
-    if (onFinished) {
-      session.on("close", onFinished);
-      this.#onFinished = onFinished;
-    }
-    if (onError) {
-      session.on("error", onError);
-      this.#onError = onError;
-    }
+  constructor(getSession: () => PgSession | Promise<PgSession>) {
+    this.#getSessionWriter = () => {
+      if (this.#writeLocked) throw new HandleUnavailableError("Session is locked");
+      return getSession();
+    };
   }
-  #onError?: () => void;
-  #onFinished?: () => void;
 
-  #session?: PgSession;
-  #getSession() {
-    if (!this.#session) throw new Error("Session is not available");
-    return this.#session;
-  }
-  #writer?: QueryWriteQueue;
-  #transferWriter() {
-    const writer = this.#getWriter();
-    this.#writer = undefined;
+  #writeLocked = false;
+  #transferWriter = () => {
+    const writer = this.#getSessionWriter();
+    this.#writeLocked = true;
     return writer;
-  }
-  #getWriter() {
-    const writer = this.#writer;
-    if (!writer) throw new Error("Session writer is not available");
-    return writer;
-  }
+  };
+  #getSessionWriter: () => PgSession | Promise<PgSession>;
   #releaseWriter = () => {
-    if (this.#writer) return;
-    this.#writer = this.#getSession().queryWriter;
+    this.#writeLocked = false;
   };
 
   query<T>(
     queryable: SqlStatement | TypedSqlStatement<T>,
     options?: QueryOptions & QueryOptionsWithDecoder,
   ): IQueryReader<T> {
-    const encoder = createTypedSqlStatement(queryable, options);
-    return new QueryReader(() => {
-      return new Promise((resolve) => {
-        const writer = this.#getWriter();
-        const promise = writer.extendedQuery<T>(encoder);
-        writer.sync();
-        resolve(promise);
-      });
-    });
+    return isolationQuery(this.#getSessionWriter, queryable, options);
   }
 
   begin(mode?: TransactionMode): ITransaction {
-    return new Transaction(this.#transferWriter(), this.#releaseWriter, mode);
+    return new Transaction(this.#transferWriter, this.#releaseWriter, mode);
   }
   open<T>(queryable: SqlStatement | TypedSqlStatement<T>, options?: CursorOpenOptions): Promise<Cursor<T>> {
     throw new Error("Not implemented");
@@ -87,15 +60,40 @@ export class QueryOperation
     if (typeof queryable !== "string") throw new TypeError("Only string simple queries are supported");
     throw new Error("Not implemented");
   }
-  static getSessionSafe(operation: QueryOperation): PgSession | undefined {
+  static isLocked(operation: QueryOperation): boolean {
+    return operation.#writeLocked;
+  }
+}
+export class ConnQueryOperation extends QueryOperation {
+  constructor(session: PgSession, onFinished?: () => void, onError?: () => void) {
+    super(() => this.#getSession());
+    this.#session = session;
+    if (onFinished) {
+      session.on("close", onFinished);
+      this.#onFinished = onFinished;
+    }
+    if (onError) {
+      session.on("error", onError);
+      this.#onError = onError;
+    }
+  }
+  #onError?: () => void;
+  #onFinished?: () => void;
+  #session?: PgSession;
+
+  #getSession() {
+    if (!this.#session) throw new HandleUnavailableError("Session is not available");
+    return this.#session;
+  }
+  static getSessionSafe(operation: ConnQueryOperation): PgSession | undefined {
     return operation.#session;
   }
-  static getSession(operation: QueryOperation): PgSession {
+  static getSession(operation: ConnQueryOperation): PgSession {
     return operation.#getSession();
   }
-  static transferSession(operation: QueryOperation): PgSession {
-    operation.#transferWriter();
+  static transferSession(operation: ConnQueryOperation): PgSession {
     const session = operation.#getSession();
+    if (QueryOperation.isLocked(operation)) throw new HandleUnavailableError("Session is locked");
     operation.#session = undefined;
     const onFinished = operation.#onFinished;
     if (onFinished) {

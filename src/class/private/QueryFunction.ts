@@ -4,41 +4,35 @@ import { QueryOptionsWithDecoder } from "@/interface/Query/_internal.ts";
 import type { QueryReader as IQueryReader } from "@/interface/Query.ts";
 import QueryReader from "./QueryReader.ts";
 import { createTypedSqlStatement } from "./sql_statement.ts";
+import { MaybePromise, processMaybePromise } from "@/_utils/AsyncAble.ts";
+import { PgSession } from "@/protocol.ts";
 
-export type QueryWriter = QueryWriteQueue | (() => Promise<QueryWriteQueue>);
+export type GetPgSession = () => MaybePromise<PgSession>;
+
 export function isolationQuery<T>(
-  writer: QueryWriter,
+  getWriter: GetPgSession,
   queryable: SqlStatement,
   options?: QueryOptions & QueryOptionsWithDecoder,
 ): IQueryReader<T> {
   const encoder = createTypedSqlStatement(queryable, options);
-  const query = (w: QueryWriteQueue) => {
-    const p = w.extendedQuery<T>(encoder);
-    w.sync();
-    return p;
-  };
   return new QueryReader(() => {
-    if (typeof writer === "function") {
-      return writer().then(query);
-    } else {
-      return query(writer);
-    }
+    return processMaybePromise(getWriter(), (session) => {
+      const p = session.queryWriter.extendedQuery<T>(encoder);
+      session.queryWriter.sync();
+      return p;
+    });
   });
 }
 export function relatedQuery<T>(
-  writer: QueryWriter,
+  getWriter: GetPgSession,
   queryable: SqlStatement,
   options?: QueryOptions & QueryOptionsWithDecoder,
 ): IQueryReader<T> {
   const encoder = createTypedSqlStatement(queryable, options);
-  const query = (w: QueryWriteQueue) => {
-    return w.extendedQuery<T>(encoder);
-  };
-  return new QueryReader(() => {
-    if (typeof writer === "function") {
-      return writer().then(query);
-    } else {
-      return query(writer);
-    }
-  });
+
+  return new QueryReader(() =>
+    processMaybePromise(getWriter(), (session: PgSession) => {
+      return session.queryWriter.extendedQuery<T>(encoder);
+    })
+  );
 }

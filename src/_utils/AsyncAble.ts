@@ -1,21 +1,8 @@
-export class AsyncAble<T> {
-  constructor(private item: T | Promise<T>) {
-    if (item instanceof Promise) {
-      item.then(
-        (data) => {
-          this.item = data;
-          return data;
-        },
-        () => {},
-      );
-    }
+export type MaybePromise<T> = Awaited<T> | Promise<Awaited<T>>;
+
+export function processMaybePromise<T, R>(data: MaybePromise<T>, resolve: (item: T) => R): R | Promise<Awaited<R>> {
+  if (data instanceof Promise) {
+    return data.then(resolve) as Promise<Awaited<R>>;
   }
-  exec<R>(resolve: (item: T) => R): R | Promise<R>;
-  exec<R, E>(resolve: (item: T) => R, reject: (err: unknown) => E): R | Promise<R | E>;
-  exec<R, E>(resolve: (item: T) => R, reject?: (err: unknown) => E): R | Promise<R | E> {
-    if (this.item instanceof Promise) {
-      return this.item.then(resolve, reject);
-    }
-    return resolve(this.item);
-  }
+  return resolve(data);
 }

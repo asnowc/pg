@@ -2,21 +2,21 @@ import type { PgSession } from "@/protocol.ts";
 import { ConnectionSource, PgConnectOptions } from "@/interface/Connection.ts";
 import { connectPgSession } from "@/protocol/connect_session.ts";
 import { SingleQueryOperation } from "@/interface/Query.ts";
-import { QueryOperation } from "@/class/QueryOperation.ts";
+import { ConnQueryOperation } from "@/class/QueryOperation.ts";
 
 export let createPgConnection: (session: PgSession) => PgConnection;
 
 /**
  * @public
  */
-export class PgConnection extends QueryOperation implements AsyncDisposable, SingleQueryOperation {
+export class PgConnection extends ConnQueryOperation implements AsyncDisposable, SingleQueryOperation {
   private constructor(session: PgSession) {
     const promise = Promise.withResolvers<void>();
     super(session, promise.resolve, promise.reject);
     this.finished = promise.promise;
   }
   #getSession() {
-    return QueryOperation.getSessionSafe(this);
+    return ConnQueryOperation.getSessionSafe(this);
   }
   get processId(): number | null {
     const session = this.#getSession();
@@ -56,12 +56,12 @@ export let createPgPoolConnection: (session: PgSession) => PgPoolConnection;
 /**
  * @public
  */
-export class PgPoolConnection extends QueryOperation implements Disposable {
+export class PgPoolConnection extends ConnQueryOperation implements Disposable {
   private constructor(session: PgSession) {
     super(session);
   }
   #getSession() {
-    return QueryOperation.getSessionSafe(this);
+    return ConnQueryOperation.getSessionSafe(this);
   }
 
   get processId(): number | null {
@@ -71,7 +71,7 @@ export class PgPoolConnection extends QueryOperation implements Disposable {
   }
   release(): void {
     if (!this.#getSession()) return;
-    QueryOperation.transferSession(this).emit("release");
+    ConnQueryOperation.transferSession(this).emit("release");
   }
   get released(): boolean {
     return !this.#getSession();

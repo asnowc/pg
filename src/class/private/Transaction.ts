@@ -8,25 +8,51 @@ import type {
   TransactionMode,
 } from "@/interface/Query.ts";
 import { QueryOptionsWithDecoder } from "@/interface/Query/_internal.ts";
-import { QueryWriter, relatedQuery } from "./QueryFunction.ts";
+import { GetPgSession, relatedQuery } from "./QueryFunction.ts";
+import { MaybePromise, processMaybePromise } from "@/_utils/AsyncAble.ts";
+import { HandleUnavailableError } from "@/_utils/error.ts";
+import { PgSession } from "@/protocol.ts";
+function checkName(name: string) {
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+    throw new Error(`Invalid savepoint name: ${name}`);
+  }
+}
 
 export default class Transaction implements ITransaction {
   constructor(
-    private getWriter: QueryWriter | undefined,
-    private readonly onRelease: () => void,
+    getSession: GetPgSession,
+    private readonly onRelease: (writer: PgSession) => void,
     readonly mode: TransactionMode = "READ COMMITTED",
   ) {
+    const session = getSession();
+    if (session instanceof Promise) {
+      this.session = session.then((session) => {
+        this.session = session;
+        session.queryWriter.beginTransaction(this.mode);
+        return session;
+      });
+      this.session.catch(() => {});
+    } else {
+      session.queryWriter.beginTransaction(this.mode);
+    }
   }
-  private getWriterStrict(): QueryWriter {
-    if (!this.getWriter) throw new Error("Transaction writer is not available");
-    return this.getWriter;
-  }
+  private session?: MaybePromise<PgSession>;
+  private getWriterStrict = () => {
+    if (!this.session) throw new HandleUnavailableError("Transaction writer is not available");
+    return this.session;
+  };
+  private transferGetWriter = () => {
+    const writer = this.getWriterStrict();
+    this.session = undefined;
+    return writer;
+  };
+
   get released(): boolean {
-    return !this.getWriter;
+    return !this.session;
   }
 
   query<T>(queryable: SqlStatement, options?: QueryOptions & QueryOptionsWithDecoder): IQueryReader<T> {
-    return relatedQuery(this.getWriterStrict(), queryable, options);
+    return relatedQuery(this.getWriterStrict, queryable, options);
   }
 
   open<T>(_queryable: SqlStatement, _options?: CursorOpenOptions): Promise<Cursor<T>> {
@@ -34,30 +60,33 @@ export default class Transaction implements ITransaction {
   }
 
   async savePoint(name: string): Promise<void> {
-    await this.query(`SAVEPOINT ${name}`);
+    checkName(name);
+    await relatedQuery(this.getWriterStrict, `SAVEPOINT ${name}`);
   }
 
   async rollbackTo(name: string): Promise<void> {
-    await this.query(`ROLLBACK TO SAVEPOINT ${name}`);
+    checkName(name);
+    await relatedQuery(this.getWriterStrict, `ROLLBACK TO SAVEPOINT ${name}`);
   }
 
   async commit(): Promise<void> {
-    await this.query("COMMIT");
-    this.release();
+    await processMaybePromise(this.transferGetWriter(), (writer) => {
+      const result = writer.queryWriter.commitTransaction();
+      this.onRelease(writer);
+      return result;
+    });
   }
 
   async rollback(): Promise<void> {
-    await this.query("ROLLBACK");
-    this.release();
-  }
-  private release(): void {
-    if (!this.getWriter) return;
-    this.getWriter = undefined;
-    this.onRelease();
+    await processMaybePromise(this.transferGetWriter(), (writer) => {
+      const result = writer.queryWriter.rollbackTransaction();
+      this.onRelease(writer);
+      return result;
+    });
   }
 
   [Symbol.asyncDispose](): Promise<void> {
-    if (!this.getWriter) return Promise.resolve();
+    if (!this.session) return Promise.resolve();
     return this.rollback();
   }
 }

@@ -1,5 +1,16 @@
 import { createPgPoolConnection, PgPoolConnection } from "./PgConnection.ts";
-import { QueryOptions, QueryReader, SingleQueryOperation, SqlStatement } from "@/interface/Query.ts";
+import {
+  Cursor,
+  CursorOpenOptions,
+  CursorQueryOperation,
+  QueryOptions,
+  QueryReader,
+  SingleQueryOperation,
+  SqlStatement,
+  Transaction as ITransaction,
+  TransactionMode,
+  TransactionQueryOperation,
+} from "@/interface/Query.ts";
 import { TypedSqlStatement } from "./PreparedStatement.ts";
 import { QueryOptionsWithDecoder } from "@/interface/Query/_internal.ts";
 import {
@@ -15,13 +26,14 @@ import {
 import type { CreatePoolOptions } from "./Pool.ts";
 import { CountLinkList } from "@/_utils/LinkList.ts";
 import { poolForTest } from "./PgPoolForTest.ts";
-import { QueryOperation } from "./QueryOperation.ts";
+import { ConnQueryOperation } from "./QueryOperation.ts";
 import { PgSession } from "@/protocol/PgSession.ts";
 import { isolationQuery } from "./private/QueryFunction.ts";
+import Transaction from "@/class/private/Transaction.ts";
 
 export type { CreatePoolOptions } from "./Pool.ts";
 /** @public */
-export class PgPool implements SingleQueryOperation, AsyncDisposable {
+export class PgPool implements SingleQueryOperation, TransactionQueryOperation, AsyncDisposable {
   /**
    * 创建惰性建连的原生连接池。池级查询自动归还连接；事务、游标和 COPY 必须结束或取消。
    * QueryReader 的行会先物化，再归还连接，因此延迟消费结果不会读取其他借用者的数据。
@@ -81,7 +93,7 @@ export class PgPool implements SingleQueryOperation, AsyncDisposable {
     this.#connecting++;
     try {
       const connection = await this.#createConnection();
-      session = QueryOperation.transferSession(connection);
+      session = ConnQueryOperation.transferSession(connection);
       this.#connecting--;
       this.#createRetry = 0;
       if (this.#closed) {
@@ -174,33 +186,38 @@ export class PgPool implements SingleQueryOperation, AsyncDisposable {
     this.#idle.set(session, Date.now());
     this.#timeoutChecker.setTimeIfNoSet();
   }
-  #getSessionSync(maxPipeline: number = this.#maxPipeline): PgSession | undefined {
+  #getIdleSession(): PgSession | undefined {
     if (this.closed) throw new Error("Pool is closed");
-    if (this.#idle.size) {
-      const session = shiftSet(this.#idle.keys(), this.#idle);
-      if (maxPipeline) this.#pipeline.add(session);
-      return session;
-    }
-    if (maxPipeline) {
-      const minSession = getMinQueryNumberSession(this.#pipeline, maxPipeline);
-      if (minSession) {
-        this.#checkCreate();
-        return minSession;
-      }
-    }
+    if (this.#idle.size) return shiftSet(this.#idle.keys(), this.#idle);
     return undefined;
   }
-  #getSession<T>(
-    resolve: (session: PgSession) => T,
-    reject: (error: unknown) => void,
-    maxPipeline: number = this.#maxPipeline,
-  ): T | undefined {
-    const session = this.#getSessionSync(maxPipeline);
-    if (session) return resolve(session);
-    this.#waitQueue.push({ pipeline: maxPipeline, resolve, reject });
-    this.#checkCreate();
-    return;
+
+  #getSession(): PgSession | Promise<PgSession> {
+    const session = this.#getIdleSession();
+    if (session) return session;
+    return new Promise((resolve, reject) => {
+      this.#waitQueue.push({ resolve, reject });
+      this.#checkCreate();
+    });
   }
+  #getSessionForPipeline = (maxPipeline: number = this.#maxPipeline): PgSession | Promise<PgSession> => {
+    const session = this.#getIdleSession();
+    if (session) {
+      this.#pipeline.add(session);
+      return session;
+    }
+    // 对于接受 pipeline 的请求，尝试从 pipeline 中获取最小查询数的 session
+    const minSession = getMinQueryNumberSession(this.#pipeline, maxPipeline);
+    if (minSession) {
+      this.#checkCreate();
+      return minSession;
+    }
+    return new Promise((resolve, reject) => {
+      this.#waitQueue.push({ pipeline: maxPipeline, resolve, reject });
+      this.#checkCreate();
+    });
+  };
+
   /** 等待队列，存放等待获取连接的请求 */
   readonly #waitQueue = new CountLinkList<WaitQueueItem>();
 
@@ -255,10 +272,9 @@ export class PgPool implements SingleQueryOperation, AsyncDisposable {
   }
 
   /** 借用连接；必须 release() 或使用 using / await using 释放。 */
-  borrow(): Promise<PgPoolConnection> {
-    return new Promise((resolve, reject) => {
-      this.#getSession((session) => resolve(createPgPoolConnection(session)), reject);
-    });
+  async borrow(): Promise<PgPoolConnection> {
+    const session = await this.#getSession();
+    return createPgPoolConnection(session);
   }
   query<T>(queryable: TypedSqlStatement<T>, options?: PoopQueryOptions): QueryReader<T>;
   query<T>(queryable: SqlStatement, options?: PoopQueryOptions & QueryOptionsWithDecoder): QueryReader<T>;
@@ -266,17 +282,13 @@ export class PgPool implements SingleQueryOperation, AsyncDisposable {
     queryable: SqlStatement | TypedSqlStatement<T>,
     options?: PoopQueryOptions & QueryOptionsWithDecoder,
   ): QueryReader<T> {
-    const session = this.#getSessionSync();
-    if (session) return isolationQuery(session.queryWriter, queryable, options);
-    return isolationQuery(
-      () =>
-        new Promise((resolve, reject) => {
-          this.#getSession((session) => resolve(session.queryWriter), reject);
-        }),
-      queryable,
-      options,
-    );
+    return isolationQuery(this.#maxPipeline ? this.#getSessionForPipeline : this.#getSession, queryable, options);
   }
+
+  begin(mode?: TransactionMode): ITransaction {
+    return new Transaction(this.#getSession.bind(this), () => {}, mode);
+  }
+
   static {
     poolForTest.getPooInternalPool = (pool: PgPool) => ({
       pool: pool.#pool,

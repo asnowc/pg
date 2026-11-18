@@ -11,7 +11,7 @@ import {
 import process from "node:process";
 import { DB_CONNECT_INFO, PUBLIC_DB_CONNECT_INFO } from "@test/utils/db.ts";
 import { PgSession } from "@/protocol.ts";
-import { QueryOperation } from "@/class/QueryOperation.ts";
+import { ConnQueryOperation } from "@/class/QueryOperation.ts";
 
 export interface BaseContext {
   emptyDbPool: DbQueryPool;
@@ -44,7 +44,7 @@ export const test = viTest.extend<BaseContext>({
     }
   },
   async session({ conn }, use) {
-    const session = QueryOperation.transferSession(conn);
+    const session = ConnQueryOperation.transferSession(conn);
     await use(session);
   },
   async conn({}, use) {
