@@ -52,14 +52,16 @@ export class PgConnection extends ConnQueryOperation implements AsyncDisposable,
   }
 }
 
-export let createPgPoolConnection: (session: PgSession) => PgPoolConnection;
+export let createPgPoolConnection: (session: PgSession, onRelease: (session: PgSession) => void) => PgPoolConnection;
 /**
  * @public
  */
 export class PgPoolConnection extends ConnQueryOperation implements Disposable {
-  private constructor(session: PgSession) {
+  private constructor(session: PgSession, onRelease: (session: PgSession) => void) {
     super(session);
+    this.#onRelease = onRelease;
   }
+  #onRelease: (session: PgSession) => void;
   #getSession() {
     return ConnQueryOperation.getSessionSafe(this);
   }
@@ -71,7 +73,7 @@ export class PgPoolConnection extends ConnQueryOperation implements Disposable {
   }
   release(): void {
     if (!this.#getSession()) return;
-    ConnQueryOperation.transferSession(this).emit("release");
+    this.#onRelease(ConnQueryOperation.transferSession(this));
   }
   get released(): boolean {
     return !this.#getSession();
@@ -82,8 +84,8 @@ export class PgPoolConnection extends ConnQueryOperation implements Disposable {
   }
 
   static {
-    createPgPoolConnection = (session) => {
-      return new PgPoolConnection(session);
+    createPgPoolConnection = (session, onRelease) => {
+      return new PgPoolConnection(session, onRelease);
     };
   }
 }

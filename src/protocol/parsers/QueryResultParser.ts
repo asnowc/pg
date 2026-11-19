@@ -1,12 +1,12 @@
 import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
 import { DataRowDecoder, decodeCommandComplete, DecodeRowDescriptionResult, RowDescriptionDecoder } from "../decode.ts";
-import { ReceiverType } from "./QueryTask.ts";
+import { QueryResultParser, ReceiverType } from "./QueryTask.ts";
 import { ReadableBuffer } from "@/_utils/ReadBuffer.ts";
 import { PgColumnDataDecoder } from "@/interface/pg_data_decoder.ts";
 
-export class QueryResultParser<D = unknown> {
+export class QueryResultRowParser<D = unknown> implements QueryResultParser<D> {
   constructor(
-    readonly resolve: (resolver: QueryResultParser<D>) => void,
+    readonly resolve: (resolver: QueryResultRowParser<D>) => void,
     readonly reject: (reason: unknown) => void,
     readonly statement: TypedSqlStatement<D>,
     readonly taskType: ReceiverType.ExtendedQuery | ReceiverType.SimpleQuery,

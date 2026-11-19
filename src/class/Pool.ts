@@ -1,5 +1,5 @@
 import { PgSession } from "@/protocol.ts";
-import { eachLink, LinkList } from "@/_utils/LinkList.ts";
+import { CountLinkList, eachLink, LinkList } from "@/_utils/LinkList.ts";
 import { PgConnection } from "@/class/PgConnection.ts";
 
 /**
@@ -119,4 +119,18 @@ export function getMinQueryNumberSession(pool: Set<PgSession>, maxPipeline: numb
     }
   }
   return minSession;
+}
+
+export function closeIdleAndPipeline(idle: Iterable<PgSession>, pipeline: Iterable<PgSession>) {
+  const promises: Promise<void>[] = [];
+  for (const item of idle) promises.push(item.close().catch(() => item.destroy()));
+  for (const item of pipeline) promises.push(item.close().catch(() => item.destroy()));
+  return Promise.all(promises);
+}
+export function prepareConnection(size: number, create: () => Promise<void>) {
+  const promises: Promise<void>[] = new Array(size);
+  for (let i = 0; i < size; i++) {
+    promises[i] = create();
+  }
+  return Promise.all(promises);
 }

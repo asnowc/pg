@@ -1,8 +1,8 @@
 import type { TransactionMode } from "@/interface/Query.ts";
 import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
 import { throwRewrittenError } from "@/_utils/error.ts";
-import { ReceiverType } from "./parsers/QueryTask.ts";
-import { QueryResultParser } from "./parsers/QueryResultParser.ts";
+import { QueryResultParser, ReceiverType } from "./parsers/QueryTask.ts";
+import { QueryResultRowParser } from "./parsers/QueryResultParser.ts";
 import { QueryReadQueue } from "./MessageReadQueue.ts";
 import { FRAME } from "./static_frame.ts";
 import {
@@ -24,7 +24,7 @@ export class QueryWriteQueue {
 
   extendedQuery<T>(statement: TypedSqlStatement): Promise<QueryResultParser<T>> {
     return new Promise<QueryResultParser<T>>((resolve, reject) => {
-      const parser = new QueryResultParser<any>(
+      const parser = new QueryResultRowParser<any>(
         resolve,
         reject,
         statement,
@@ -43,7 +43,7 @@ export class QueryWriteQueue {
 
   simpleQuery<T>(statement: TypedSqlStatement): Promise<QueryResultParser<T>> {
     return new Promise<QueryResultParser<T>>((resolve, reject) => {
-      const parser = new QueryResultParser<any>(
+      const parser = new QueryResultRowParser<any>(
         resolve,
         reject,
         statement,
@@ -70,7 +70,7 @@ export class QueryWriteQueue {
     this.writeExtended(statement);
     this.readQueue.push({ taskType: ReceiverType.EndTransaction });
   }
-  destroyed() {
+  destroy() {
     this.writer.clear();
   }
   close() {

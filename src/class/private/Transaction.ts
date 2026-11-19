@@ -38,7 +38,7 @@ export default class Transaction implements ITransaction {
   }
   private session?: MaybePromise<PgSession>;
   private getWriterStrict = () => {
-    if (!this.session) throw new HandleUnavailableError("Transaction writer is not available");
+    if (!this.session) throw new HandleUnavailableError("Transaction session is not available");
     return this.session;
   };
   private transferGetWriter = () => {

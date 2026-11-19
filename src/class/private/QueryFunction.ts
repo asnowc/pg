@@ -1,4 +1,3 @@
-import { QueryWriteQueue } from "@/protocol/MessageWriteQueue.ts";
 import { QueryOptions, SqlStatement } from "@/interface/Query.ts";
 import { QueryOptionsWithDecoder } from "@/interface/Query/_internal.ts";
 import type { QueryReader as IQueryReader } from "@/interface/Query.ts";

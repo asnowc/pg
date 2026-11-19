@@ -18,7 +18,9 @@ import {
   checkTimeout,
   clearWaitQueue,
   closeByteStream,
+  closeIdleAndPipeline,
   getMinQueryNumberSession,
+  prepareConnection,
   shiftSet,
   TimeoutChecker,
   WaitQueueItem,
@@ -126,18 +128,13 @@ export class PgPool implements SingleQueryOperation, TransactionQueryOperation, 
       }
       return;
     }
-    const onRelease = () => {
-      if (session.closed) return;
-      if (session.pendingQueyNumber === 0) this.#onSessionIdle(session);
-      else this.#pipeline.add(session);
-    };
+
     const onIdle = () => {
       if (this.#pipeline.delete(session)) {
         this.#onSessionIdle(session);
       }
     };
     const onClose = () => {
-      session.off("release", onRelease);
       session.off("idle", onIdle);
       session.off("close", onClose);
       if (this.#pool.delete(session)) {
@@ -149,20 +146,19 @@ export class PgPool implements SingleQueryOperation, TransactionQueryOperation, 
       }
     };
     session.on("close", onClose);
-    session.on("release", onRelease);
     session.on("idle", onIdle);
     this.#pool.add(session);
     this.#onSessionIdle(session);
   }
-
+  #onRelease(session: PgSession) {
+    if (session.closed) return;
+    if (session.pendingQueyNumber === 0) this.#onSessionIdle(session);
+    else this.#pipeline.add(session);
+  }
   async prepareConnection(number: number) {
     const size = Math.min(number, this.#maxConnection - this.totalCount);
     if (size <= 0) return;
-    const promises: Promise<void>[] = new Array(size);
-    for (let i = 0; i < size; i++) {
-      promises[i] = this.#create();
-    }
-    await Promise.all(promises);
+    await prepareConnection(size, () => this.#create());
   }
 
   #onSessionIdle(session: PgSession) {
@@ -192,14 +188,14 @@ export class PgPool implements SingleQueryOperation, TransactionQueryOperation, 
     return undefined;
   }
 
-  #getSession(): PgSession | Promise<PgSession> {
+  #getSession = (): PgSession | Promise<PgSession> => {
     const session = this.#getIdleSession();
     if (session) return session;
     return new Promise((resolve, reject) => {
       this.#waitQueue.push({ resolve, reject });
       this.#checkCreate();
     });
-  }
+  };
   #getSessionForPipeline = (maxPipeline: number = this.#maxPipeline): PgSession | Promise<PgSession> => {
     const session = this.#getIdleSession();
     if (session) {
@@ -235,12 +231,7 @@ export class PgPool implements SingleQueryOperation, TransactionQueryOperation, 
     }
     this.#closedWaitingQueueClear = Promise.withResolvers();
     this.clearTimer();
-    if (!this.#waitQueue.head) {
-      const promises: Promise<void>[] = [];
-      for (const item of this.#idle.keys()) promises.push(item.close().catch(() => item.destroy()));
-      for (const item of this.#pipeline) promises.push(item.close().catch(() => item.destroy()));
-      await Promise.all(promises);
-    }
+    if (!this.#waitQueue.head) await closeIdleAndPipeline(this.#idle.keys(), this.#pipeline);
     if (this.totalCount === 0) {
       this.#closedWaitingQueueClear.resolve();
       this.#closed = true;
@@ -274,7 +265,7 @@ export class PgPool implements SingleQueryOperation, TransactionQueryOperation, 
   /** 借用连接；必须 release() 或使用 using / await using 释放。 */
   async borrow(): Promise<PgPoolConnection> {
     const session = await this.#getSession();
-    return createPgPoolConnection(session);
+    return createPgPoolConnection(session, this.#onRelease);
   }
   query<T>(queryable: TypedSqlStatement<T>, options?: PoopQueryOptions): QueryReader<T>;
   query<T>(queryable: SqlStatement, options?: PoopQueryOptions & QueryOptionsWithDecoder): QueryReader<T>;
@@ -286,7 +277,7 @@ export class PgPool implements SingleQueryOperation, TransactionQueryOperation, 
   }
 
   begin(mode?: TransactionMode): ITransaction {
-    return new Transaction(this.#getSession.bind(this), () => {}, mode);
+    return new Transaction(this.#getSession, this.#onRelease, mode);
   }
 
   static {
