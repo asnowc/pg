@@ -1,25 +1,26 @@
-import { ReadableBuffer } from "@/_utils/ReadBuffer.ts";
 import { DecodeRowDescriptionResult } from "@/protocol.ts";
 
-type EmptyReceiver = {
+export type EmptyReceiver = {
   taskType: ReceiverType.StartTransaction | ReceiverType.EndTransaction | ReceiverType.Sync;
+  resolve?: () => void;
+  reject?: (reason: unknown) => void;
 };
-export interface QueryResultParser<T = undefined> {
-  resolve(result: QueryResultParser<T>): void;
-  reject(error: unknown): void;
-  readonly taskType: ReceiverType.ExtendedQuery | ReceiverType.SimpleQuery;
-  dataRow(reader: ReadableBuffer, remainingByteLength: number): void;
-  rowDescription(reader: ReadableBuffer, remainingByteLength: number): void;
-  commandComplete(body: Uint8Array): void;
+export type CloseReceiver = {
+  taskType: ReceiverType.ClosePortal;
+  resolve: () => void;
+  reject: (reason: unknown) => void;
+};
+export type QueryParserResult<T = unknown> = {
   readonly rows: T[];
   readonly notices: string[];
   readonly rowCount?: number;
   readonly fields?: DecodeRowDescriptionResult[];
-}
-
-export type ResultReceiver = QueryResultParser | EmptyReceiver;
+  readonly completed: boolean;
+};
 
 export enum ReceiverType {
+  RowDescription,
+  ClosePortal,
   ExtendedQuery,
   SimpleQuery,
   Sync,

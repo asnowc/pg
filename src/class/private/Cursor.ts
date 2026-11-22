@@ -1,24 +1,82 @@
-import { Cursor as ICursor, FieldInfo, QueryCompletion } from "@/interface/Query.ts";
+import { Cursor as ICursor, CursorOpenOptions, FieldInfo, QueryCompletion, SqlStatement } from "@/interface/Query.ts";
+import { createTypedSqlStatement } from "./sql_statement.ts";
+import { GetPgSession } from "./QueryFunction.ts";
+import { PgSession } from "@/protocol/PgSession.ts";
+import { QueryOptionsWithDecoder } from "@/interface/Query/_internal.ts";
+import { MaybePromise, processMaybePromise } from "@/_utils/AsyncAble.ts";
+import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
+import { HandleUnavailableError } from "@/_utils/error.ts";
 
-export class Cursor<T> implements ICursor<T> {
-  constructor() {}
-  close(): Promise<void> {
-    throw new Error("Not implemented");
+export default class Cursor<T> implements ICursor<T> {
+  constructor(
+    getSession: GetPgSession,
+    private readonly onRelease: (writer: PgSession) => void,
+    queryable: SqlStatement,
+    options: CursorOpenOptions & QueryOptionsWithDecoder = {},
+  ) {
+    let session = getSession();
+    const statement = createTypedSqlStatement(queryable, options);
+    if (session instanceof Promise) {
+      const fields = Promise.withResolvers<Readonly<FieldInfo>[]>();
+      this.fields = fields.promise;
+      this.fields.catch(() => {});
+      session = session.then((session) => {
+        this.#session = session;
+        session.queryWriter.openCursor(statement).then(fields.resolve, fields.reject);
+        return session;
+      });
+      session.catch(() => {});
+    } else {
+      this.fields = session.queryWriter.openCursor(statement);
+    }
+    this.#session = session;
+    this.#statement = statement;
+    this.#completion = Promise.withResolvers<QueryCompletion>();
   }
+  #session?: MaybePromise<PgSession>;
+  #getSession() {
+    if (!this.#session) throw new HandleUnavailableError("Cursor is closed");
+    return this.#session;
+  }
+  #completion: PromiseWithResolvers<QueryCompletion>;
   get completion(): Promise<QueryCompletion> {
-    throw new Error("Not implemented");
+    return this.#completion.promise;
   }
-  get fields(): readonly Readonly<FieldInfo>[] {
-    throw new Error("Not implemented");
+  #statement: TypedSqlStatement;
+  fields: Promise<Readonly<FieldInfo>[]>;
+  async read(maxRows: number): Promise<T[]> {
+    const result = await processMaybePromise(this.#getSession(), (session) => {
+      return session.queryWriter.executePortal<T>(this.#statement, maxRows);
+    });
+    this.rowsRead += result.rows.length;
+    if (result.completed) {
+      this.#completion.resolve({ notices: result.notices, rowCount: result.rowCount });
+      this.#release();
+    }
+    return result.rows;
   }
-  read(maxRows?: number): Promise<T[]> {
-    throw new Error("Not implemented");
+  rowsRead = 0;
+  async *[Symbol.asyncIterator](): AsyncIterator<T> {
+    let rows: T[];
+    do {
+      rows = await this.read(1);
+      yield* rows;
+    } while (rows.length);
   }
-  get rowsRead(): number {
-    throw new Error("Not implemented");
+  #release() {
+    this.onRelease(this.#session as PgSession);
+    this.#closed = true;
   }
-  [Symbol.asyncIterator](): AsyncIterator<T> {
-    throw new Error("Not implemented");
+  #closed?: Promise<void> | undefined | true;
+  async close(): Promise<void> {
+    if (this.#closed == undefined) {
+      this.#closed = processMaybePromise(this.#getSession(), (session) => {
+        return session.queryWriter.closePortal(this.#statement).then(() => {
+          this.#completion.reject(new Error("Cursor has been closed"));
+        });
+      });
+    }
+    await this.#closed;
   }
   [Symbol.asyncDispose](): Promise<void> {
     return this.close();

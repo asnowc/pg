@@ -1,12 +1,24 @@
 import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
-import { DataRowDecoder, decodeCommandComplete, DecodeRowDescriptionResult, RowDescriptionDecoder } from "../decode.ts";
-import { QueryResultParser, ReceiverType } from "./QueryTask.ts";
+import { DataRowDecoder, decodeCommandComplete, DecodeRowDescriptionResult } from "../decode.ts";
+import { QueryParserResult, ReceiverType } from "./QueryTask.ts";
 import { ReadableBuffer } from "@/_utils/ReadBuffer.ts";
 import { PgColumnDataDecoder } from "@/interface/pg_data_decoder.ts";
+import { skipData } from "./_common.ts";
 
-export class QueryResultRowParser<D = unknown> implements QueryResultParser<D> {
+export interface QueryResultParser {
+  reject(error: unknown): void;
+  readonly notices: string[];
+  readonly taskType: ReceiverType.ExtendedQuery | ReceiverType.SimpleQuery;
+  dataRow(reader: ReadableBuffer, remainingByteLength: number): void;
+
+  commandComplete(body: Uint8Array): void;
+  emptyQueryResponse(): void;
+  portalSuspended(): void;
+}
+
+export class QueryResultRowParser<D = unknown> implements QueryResultParser, QueryParserResult {
   constructor(
-    readonly resolve: (resolver: QueryResultRowParser<D>) => void,
+    private readonly resolve: (resolver: QueryParserResult<D>) => void,
     readonly reject: (reason: unknown) => void,
     readonly statement: TypedSqlStatement<D>,
     readonly taskType: ReceiverType.ExtendedQuery | ReceiverType.SimpleQuery,
@@ -16,10 +28,10 @@ export class QueryResultRowParser<D = unknown> implements QueryResultParser<D> {
   private dataRowDecoder?: DataRowDecoder<Record<string, unknown>>;
   private failed = false;
   rows: D[] = [];
-  notices: string[] = [];
+  readonly notices: string[] = [];
   rowCount?: number;
   dataRow(reader: ReadableBuffer, remainingByteLength: number) {
-    if (this.failed || !this.dataRowDecoder) return this.skipData(reader, remainingByteLength);
+    if (this.failed || !this.dataRowDecoder) return skipData(reader, remainingByteLength);
     let row: unknown;
     const start = reader.readableStart;
     try {
@@ -28,32 +40,33 @@ export class QueryResultRowParser<D = unknown> implements QueryResultParser<D> {
       this.failed = true;
       this.reject(error);
       const remaining = remainingByteLength - (reader.readableStart - start);
-      return this.skipData(reader, Math.max(0, remaining));
+      return skipData(reader, Math.max(0, remaining));
     }
     if (row === undefined) return;
     this.dataRowDecoder.reset();
     this.rows.push(row as D);
   }
-  private readonly rowDescriptionDecoder = new RowDescriptionDecoder();
-
-  rowDescription(reader: ReadableBuffer, remainingByteLength: number) {
-    if (this.failed) return this.skipData(reader, remainingByteLength);
+  setFields(fields: DecodeRowDescriptionResult[]) {
+    this.fields = fields;
     const statement = this.statement;
-    if (!statement.getResultDecoder) {
-      return this.skipData(reader, remainingByteLength);
-    }
-    this.fields = this.rowDescriptionDecoder.next(reader);
-    if (!this.fields) return;
-    this.rowDescriptionDecoder.reset();
-    const decoders: PgColumnDataDecoder[] = this.fields.map((item) => statement.getResultDecoder!(item));
-    this.dataRowDecoder = new DataRowDecoder(decoders, this.fields);
+    if (!statement.getResultDecoder) return;
+    const decoders: PgColumnDataDecoder[] = fields.map((item) => statement.getResultDecoder!(item));
+    this.dataRowDecoder = new DataRowDecoder(decoders, fields);
   }
-  private skipData(reader: ReadableBuffer, remainingByteLength: number) {
-    if (reader.readableLength < remainingByteLength) reader.readableStart = reader.readableEnd;
-    else reader.readableStart += remainingByteLength;
-  }
+
+  completed: boolean = false;
   commandComplete(body: Uint8Array) {
     this.rowCount = decodeRowCount(decodeCommandComplete(body));
+    this.completed = true;
+    this.resolve(this);
+  }
+  emptyQueryResponse(): void {
+    this.rowCount = 0;
+    this.completed = true;
+    this.resolve(this);
+  }
+  portalSuspended(): void {
+    this.resolve(this);
   }
 }
 

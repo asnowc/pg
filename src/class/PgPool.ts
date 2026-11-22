@@ -1,6 +1,6 @@
 import { createPgPoolConnection, PgPoolConnection } from "./PgConnection.ts";
 import {
-  Cursor,
+  Cursor as ICursor,
   CursorOpenOptions,
   CursorQueryOperation,
   QueryOptions,
@@ -32,10 +32,11 @@ import { ConnQueryOperation } from "./QueryOperation.ts";
 import { PgSession } from "@/protocol/PgSession.ts";
 import { isolationQuery } from "./private/QueryFunction.ts";
 import Transaction from "@/class/private/Transaction.ts";
+import Cursor from "@/class/private/Cursor.ts";
 
 export type { CreatePoolOptions } from "./Pool.ts";
 /** @public */
-export class PgPool implements SingleQueryOperation, TransactionQueryOperation, AsyncDisposable {
+export class PgPool implements SingleQueryOperation, CursorQueryOperation, TransactionQueryOperation, AsyncDisposable {
   /**
    * 创建惰性建连的原生连接池。池级查询自动归还连接；事务、游标和 COPY 必须结束或取消。
    * QueryReader 的行会先物化，再归还连接，因此延迟消费结果不会读取其他借用者的数据。
@@ -279,7 +280,14 @@ export class PgPool implements SingleQueryOperation, TransactionQueryOperation, 
   begin(mode?: TransactionMode): ITransaction {
     return new Transaction(this.#getSession, this.#onRelease, mode);
   }
-
+  open<T>(queryable: TypedSqlStatement<T>, options?: CursorOpenOptions): ICursor<T>;
+  open<T>(queryable: SqlStatement, options?: CursorOpenOptions & QueryOptionsWithDecoder): ICursor<T>;
+  open<T>(
+    queryable: SqlStatement | TypedSqlStatement<T>,
+    options?: CursorOpenOptions & QueryOptionsWithDecoder,
+  ): ICursor<T> {
+    return new Cursor<T>(this.#getSession, this.#onRelease, queryable, options);
+  }
   static {
     poolForTest.getPooInternalPool = (pool: PgPool) => ({
       pool: pool.#pool,

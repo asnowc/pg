@@ -1,5 +1,5 @@
 import type {
-  Cursor,
+  Cursor as ICursor,
   CursorOpenOptions,
   CursorQueryOperation,
   MultipleQueryOperation,
@@ -19,6 +19,7 @@ import { PgSession } from "@/protocol/PgSession.ts";
 import Transaction from "./private/Transaction.ts";
 import { HandleUnavailableError } from "@/_utils/error.ts";
 import { isolationQuery } from "@/class/private/QueryFunction.ts";
+import Cursor from "@/class/private/Cursor.ts";
 
 export class QueryOperation
   implements MultipleQueryOperation, SingleQueryOperation, CursorQueryOperation, TransactionQueryOperation {
@@ -50,8 +51,11 @@ export class QueryOperation
   begin(mode?: TransactionMode): ITransaction {
     return new Transaction(this.#transferWriter, this.#releaseWriter, mode);
   }
-  open<T>(queryable: SqlStatement | TypedSqlStatement<T>, options?: CursorOpenOptions): Promise<Cursor<T>> {
-    throw new Error("Not implemented");
+  open<T>(
+    queryable: SqlStatement | TypedSqlStatement<T>,
+    options?: CursorOpenOptions & QueryOptionsWithDecoder,
+  ): ICursor<T> {
+    return new Cursor<T>(this.#transferWriter, this.#releaseWriter, queryable, options);
   }
 
   queryMultiple(queryable: SqlStatements, options?: QueryOptions): SampleQueryReader<unknown[]>;

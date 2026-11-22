@@ -1,19 +1,20 @@
-import type { TransactionMode } from "@/interface/Query.ts";
+import type { FieldInfo, TransactionMode } from "@/interface/Query.ts";
 import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
 import { throwRewrittenError } from "@/_utils/error.ts";
-import { QueryResultParser, ReceiverType } from "./parsers/QueryTask.ts";
+import { QueryParserResult, ReceiverType } from "./parsers/QueryTask.ts";
 import { QueryResultRowParser } from "./parsers/QueryResultParser.ts";
 import { QueryReadQueue } from "./MessageReadQueue.ts";
 import { FRAME } from "./static_frame.ts";
 import {
   BindMessageEncoder,
-  DescribeMessageEncoder,
   ExecuteMessageEncoder,
+  getCloseMessageEncoder,
   ParseMessageEncoder,
   QueryMessageEncoder,
 } from "./encode.ts";
 import { BufferWriterQueue } from "@/_utils/BufferWriterQueue.ts";
-import { TerminateFrame } from "@/protocol/encoder/Message.ts";
+import { TerminateFrame } from "./encoder/Message.ts";
+import { RowDescriptionParser } from "@/protocol/parsers/RowDescription.ts";
 
 export class QueryWriteQueue {
   constructor(
@@ -21,34 +22,75 @@ export class QueryWriteQueue {
     private readonly readQueue: QueryReadQueue,
   ) {
   }
+  #cursorFields = new WeakMap<TypedSqlStatement, NonNullable<QueryParserResult["fields"]>>();
 
-  extendedQuery<T>(statement: TypedSqlStatement): Promise<QueryResultParser<T>> {
-    return new Promise<QueryResultParser<T>>((resolve, reject) => {
+  extendedQuery<T>(statement: TypedSqlStatement): Promise<QueryParserResult<T>> {
+    return new Promise<QueryParserResult<T>>((resolve, reject) => {
       const parser = new QueryResultRowParser<any>(
         resolve,
         reject,
         statement,
         ReceiverType.ExtendedQuery,
       );
+      this.readQueue.push(new RowDescriptionParser((fields) => parser.setFields(fields), reject));
       this.readQueue.push(parser);
-      this.writeExtended(parser.statement);
+      writeExtended(this.writer, parser.statement);
       this.writer.pushData(FRAME.FLUSH);
-    }).catch((e) => throwRewrittenError(e));
+    }).catch(throwRewrittenError);
   }
-
+  openCursor(statement: TypedSqlStatement): Promise<FieldInfo[]> {
+    return new Promise<FieldInfo[]>((resolve, reject) => {
+      this.readQueue.push(
+        new RowDescriptionParser((fields) => {
+          this.#cursorFields.set(statement, fields);
+          resolve(fields);
+        }, reject),
+      );
+      this.writer.pushEncoder(new ParseMessageEncoder(statement));
+      this.writer.pushEncoder(new BindMessageEncoder(statement));
+      this.writer.pushData(FRAME.DESCRIBE_PORTAL_ANONYMOUS);
+      this.writer.pushData(FRAME.FLUSH);
+    }).catch(throwRewrittenError);
+  }
+  executePortal<T>(statement: TypedSqlStatement, maxRows: number = 0): Promise<QueryParserResult<T>> {
+    return new Promise<QueryParserResult<T>>((resolve, reject) => {
+      const parser = new QueryResultRowParser<any>(
+        resolve,
+        reject,
+        statement,
+        ReceiverType.ExtendedQuery,
+      );
+      const fields = this.#cursorFields.get(statement);
+      if (fields) parser.setFields(fields);
+      this.readQueue.push(parser);
+      this.writer.pushEncoder(new ExecuteMessageEncoder(maxRows));
+      this.writer.pushData(FRAME.FLUSH);
+    }).catch(throwRewrittenError);
+  }
+  closePortal(statement?: TypedSqlStatement): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.readQueue.push({ taskType: ReceiverType.ClosePortal, resolve, reject });
+      this.writer.pushEncoder(getCloseMessageEncoder());
+      this.sync();
+    }).then(() => {
+      if (statement) this.#cursorFields.delete(statement);
+    }).catch(throwRewrittenError);
+  }
   sync(): void {
     this.readQueue.enqueueSync();
     this.writer.pushData(FRAME.SYNC);
   }
 
-  simpleQuery<T>(statement: TypedSqlStatement): Promise<QueryResultParser<T>> {
-    return new Promise<QueryResultParser<T>>((resolve, reject) => {
+  simpleQuery<T>(statement: TypedSqlStatement): Promise<QueryParserResult<T>> {
+    return new Promise<QueryParserResult<T>>((resolve, reject) => {
       const parser = new QueryResultRowParser<any>(
         resolve,
         reject,
         statement,
         ReceiverType.SimpleQuery,
       );
+
+      this.readQueue.push(new RowDescriptionParser((fields) => parser.setFields(fields), reject));
       this.readQueue.enqueueSimpleQuery(parser);
       this.writer.pushEncoder(new QueryMessageEncoder(parser.statement));
     });
@@ -56,32 +98,32 @@ export class QueryWriteQueue {
 
   beginTransaction(mode?: TransactionMode): void {
     const statement = new TypedSqlStatement("BEGIN" + (mode ? " ISOLATION LEVEL " + mode : ""));
-    this.writeExtended(statement);
-    this.writer.pushData(FRAME.DESCRIBE_PORTAL_ANONYMOUS);
+    writeExtended(this.writer, statement);
     this.readQueue.push({ taskType: ReceiverType.StartTransaction });
   }
-  commitTransaction(): void {
+  commitTransaction() {
     const statement = new TypedSqlStatement("COMMIT");
-    this.writeExtended(statement);
+    writeExtended(this.writer, statement);
     this.readQueue.push({ taskType: ReceiverType.EndTransaction });
+    this.sync();
   }
-  rollbackTransaction(): void {
+  rollbackTransaction() {
     const statement = new TypedSqlStatement("ROLLBACK");
-    this.writeExtended(statement);
+    writeExtended(this.writer, statement);
     this.readQueue.push({ taskType: ReceiverType.EndTransaction });
+    this.sync();
   }
   destroy() {
     this.writer.clear();
   }
-  close() {
+  close(): Promise<void> {
     this.writer.pushEncoder(TerminateFrame);
     return this.writer.pushClose();
   }
-
-  private writeExtended(statement: TypedSqlStatement): void {
-    this.writer.pushEncoder(new ParseMessageEncoder(statement));
-    this.writer.pushEncoder(new BindMessageEncoder(statement));
-    this.writer.pushData(FRAME.DESCRIBE_PORTAL_ANONYMOUS);
-    this.writer.pushEncoder(new ExecuteMessageEncoder(0));
-  }
+}
+function writeExtended(writer: BufferWriterQueue, statement: TypedSqlStatement) {
+  writer.pushEncoder(new ParseMessageEncoder(statement));
+  writer.pushEncoder(new BindMessageEncoder(statement));
+  writer.pushData(FRAME.DESCRIBE_PORTAL_ANONYMOUS);
+  writer.pushEncoder(new ExecuteMessageEncoder(0));
 }

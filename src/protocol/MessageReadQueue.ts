@@ -1,13 +1,18 @@
 import { MessageParsers } from "./parsers/MessageParser.ts";
 import { BackendMessageCode, PgTransactionStatus } from "./const.ts";
 import { InternalError } from "@/_utils/error.ts";
-import { ReceiverType, ResultReceiver } from "./parsers/QueryTask.ts";
-import { QueryResultParser } from "./parsers/QueryResultParser.ts";
+import { CloseReceiver, EmptyReceiver, ReceiverType } from "./parsers/QueryTask.ts";
 import { decodeError, decodeNotice, decodeNotification, decodeParameterStatus, decodeReadyForQuery } from "./decode.ts";
 import { PgDatabaseError, PreviousQueryError } from "@/error.ts";
 import { AsyncMessageType } from "@/interface/protocol.ts";
 import type { QueryWriteQueue } from "./MessageWriteQueue.ts";
 import { CountLinkList, eachLink } from "@/_utils/LinkList.ts";
+import { QueryResultParser } from "./parsers/QueryResultParser.ts";
+import { RowDescriptionParser } from "./parsers/RowDescription.ts";
+
+type ResultReceiver = QueryResultParser | EmptyReceiver | CloseReceiver | RowDescriptionParser;
+
+const MSCode = BackendMessageCode;
 
 export class QueryReadQueue {
   constructor(private onIdle?: () => void) {
@@ -47,44 +52,65 @@ export class QueryReadQueue {
   private rejectQueueToSync(error: Error) {
     while (this.head) {
       if (this.head.taskType === ReceiverType.Sync) {
+        rejectReceiver(this.head, error);
         return;
       }
-      if (isQueryReceiver(this.head)) {
-        this.head.reject(error);
-      }
+      rejectReceiver(this.head, error);
       this.shift();
     }
   }
   private initQueryMessageListener(parsers: MessageParsers, queryWrite: QueryWriteQueue) {
-    parsers.set(BackendMessageCode.DataRow, (reader, remaining) => this.getResultReceiver().dataRow(reader, remaining));
-    parsers.set(BackendMessageCode.EmptyQueryResponse, () => {
-      const current = this.popResultReceiver();
-      current.rowCount = 0;
-      current.resolve(current);
-    });
-    parsers.set(BackendMessageCode.NoData, () => {
-      this.getResultReceiver(); // 确保有一个当前的结果接收器
+    parsers.set(MSCode.DataRow, (reader, remaining) => this.getResultReceiver().dataRow(reader, remaining));
+
+    parsers.set(MSCode.NoData, () => {
+      const current = this.getReceiver();
+      if (current.taskType === ReceiverType.RowDescription) {
+        this.shift();
+        current.noData();
+      } else if (
+        current.taskType === ReceiverType.StartTransaction || current.taskType === ReceiverType.EndTransaction
+      ) {
+        return;
+      } else {
+        throw new InternalError("Unexpected NoData for the current receiver");
+      }
     });
 
-    parsers.setFullParser(BackendMessageCode.CommandComplete, (body) => {
-      const current = this.popResultReceiver();
-      current.commandComplete(body);
-      current.resolve(current);
+    parsers.setFullParser(MSCode.CommandComplete, (body) => {
+      const current = this.getReceiver();
+      if (isQueryReceiver(current)) {
+        this.shift();
+        current.commandComplete(body);
+      } else if (
+        current.taskType === ReceiverType.StartTransaction || current.taskType === ReceiverType.EndTransaction
+      ) {
+        this.shift();
+      } else {
+        throw new InternalError("Unexpected CommandComplete for the current receiver");
+      }
     });
-    parsers.set(BackendMessageCode.PortalSuspended, () => {
+    parsers.set(MSCode.PortalSuspended, () => {
       const current = this.popResultReceiver();
       if (current.taskType !== ReceiverType.ExtendedQuery) {
         throw new InternalError("Unexpected PortalSuspended for a simple query");
       }
-      current.resolve(current);
+      current.portalSuspended();
     });
-    parsers.setFullParser(BackendMessageCode.ErrorResponse, (body) => {
+    parsers.set(MSCode.EmptyQueryResponse, () => {
+      const current = this.getReceiver();
+      if (current.taskType === ReceiverType.RowDescription) {
+        this.shift();
+        current.noData();
+      }
+      this.popResultReceiver().emptyQueryResponse();
+    });
+    parsers.setFullParser(MSCode.ErrorResponse, (body) => {
       const next = this.head;
       if (!next) throw new InternalError("Unexpected ErrorResponse: no query available");
       this.shift();
       const info = decodeError(body);
       const error = new PgDatabaseError(info.fields);
-      if (isQueryReceiver(next)) next.reject(error);
+      rejectReceiver(next, error);
 
       const afterError = new PreviousQueryError({ cause: error });
       // PostgreSQL drops the rest of this extended segment, including transaction control.
@@ -93,12 +119,18 @@ export class QueryReadQueue {
       const isNoSyncInReadQueue = !this.head;
       if (isNoSyncInReadQueue) queryWrite.sync();
     });
-    parsers.set(BackendMessageCode.RowDescription, (reader, remaining) => {
-      return this.getResultReceiver().rowDescription(reader, remaining);
+    parsers.set(MSCode.RowDescription, (reader, remaining) => {
+      const current = this.getReceiver();
+      if (current.taskType === ReceiverType.RowDescription) {
+        current.rowDescription(reader, remaining);
+        if (current.fields !== undefined) this.shift();
+      } else {
+        throw new InternalError("Unexpected RowDescription for the current receiver");
+      }
     });
 
     // 匹配 SYNC
-    parsers.setFullParser(BackendMessageCode.ReadyForQuery, (body) => {
+    parsers.setFullParser(MSCode.ReadyForQuery, (body) => {
       const current = this.head;
       if (!current || current.taskType !== ReceiverType.Sync) {
         throw new InternalError("ReadyForQuery message  not matched with SYNC");
@@ -109,50 +141,58 @@ export class QueryReadQueue {
       this.pendingQueyNumber -= this.completedQueryNumber;
       this.completedQueryNumber = 0;
       if (!this.head) this.onIdle?.();
+      current.resolve?.();
     });
-    parsers.set(BackendMessageCode.BindComplete, (body) => {
+    parsers.set(MSCode.BindComplete, (body) => {});
+    parsers.set(MSCode.CloseComplete, (body) => {
+      const current = this.popReceiver();
+      if (current.taskType !== ReceiverType.ClosePortal) {
+        throw new InternalError("Unexpected CloseComplete for a non-close task");
+      }
+      current.resolve();
     });
-    parsers.set(BackendMessageCode.CloseComplete, (body) => {
-    });
-    parsers.set(BackendMessageCode.ParseComplete, (body) => {
-    });
+    parsers.set(MSCode.ParseComplete, (body) => {});
   }
 
   private popReceiver(): ResultReceiver {
-    const receiver = this.head;
-    if (!receiver) throw new InternalError("No receiver available to pop");
-
+    const receiver = this.getReceiver();
     this.shift();
     return receiver;
   }
-  private popResultReceiver(): QueryResultParser<unknown> {
-    const receiver = this.popReceiver();
+  private getReceiver(): ResultReceiver {
+    const receiver = this.head;
+    if (!receiver) throw new InternalError("No receiver available");
+    return receiver;
+  }
+  private popResultReceiver(): QueryResultParser {
+    const receiver = this.getReceiver();
     if (!isQueryReceiver(receiver)) {
       throw new InternalError("No query result receiver available to pop");
     }
+    this.shift();
     return receiver;
   }
 
-  private getResultReceiver(): QueryResultParser<unknown> {
-    const query = this.head;
-    if (!query || !isQueryReceiver(query)) {
+  private getResultReceiver(): QueryResultParser {
+    const query = this.getReceiver();
+    if (!isQueryReceiver(query)) {
       throw new InternalError("Unexpected message: current query is not a query result receiver");
     }
     return query;
   }
   fail(err: Error) {
     for (const item of eachLink(this.head)) {
-      if (isQueryReceiver(item)) item.reject(err);
+      rejectReceiver(item, err);
     }
     this.clear();
   }
 
   private initLifecycleMessageListener(parser: MessageParsers) {
-    parser.setFullParser(BackendMessageCode.ParameterStatus, (data) => {
+    parser.setFullParser(MSCode.ParameterStatus, (data) => {
       const { name, value } = decodeParameterStatus(data);
       this.parameters[name] = value;
     });
-    parser.setFullParser(BackendMessageCode.NotificationResponse, (data) => {
+    parser.setFullParser(MSCode.NotificationResponse, (data) => {
       const message = decodeNotification(data, new DataView(data.buffer, data.byteOffset, data.byteLength));
       const asyncData = {
         type: AsyncMessageType.Notification,
@@ -161,7 +201,7 @@ export class QueryReadQueue {
         payload: message.payload,
       };
     });
-    parser.setFullParser(BackendMessageCode.NoticeResponse, (data) => {
+    parser.setFullParser(MSCode.NoticeResponse, (data) => {
       const message = decodeNotice(data);
       const asyncData = { type: AsyncMessageType.Notice, fields: message.fields, info: message.info };
     });
@@ -171,4 +211,8 @@ export class QueryReadQueue {
 
 function isQueryReceiver(receiver: ResultReceiver): receiver is QueryResultParser {
   return receiver.taskType === ReceiverType.ExtendedQuery || receiver.taskType === ReceiverType.SimpleQuery;
+}
+
+function rejectReceiver(receiver: ResultReceiver, error: Error): void {
+  if ("reject" in receiver && receiver.reject) receiver.reject(error);
 }

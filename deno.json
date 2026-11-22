@@ -46,5 +46,5 @@
   "publish": {
     "include": ["README.md", "CHANGELOG.md", "LICENSE", "docs/migration-native-protocol.md", "src"]
   },
-  "exclude": ["./benchmark", "./dist", "./bench2"]
+  "exclude": ["./benchmark", "./dist"]
 }

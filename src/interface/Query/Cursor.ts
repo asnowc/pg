@@ -3,20 +3,7 @@ import type { FieldInfo, QueryCompletion } from "./QueryReader.ts";
 import type { QueryCommonOptions, QueryOptionsWithDecoder } from "./_internal.ts";
 import { TypedSqlStatement } from "@/class.ts";
 /** @public */
-export type CursorOpenOptions = QueryCommonOptions & {
-  /**
-   * PostgreSQL 扩展查询协议中每次 `Execute` 消息使用的 `maxRows` 值。
-   *
-   * 必须为大于 `0` 的整数，服务端本次最多返回指定行数。
-   * 该值只控制单次 `Execute`，不限制游标最终返回的总行数。
-   * `read()` 未传入 `maxRows` 时使用此值。
-   *
-   * @throws {RangeError} 当值不是大于 `0` 的整数时抛出。
-   * @defaultValue 由实现决定
-   * @since 0.3.0
-   */
-  fetchSize?: number;
-};
+export type CursorOpenOptions = QueryCommonOptions;
 
 /** @public */
 export type CursorQueryOperation = {
@@ -38,8 +25,8 @@ export type CursorQueryOperation = {
    * }
    * ```
    */
-  open<T>(queryable: TypedSqlStatement<T>, options?: CursorOpenOptions): Promise<Cursor<T>>;
-  open<T>(queryable: SqlStatement, options?: CursorOpenOptions & QueryOptionsWithDecoder): Promise<Cursor<T>>;
+  open<T>(queryable: TypedSqlStatement<T>, options?: CursorOpenOptions): Cursor<T>;
+  open<T>(queryable: SqlStatement, options?: CursorOpenOptions & QueryOptionsWithDecoder): Cursor<T>;
 };
 /** @public */
 export interface Cursor<T> extends AsyncDisposable, AsyncIterable<T> {
@@ -84,7 +71,7 @@ export interface Cursor<T> extends AsyncDisposable, AsyncIterable<T> {
    * ```
    * @since 0.3.0
    */
-  read(maxRows?: number): Promise<T[]>;
+  read(maxRows: number): Promise<T[]>;
 
   /**
    * 获取查询结果的字段描述。
@@ -95,7 +82,7 @@ export interface Cursor<T> extends AsyncDisposable, AsyncIterable<T> {
    * @experimental
    * @since 0.3.0
    */
-  get fields(): readonly Readonly<FieldInfo>[];
+  get fields(): Promise<Readonly<FieldInfo>[]>;
 
   /**
    * 获取查询完成信息。

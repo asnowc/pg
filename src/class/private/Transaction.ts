@@ -1,5 +1,5 @@
 import type {
-  Cursor,
+  Cursor as ICursor,
   CursorOpenOptions,
   QueryOptions,
   QueryReader as IQueryReader,
@@ -12,6 +12,8 @@ import { GetPgSession, relatedQuery } from "./QueryFunction.ts";
 import { MaybePromise, processMaybePromise } from "@/_utils/AsyncAble.ts";
 import { HandleUnavailableError } from "@/_utils/error.ts";
 import { PgSession } from "@/protocol.ts";
+import Cursor from "./Cursor.ts";
+
 function checkName(name: string) {
   if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
     throw new Error(`Invalid savepoint name: ${name}`);
@@ -24,17 +26,18 @@ export default class Transaction implements ITransaction {
     private readonly onRelease: (writer: PgSession) => void,
     readonly mode: TransactionMode = "READ COMMITTED",
   ) {
-    const session = getSession();
+    let session = getSession();
     if (session instanceof Promise) {
-      this.session = session.then((session) => {
+      session = session.then((session) => {
         this.session = session;
         session.queryWriter.beginTransaction(this.mode);
         return session;
       });
-      this.session.catch(() => {});
+      session.catch(() => {});
     } else {
       session.queryWriter.beginTransaction(this.mode);
     }
+    this.session = session;
   }
   private session?: MaybePromise<PgSession>;
   private getWriterStrict = () => {
@@ -55,8 +58,8 @@ export default class Transaction implements ITransaction {
     return relatedQuery(this.getWriterStrict, queryable, options);
   }
 
-  open<T>(_queryable: SqlStatement, _options?: CursorOpenOptions): Promise<Cursor<T>> {
-    throw new Error("Not implemented");
+  open<T>(queryable: SqlStatement, options?: CursorOpenOptions & QueryOptionsWithDecoder): ICursor<T> {
+    return new Cursor<T>(this.transferGetWriter, (session) => this.session = session, queryable, options);
   }
 
   async savePoint(name: string): Promise<void> {

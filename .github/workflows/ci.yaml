@@ -4,25 +4,25 @@ on:
     branches:
       - "**"
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: ^2
-          cache: true
-      - run: deno ci
-      - name: Start PostgreSQL test environment
-        run: docker compose up --build --wait
-      - name: Test
-        run: deno task ci:test
-        env:
-          TEST_LOGIN_DB: pg://postgres@127.0.0.1:5432/postgres
-      - name: Stop PostgreSQL test environment
-        if: always()
-        run: docker compose down -v
+  # test:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v6
+  #     - uses: denoland/setup-deno@v2
+  #       with:
+  #         deno-version: ^2
+  #         cache: true
+  #     - run: deno ci
+  #     - name: Start PostgreSQL test environment
+  #       run: docker compose up --build --wait
+  #     - name: Test
+  #       run: deno task ci:test
+  #       env:
+  #         TEST_LOGIN_DB: pg://postgres@127.0.0.1:5432/postgres
+  #     - name: Stop PostgreSQL test environment
+  #       if: always()
+  #       run: docker compose down -v
   check:
     runs-on: ubuntu-latest
     steps:

@@ -13,10 +13,10 @@ export function isolationQuery<T>(
   queryable: SqlStatement,
   options?: QueryOptions & QueryOptionsWithDecoder,
 ): IQueryReader<T> {
-  const encoder = createTypedSqlStatement(queryable, options);
+  const statement = createTypedSqlStatement(queryable, options);
   return new QueryReader(() => {
     return processMaybePromise(getWriter(), (session) => {
-      const p = session.queryWriter.extendedQuery<T>(encoder);
+      const p = session.queryWriter.extendedQuery<T>(statement);
       session.queryWriter.sync();
       return p;
     });
@@ -27,11 +27,11 @@ export function relatedQuery<T>(
   queryable: SqlStatement,
   options?: QueryOptions & QueryOptionsWithDecoder,
 ): IQueryReader<T> {
-  const encoder = createTypedSqlStatement(queryable, options);
+  const statement = createTypedSqlStatement(queryable, options);
 
   return new QueryReader(() =>
     processMaybePromise(getWriter(), (session: PgSession) => {
-      return session.queryWriter.extendedQuery<T>(encoder);
+      return session.queryWriter.extendedQuery<T>(statement);
     })
   );
 }

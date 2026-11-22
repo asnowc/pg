@@ -1,11 +1,11 @@
 import type { QueryCompletion, QueryReader as IQueryReader, QueryResult } from "@/interface/Query.ts";
-import { QueryResultParser } from "@/protocol/parsers/QueryTask.ts";
+import { QueryParserResult } from "@/protocol/parsers/QueryTask.ts";
 
 export default class QueryReader<T = unknown> implements IQueryReader<T> {
-  constructor(sendExtendQuery: () => Promise<QueryResultParser<T>>) {
+  constructor(sendExtendQuery: () => Promise<QueryParserResult<T>>) {
     this.#sendExtendQuery = sendExtendQuery;
   }
-  #sendExtendQuery?: () => Promise<QueryResultParser<T>>;
+  #sendExtendQuery?: () => Promise<QueryParserResult<T>>;
   #send() {
     const send = this.#sendExtendQuery;
     if (!send) throw new Error("QueryReader has already been consumed");

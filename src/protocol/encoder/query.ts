@@ -279,8 +279,8 @@ export class QueryMessageEncoder implements BufferEncoder {
   }
 }
 
-export class DescribeMessageEncoder implements BufferEncoder {
-  constructor(private target: DescribeTarget, name: string) {
+class DescribeCloseMessageEncoder implements BufferEncoder {
+  constructor(private code: FrontendMessageCode, private target: DescribeTarget, name: string = "") {
     this.bodyLength = calcCStringByteLength(name) + 2;
     this.cStringEncoder = new CStringEncoder(name);
   }
@@ -289,7 +289,7 @@ export class DescribeMessageEncoder implements BufferEncoder {
   encodeInto(writer: WritableBuffer) {
     if (this.bodyLength !== undefined) {
       if (writer.writableLength < 6) return true;
-      writer.buffer[writer.writeOffset++] = FrontendMessageCode.Describe;
+      writer.buffer[writer.writeOffset++] = this.code;
       writer.view.setInt32(writer.writeOffset, 4 + this.bodyLength), writer.writeOffset += 4;
       writer.buffer[writer.writeOffset++] = this.target;
       this.bodyLength = undefined;
@@ -297,4 +297,10 @@ export class DescribeMessageEncoder implements BufferEncoder {
 
     return this.cStringEncoder.encodeInto(writer);
   }
+}
+export function getDescribeMessageEncoder(name?: string): BufferEncoder {
+  return new DescribeCloseMessageEncoder(FrontendMessageCode.Describe, DescribeTarget.Portal, name);
+}
+export function getCloseMessageEncoder(name?: string): BufferEncoder {
+  return new DescribeCloseMessageEncoder(FrontendMessageCode.Close, DescribeTarget.Portal, name);
 }
