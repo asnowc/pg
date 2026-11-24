@@ -11,7 +11,7 @@ function templateStringsArrayToTemplate(chunks: ReadonlyArray<string>) {
   }
   return template;
 }
-function calcArgsTotalByteLength(argsEncoders: JsDataEncoder[], args: unknown[]) {
+function calcArgsTotalByteLength(argsEncoders: readonly JsDataEncoder[], args: unknown[]) {
   let byteLength = 0;
   for (let i = 0; i < argsEncoders.length; i++) {
     if (args[i] === null) continue;
@@ -58,8 +58,8 @@ export class PreparedStatement {
     }
   }
 
-  readonly args?: unknown[];
-  readonly argsEncoders?: JsDataEncoder[];
+  readonly args?: readonly unknown[];
+  readonly argsEncoders?: readonly JsDataEncoder[];
   readonly statementName?: string;
   readonly statementNameLength: number;
   readonly sqlStatement: string | Uint8Array;

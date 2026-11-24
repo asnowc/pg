@@ -1,6 +1,6 @@
 import { QueryOptions, SqlStatement } from "@/interface/Query.ts";
 import { QueryOptionsWithDecoder } from "@/interface/Query/_internal.ts";
-import type { QueryReader as IQueryReader } from "@/interface/Query.ts";
+import type { MultipleQueryReader, QueryReader as IQueryReader } from "@/interface/Query.ts";
 import QueryReader from "./QueryReader.ts";
 import { createTypedSqlStatement } from "./sql_statement.ts";
 import { MaybePromise, processMaybePromise } from "@/_utils/AsyncAble.ts";

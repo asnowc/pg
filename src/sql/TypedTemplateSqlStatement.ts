@@ -79,7 +79,11 @@ const nullEncoder: JsDataEncoder = {
   encodeToText: () => "NULL",
 };
 
-function templateStringsArrayToSql(chunks: ReadonlyArray<string>, args: unknown[], encoders: JsDataEncoder[]) {
+function templateStringsArrayToSql(
+  chunks: ReadonlyArray<string>,
+  args: ReadonlyArray<unknown>,
+  encoders: ReadonlyArray<JsDataEncoder>,
+) {
   let template = chunks[0];
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];

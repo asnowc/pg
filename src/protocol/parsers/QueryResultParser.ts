@@ -5,32 +5,47 @@ import { ReadableBuffer } from "@/_utils/ReadBuffer.ts";
 import { PgColumnDataDecoder } from "@/interface/pg_data_decoder.ts";
 import { skipData } from "./_common.ts";
 
-export interface QueryResultParser {
-  reject(error: unknown): void;
-  readonly notices: string[];
-  readonly taskType: ReceiverType.ExtendedQuery | ReceiverType.SimpleQuery;
-  dataRow(reader: ReadableBuffer, remainingByteLength: number): void;
-
-  commandComplete(body: Uint8Array): void;
-  emptyQueryResponse(): void;
-  portalSuspended(): void;
-}
-
-export class QueryResultRowParser<D = unknown> implements QueryResultParser, QueryParserResult {
-  constructor(
-    private readonly resolve: (resolver: QueryParserResult<D>) => void,
-    readonly reject: (reason: unknown) => void,
-    readonly statement: TypedSqlStatement<D>,
-    readonly taskType: ReceiverType.ExtendedQuery | ReceiverType.SimpleQuery,
-  ) {
-  }
-  fields?: DecodeRowDescriptionResult[];
+export class QueryResultParser<D = unknown> {
+  private fields: DecodeRowDescriptionResult[] = [];
   private dataRowDecoder?: DataRowDecoder<Record<string, unknown>>;
   private failed = false;
-  rows: D[] = [];
-  readonly notices: string[] = [];
-  rowCount?: number;
-  dataRow(reader: ReadableBuffer, remainingByteLength: number) {
+  private rows: D[] = [];
+  private notices: string[] = [];
+  private rowCount: number | null = null;
+
+  constructor(
+    resolve: (resolver: QueryParserResult<D>) => void,
+    readonly reject: (reason: unknown) => void,
+    readonly getResultDecoder: ((info: DecodeRowDescriptionResult) => PgColumnDataDecoder) | undefined,
+    readonly taskType: ReceiverType.ExtendedQuery | ReceiverType.SimpleQuery,
+  ) {
+    this.#resolve = resolve;
+  }
+  #resolve: (resolver: QueryParserResult<D>) => void;
+  setFields(fields: DecodeRowDescriptionResult[]) {
+    this.fields = fields;
+    const statement = this.getResultDecoder;
+    if (!statement) return;
+    const decoders: PgColumnDataDecoder[] = fields.map((item) => statement(item));
+    this.dataRowDecoder = new DataRowDecoder(decoders, fields);
+  }
+  finish(completed: boolean) {
+    this.#resolve({
+      completed: completed,
+      notices: this.notices,
+      rows: this.rows,
+      fields: this.fields,
+      rowCount: this.rowCount,
+    });
+  }
+  reset() {
+    this.rows = [];
+    this.notices = [];
+    this.rowCount = null;
+    this.failed = false;
+  }
+
+  dataRow(reader: ReadableBuffer, remainingByteLength: number): void {
     if (this.failed || !this.dataRowDecoder) return skipData(reader, remainingByteLength);
     let row: unknown;
     const start = reader.readableStart;
@@ -46,27 +61,17 @@ export class QueryResultRowParser<D = unknown> implements QueryResultParser, Que
     this.dataRowDecoder.reset();
     this.rows.push(row as D);
   }
-  setFields(fields: DecodeRowDescriptionResult[]) {
-    this.fields = fields;
-    const statement = this.statement;
-    if (!statement.getResultDecoder) return;
-    const decoders: PgColumnDataDecoder[] = fields.map((item) => statement.getResultDecoder!(item));
-    this.dataRowDecoder = new DataRowDecoder(decoders, fields);
-  }
 
-  completed: boolean = false;
   commandComplete(body: Uint8Array) {
     this.rowCount = decodeRowCount(decodeCommandComplete(body));
-    this.completed = true;
-    this.resolve(this);
+    this.finish(true);
   }
   emptyQueryResponse(): void {
     this.rowCount = 0;
-    this.completed = true;
-    this.resolve(this);
+    this.finish(true);
   }
   portalSuspended(): void {
-    this.resolve(this);
+    this.finish(false);
   }
 }
 

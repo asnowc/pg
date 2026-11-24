@@ -10,7 +10,11 @@ import { CountLinkList, eachLink } from "@/_utils/LinkList.ts";
 import { QueryResultParser } from "./parsers/QueryResultParser.ts";
 import { RowDescriptionParser } from "./parsers/RowDescription.ts";
 
-type ResultReceiver = QueryResultParser | EmptyReceiver | CloseReceiver | RowDescriptionParser;
+type ResultReceiver =
+  | QueryResultParser
+  | EmptyReceiver
+  | CloseReceiver
+  | RowDescriptionParser;
 
 const MSCode = BackendMessageCode;
 
@@ -39,11 +43,8 @@ export class QueryReadQueue {
     this.pendingQueyNumber = 0;
     this.completedQueryNumber = 0;
   }
-  enqueueSync(): void {
-    this.push({ taskType: ReceiverType.Sync });
-  }
-  enqueueSimpleQuery(result: QueryResultParser): void {
-    this.push(result);
+  enqueueSync(resolve?: () => void, reject?: (error: unknown) => void): void {
+    this.push({ taskType: ReceiverType.Sync, resolve, reject });
   }
   init(parsers: MessageParsers, queryWrite: QueryWriteQueue) {
     this.initLifecycleMessageListener(parsers);
@@ -64,36 +65,40 @@ export class QueryReadQueue {
 
     parsers.set(MSCode.NoData, () => {
       const current = this.getReceiver();
-      if (current.taskType === ReceiverType.RowDescription) {
-        this.shift();
-        current.noData();
-      } else if (
-        current.taskType === ReceiverType.StartTransaction || current.taskType === ReceiverType.EndTransaction
-      ) {
-        return;
-      } else {
-        throw new InternalError("Unexpected NoData for the current receiver");
+      switch (current.taskType) {
+        case ReceiverType.ExtendedQuery:
+        case ReceiverType.SimpleQuery:
+        case ReceiverType.EndTransaction:
+        case ReceiverType.StartTransaction:
+          return;
+        default:
+          throw new InternalError("Unexpected NoData for the current receiver");
       }
     });
 
     parsers.setFullParser(MSCode.CommandComplete, (body) => {
       const current = this.getReceiver();
-      if (isQueryReceiver(current)) {
-        this.shift();
-        current.commandComplete(body);
-      } else if (
-        current.taskType === ReceiverType.StartTransaction || current.taskType === ReceiverType.EndTransaction
-      ) {
-        this.shift();
-      } else {
-        throw new InternalError("Unexpected CommandComplete for the current receiver");
+      switch (current.taskType) {
+        case ReceiverType.SimpleQuery:
+          current.commandComplete(body);
+          current.reset();
+          break;
+        case ReceiverType.ExtendedQuery:
+          current.commandComplete(body);
+          this.shift();
+          break;
+        case ReceiverType.EndTransaction:
+        case ReceiverType.StartTransaction:
+          this.shift();
+          break;
+
+        default:
+          throw new InternalError("Unexpected CommandComplete for the current receiver");
       }
     });
     parsers.set(MSCode.PortalSuspended, () => {
-      const current = this.popResultReceiver();
-      if (current.taskType !== ReceiverType.ExtendedQuery) {
-        throw new InternalError("Unexpected PortalSuspended for a simple query");
-      }
+      const current = this.getResultReceiver();
+      this.shift();
       current.portalSuspended();
     });
     parsers.set(MSCode.EmptyQueryResponse, () => {
@@ -102,7 +107,7 @@ export class QueryReadQueue {
         this.shift();
         current.noData();
       }
-      this.popResultReceiver().emptyQueryResponse();
+      this.getResultReceiver().emptyQueryResponse();
     });
     parsers.setFullParser(MSCode.ErrorResponse, (body) => {
       const next = this.head;
@@ -131,10 +136,15 @@ export class QueryReadQueue {
 
     // 匹配 SYNC
     parsers.setFullParser(MSCode.ReadyForQuery, (body) => {
-      const current = this.head;
-      if (!current || current.taskType !== ReceiverType.Sync) {
-        throw new InternalError("ReadyForQuery message  not matched with SYNC");
+      let current = this.getReceiver();
+      if (current.taskType === ReceiverType.SimpleQuery) {
+        this.shift();
+        current = this.getReceiver();
       }
+      if (current.taskType !== ReceiverType.Sync) {
+        throw new InternalError("ReadyForQuery message not matched with SYNC");
+      }
+
       this.shift();
       const status = decodeReadyForQuery(body);
       this.transactionStatus = status;
@@ -145,31 +155,18 @@ export class QueryReadQueue {
     });
     parsers.set(MSCode.BindComplete, (body) => {});
     parsers.set(MSCode.CloseComplete, (body) => {
-      const current = this.popReceiver();
+      const current = this.getReceiver();
       if (current.taskType !== ReceiverType.ClosePortal) {
         throw new InternalError("Unexpected CloseComplete for a non-close task");
       }
+      this.shift();
       current.resolve();
     });
     parsers.set(MSCode.ParseComplete, (body) => {});
   }
-
-  private popReceiver(): ResultReceiver {
-    const receiver = this.getReceiver();
-    this.shift();
-    return receiver;
-  }
   private getReceiver(): ResultReceiver {
     const receiver = this.head;
     if (!receiver) throw new InternalError("No receiver available");
-    return receiver;
-  }
-  private popResultReceiver(): QueryResultParser {
-    const receiver = this.getReceiver();
-    if (!isQueryReceiver(receiver)) {
-      throw new InternalError("No query result receiver available to pop");
-    }
-    this.shift();
     return receiver;
   }
 

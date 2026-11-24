@@ -2,7 +2,7 @@ import type { FieldInfo, TransactionMode } from "@/interface/Query.ts";
 import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
 import { throwRewrittenError } from "@/_utils/error.ts";
 import { QueryParserResult, ReceiverType } from "./parsers/QueryTask.ts";
-import { QueryResultRowParser } from "./parsers/QueryResultParser.ts";
+import { QueryResultParser } from "./parsers/QueryResultParser.ts";
 import { QueryReadQueue } from "./MessageReadQueue.ts";
 import { FRAME } from "./static_frame.ts";
 import {
@@ -15,6 +15,7 @@ import {
 import { BufferWriterQueue } from "@/_utils/BufferWriterQueue.ts";
 import { TerminateFrame } from "./encoder/Message.ts";
 import { RowDescriptionParser } from "@/protocol/parsers/RowDescription.ts";
+import { PreparedMultipleStatement } from "@/class/PreparedMultipleStatement.ts";
 
 export class QueryWriteQueue {
   constructor(
@@ -26,15 +27,15 @@ export class QueryWriteQueue {
 
   extendedQuery<T>(statement: TypedSqlStatement): Promise<QueryParserResult<T>> {
     return new Promise<QueryParserResult<T>>((resolve, reject) => {
-      const parser = new QueryResultRowParser<any>(
+      const parser = new QueryResultParser<any>(
         resolve,
         reject,
-        statement,
+        statement.getResultDecoder,
         ReceiverType.ExtendedQuery,
       );
       this.readQueue.push(new RowDescriptionParser((fields) => parser.setFields(fields), reject));
       this.readQueue.push(parser);
-      writeExtended(this.writer, parser.statement);
+      writeExtended(this.writer, statement);
       this.writer.pushData(FRAME.FLUSH);
     }).catch(throwRewrittenError);
   }
@@ -54,10 +55,10 @@ export class QueryWriteQueue {
   }
   executePortal<T>(statement: TypedSqlStatement, maxRows: number = 0): Promise<QueryParserResult<T>> {
     return new Promise<QueryParserResult<T>>((resolve, reject) => {
-      const parser = new QueryResultRowParser<any>(
-        resolve,
+      const parser = new QueryResultParser(
+        <any> resolve,
         reject,
-        statement,
+        statement.getResultDecoder,
         ReceiverType.ExtendedQuery,
       );
       const fields = this.#cursorFields.get(statement);
@@ -76,23 +77,28 @@ export class QueryWriteQueue {
       if (statement) this.#cursorFields.delete(statement);
     }).catch(throwRewrittenError);
   }
-  sync(): void {
-    this.readQueue.enqueueSync();
+  sync(resolve?: () => void, reject?: (error: unknown) => void): void {
     this.writer.pushData(FRAME.SYNC);
+    this.readQueue.enqueueSync(resolve, reject);
   }
 
-  simpleQuery<T>(statement: TypedSqlStatement): Promise<QueryParserResult<T>> {
-    return new Promise<QueryParserResult<T>>((resolve, reject) => {
-      const parser = new QueryResultRowParser<any>(
-        resolve,
+  simpleQuery<T>(
+    statement: PreparedMultipleStatement,
+    onResolve?: (data: QueryParserResult<T>) => void,
+  ): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const parser = new QueryResultParser<any>(
+        onResolve ?? (() => {}),
         reject,
-        statement,
+        undefined,
         ReceiverType.SimpleQuery,
       );
-
-      this.readQueue.push(new RowDescriptionParser((fields) => parser.setFields(fields), reject));
-      this.readQueue.enqueueSimpleQuery(parser);
-      this.writer.pushEncoder(new QueryMessageEncoder(parser.statement));
+      if (onResolve) {
+        this.readQueue.push(new RowDescriptionParser((fields) => parser.setFields(fields), reject));
+      }
+      this.readQueue.push(parser);
+      this.writer.pushEncoder(new QueryMessageEncoder(statement));
+      this.sync(resolve, reject);
     });
   }
 

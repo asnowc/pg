@@ -53,6 +53,7 @@ export interface QueryReader<T> extends AsyncIterable<T> {
    */
   map<K extends keyof T>(key: K): Promise<Map<T[K], T>>;
 
+  then(onfulfilled?: undefined, onrejected?: (reason: unknown) => void): Promise<void>;
   /**
    * 使读取器可被 `await`，执行查询并忽略结果行。
    *
@@ -61,7 +62,7 @@ export interface QueryReader<T> extends AsyncIterable<T> {
    * @returns 查询完成后兑现的 Promise。
    * @since 0.3.0
    */
-  then(onfulfilled?: (data?: undefined) => void, onrejected?: (reason: unknown) => void): Promise<void>;
+  then<T>(onfulfilled: (data?: undefined) => T, onrejected?: (reason: unknown) => void): Promise<T>;
 
   /**
    * 返回按行读取结果的异步迭代器。
@@ -91,8 +92,9 @@ export interface QueryReader<T> extends AsyncIterable<T> {
  * @public
  * @since 0.3.0
  */
-export interface SampleQueryReader<T extends any[] = unknown[]> {
-  then(onfulfilled?: (data: undefined) => void, onrejected?: (reason: unknown) => void): Promise<void>;
+export interface MultipleQueryReader<T extends any[] = unknown[]> {
+  then(onfulfilled?: undefined, onrejected?: (reason: unknown) => void): Promise<void>;
+  then<T>(onfulfilled: (data: undefined) => T, onrejected?: (reason: unknown) => void): Promise<T>;
   last<R>(): Promise<R>;
   lastResults<T>(): Promise<QueryResult<T>>;
   all(): Promise<T[]>;
@@ -102,7 +104,7 @@ export interface SampleQueryReader<T extends any[] = unknown[]> {
 /** @public */
 export interface QueryCompletion {
   /** 受影响的行数 */
-  readonly rowCount?: number;
+  readonly rowCount: number | null;
   readonly notices: string[];
 }
 

@@ -1,5 +1,5 @@
 import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
-import type { QueryReader, SampleQueryReader } from "./QueryReader.ts";
+import type { MultipleQueryReader, QueryReader } from "./QueryReader.ts";
 import type { SqlStatement, SqlStatements } from "./QueryStatement.ts";
 import type { QueryCommonOptions, QueryOptionsWithDecoder } from "./_internal.ts";
 
@@ -50,18 +50,5 @@ export interface MultipleQueryOperation {
    * @returns 按结果集顺序产生读取器的异步可迭代对象。
    * @since 0.3.0
    */
-  queryMultiple(queryable: SqlStatements, options?: QueryOptions & QueryOptionsWithDecoder): SampleQueryReader;
-  /**
-   * 从 SQL 字节流执行简单查询，并按 PostgreSQL 返回的每个结果集依次产生读取器。
-   * 改方法执行结束后不能处于事务中，否则抛出异常
-   * 改方法定义为独立的查询操作，不应依赖多个查询的上下文。
-   *
-   * @param queryable 提供一条或多条 SQL 语句的字节流。
-   * @returns 按结果集顺序产生读取器的异步可迭代对象。
-   * @since 0.3.0
-   */
-  queryMultiple(
-    queryable: ReadableStream<Uint8Array>,
-    options?: QueryOptions & QueryOptionsWithDecoder,
-  ): SampleQueryReader;
+  queryMultiple(queryable: SqlStatements, options?: QueryOptions & QueryOptionsWithDecoder): MultipleQueryReader;
 }

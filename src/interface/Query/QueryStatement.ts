@@ -12,5 +12,6 @@ export type SqlStatement = string | Uint8Array | PreparedStatement;
 export type SqlStatements =
   | string
   | Uint8Array
+  | Blob
   | PreparedStatement
-  | ArrayLike<string | Uint8Array | PreparedStatement>;
+  | ArrayLike<string | Uint8Array | Blob | PreparedStatement>;

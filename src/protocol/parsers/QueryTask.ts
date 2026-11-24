@@ -13,8 +13,8 @@ export type CloseReceiver = {
 export type QueryParserResult<T = unknown> = {
   readonly rows: T[];
   readonly notices: string[];
-  readonly rowCount?: number;
-  readonly fields?: DecodeRowDescriptionResult[];
+  readonly rowCount: number | null;
+  readonly fields: Readonly<DecodeRowDescriptionResult>[];
   readonly completed: boolean;
 };
 

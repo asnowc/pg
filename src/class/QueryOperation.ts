@@ -3,9 +3,9 @@ import type {
   CursorOpenOptions,
   CursorQueryOperation,
   MultipleQueryOperation,
+  MultipleQueryReader,
   QueryOptions,
   QueryReader as IQueryReader,
-  SampleQueryReader,
   SingleQueryOperation,
   SqlStatement,
   SqlStatements,
@@ -58,9 +58,10 @@ export class QueryOperation
     return new Cursor<T>(this.#transferWriter, this.#releaseWriter, queryable, options);
   }
 
-  queryMultiple(queryable: SqlStatements, options?: QueryOptions): SampleQueryReader<unknown[]>;
-  queryMultiple(queryable: ReadableStream<Uint8Array>, options?: QueryOptions): SampleQueryReader<unknown[]>;
-  queryMultiple(queryable: unknown, _options?: unknown): SampleQueryReader {
+  queryMultiple(
+    queryable: SqlStatements,
+    options?: QueryOptions & QueryOptionsWithDecoder,
+  ): MultipleQueryReader<unknown[]> {
     if (typeof queryable !== "string") throw new TypeError("Only string simple queries are supported");
     throw new Error("Not implemented");
   }

@@ -1,4 +1,4 @@
-import { PreparedStatement, TypedSqlStatement } from "@/class/PreparedStatement.ts";
+import { PreparedStatement } from "@/class/PreparedStatement.ts";
 import { WritableBuffer } from "@/_utils/WriterBuffer.ts";
 import {
   BufferEncoder,
@@ -11,6 +11,7 @@ import {
 } from "./_common.ts";
 import { CSTRING_TERMINATOR, DescribeTarget, FRAME_HEADER_LENGTH, FrontendMessageCode } from "../const.ts";
 import { calcCStringByteLength } from "@/_utils/string.ts";
+import { SqlStatements } from "@/interface/Query.ts";
 
 /**
  *  https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-PARSE
@@ -257,10 +258,27 @@ export class ExecuteMessageEncoder extends StageBufferEncoder implements BufferE
 }
 
 export class QueryMessageEncoder implements BufferEncoder {
-  constructor(statement: TypedSqlStatement) {
-    this.bodyLength = statement.statementByteLength + 1;
-    if (typeof statement.sqlStatement === "string") this.encoder = new UTF16BufferEncoder(statement.sqlStatement);
-    else this.encoder = new Uint8ArrayEncoder(statement.sqlStatement);
+  constructor(statement: SqlStatements) {
+    if (typeof statement === "string") {
+      this.encoder = new UTF16BufferEncoder(statement);
+      this.bodyLength = calcCStringByteLength(statement) + 1;
+    } else if (statement instanceof Uint8Array) {
+      this.encoder = new Uint8ArrayEncoder(statement);
+      this.bodyLength = statement.byteLength + 1;
+    } else if (statement instanceof PreparedStatement) {
+      if (typeof statement.sqlStatement === "string") {
+        this.encoder = new UTF16BufferEncoder(statement.sqlStatement);
+      } else {
+        this.encoder = new Uint8ArrayEncoder(statement.sqlStatement);
+      }
+      this.bodyLength = statement.statementByteLength + 1;
+    } else if (statement instanceof Blob) {
+      this.bodyLength = statement.size + 1;
+      throw new Error("Blob statements are not supported");
+    } else {
+      throw new Error("Unsupported statement type");
+      //TODO: 处理数组
+    }
   }
   private encoder?: BufferEncoder;
   private bodyLength?: number;
