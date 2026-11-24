@@ -6,10 +6,13 @@ import {
   QueryOptions,
   QueryReader,
   SingleQueryOperation,
+  MultipleQueryOperation,
   SqlStatement,
   Transaction as ITransaction,
   TransactionMode,
   TransactionQueryOperation,
+  MultipleQueryReader as IMultipleQueryReader,
+  SqlStatements,
 } from "@/interface/Query.ts";
 import { TypedSqlStatement } from "./PreparedStatement.ts";
 import { QueryOptionsWithDecoder } from "@/interface/Query/_internal.ts";
@@ -33,10 +36,19 @@ import { PgSession } from "@/protocol/PgSession.ts";
 import { isolationQuery } from "./private/QueryFunction.ts";
 import Transaction from "@/class/private/Transaction.ts";
 import Cursor from "@/class/private/Cursor.ts";
+import MultipleQueryReader from "./private/MultipleQueryReader.ts";
+import { PreparedMultipleStatement } from "./PreparedMultipleStatement.ts";
 
 export type { CreatePoolOptions } from "./Pool.ts";
 /** @public */
-export class PgPool implements SingleQueryOperation, CursorQueryOperation, TransactionQueryOperation, AsyncDisposable {
+export class PgPool
+  implements
+    SingleQueryOperation,
+    MultipleQueryOperation,
+    CursorQueryOperation,
+    TransactionQueryOperation,
+    AsyncDisposable
+{
   /**
    * 创建惰性建连的原生连接池。池级查询自动归还连接；事务、游标和 COPY 必须结束或取消。
    * QueryReader 的行会先物化，再归还连接，因此延迟消费结果不会读取其他借用者的数据。
@@ -288,6 +300,13 @@ export class PgPool implements SingleQueryOperation, CursorQueryOperation, Trans
   ): ICursor<T> {
     return new Cursor<T>(this.#getSession, this.#onRelease, queryable, options);
   }
+  queryMultiple<T extends any[] = unknown[]>(
+    queryable: SqlStatements,
+    options?: QueryOptions & QueryOptionsWithDecoder,
+  ): IMultipleQueryReader<T> {
+    return new MultipleQueryReader<T>(this.#getSession, new PreparedMultipleStatement(queryable, options));
+  }
+
   static {
     poolForTest.getPooInternalPool = (pool: PgPool) => ({
       pool: pool.#pool,

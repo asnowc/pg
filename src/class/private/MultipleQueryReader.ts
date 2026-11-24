@@ -6,7 +6,7 @@ import { GetPgSession } from "@/class/private/QueryFunction.ts";
 import { HandleUnavailableError } from "@/_utils/error.ts";
 import { PreparedMultipleStatement } from "@/class/PreparedMultipleStatement.ts";
 
-export default class MultipleQueryReader implements IMultipleQueryReader {
+export default class MultipleQueryReader<T extends any[] = unknown[]> implements IMultipleQueryReader<T> {
   constructor(
     getSession: GetPgSession,
     private statement: PreparedMultipleStatement,
@@ -22,11 +22,11 @@ export default class MultipleQueryReader implements IMultipleQueryReader {
     this.#getSession = undefined;
     return processMaybePromise(session, exec);
   }
-  async all(): Promise<unknown[][]> {
+  async all(): Promise<T[]> {
     const results = await this.allResults();
-    return results.map((result) => result.rows);
+    return results.map((result) => result.rows) as T;
   }
-  allResults(): Promise<QueryResult<unknown>[]> {
+  allResults(): Promise<QueryResult<T[number]>[]> {
     return this.getSession(async (session) => {
       const items: QueryResult<unknown>[] = [];
       await session.queryWriter.simpleQuery(this.statement, (result) => items.push(result));

@@ -56,8 +56,8 @@ test("事务查询", async ({ conn }) => {
       COMMIT;
     `)
       .all();
-    await expect(getPublicTestTableById(conn, b.id)).resolves.not.toBeNull();
-    await expect(getPublicTestTableById(conn, c.id)).resolves.not.toBeNull();
+    await expect(getPublicTestTableById(conn, b[0].id)).resolves.not.toBeNull();
+    await expect(getPublicTestTableById(conn, c[0].id)).resolves.not.toBeNull();
   }
 });
 

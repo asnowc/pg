@@ -93,7 +93,7 @@ export class QueryWriteQueue {
         this.readQueue.push(new RowDescriptionParser((fields) => parser.setFields(fields), reject));
       }
       this.readQueue.push(parser);
-      this.writer.pushEncoder(new QueryMessageEncoder(statement));
+      this.writer.pushEncoder(new QueryMessageEncoder(statement.statements));
       this.sync(resolve, reject);
     });
   }

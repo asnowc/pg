@@ -1,1 +1,4 @@
-declare var Deno: undefined | {};
+declare var Deno: {
+  connect: any;
+  startTls: any;
+};
