@@ -50,11 +50,14 @@ describe("close", () => {
     const connection = {};
     let busy = true;
     const dispose = vi.fn();
-    const pool = new ResourcePool({
-      create: async () => connection,
-      dispose,
-      isBusy: () => busy,
-    }, { usageLimit: 1 });
+    const pool = new ResourcePool(
+      {
+        create: async () => connection,
+        dispose,
+        isBusy: () => busy,
+      },
+      { usageLimit: 1 },
+    );
     const borrowed = await pool.get();
     pool.release(borrowed);
     const reused = await pool.get();
@@ -62,7 +65,7 @@ describe("close", () => {
     pool.release(reused);
     const closing = pool.close();
     let closed = false;
-    void closing.then(() => closed = true);
+    void closing.then(() => (closed = true));
     await Promise.resolve();
     expect(dispose).not.toHaveBeenCalled();
     expect(closed).toBe(false);
@@ -122,9 +125,10 @@ describe("destroy", function () {
 
     const connects = await resourceManage.getAllCreatedConn();
 
-    expect(connects.map((conn) => conn.connected), "所有连接的 disconnect() 方法已被调用").toEqual(
-      new Array(connects.length).fill(false),
-    );
+    expect(
+      connects.map((conn) => conn.connected),
+      "所有连接的 disconnect() 方法已被调用",
+    ).toEqual(new Array(connects.length).fill(false));
   });
   test("destroy() 会立即断开所有连接", async function () {
     const manage = {

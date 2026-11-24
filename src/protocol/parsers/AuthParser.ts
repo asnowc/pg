@@ -38,8 +38,7 @@ class AuthSASLParser implements AuthParser<Promise<void> | true> {
   constructor(
     private writer: BufferWriterQueue,
     private options: PgAuthenticationExchangeOptions,
-  ) {
-  }
+  ) {}
   authCode = "SASL";
   f1?: {
     mechanisms: string[];
@@ -95,8 +94,10 @@ class AuthSASLParser implements AuthParser<Promise<void> | true> {
   }
 }
 class AuthCleartextPasswordParser implements AuthParser<true> {
-  constructor(private writer: BufferWriterQueue, private options: PgAuthenticationExchangeOptions) {
-  }
+  constructor(
+    private writer: BufferWriterQueue,
+    private options: PgAuthenticationExchangeOptions,
+  ) {}
   authCode = "CLEAR_TEXT";
   next(reader: ReadableBuffer): true | undefined {
     this.writer.pushWrite(async (writer) => {
@@ -128,9 +129,11 @@ function decodeSASLMechanisms(body: Uint8Array, offset: number): string[] | unde
   return undefined;
 }
 
-async function createScramExchange(
-  context: { mechanisms: readonly string[]; user: string; password?: string },
-): Promise<PgSaslExchange> {
+async function createScramExchange(context: {
+  mechanisms: readonly string[];
+  user: string;
+  password?: string;
+}): Promise<PgSaslExchange> {
   const { mechanisms, user, password } = context;
   if (!mechanisms.includes("SCRAM-SHA-256")) {
     throw new PgAuthenticationError("SCRAM-SHA-256 is not supported by server");

@@ -20,7 +20,8 @@ function createCli(): Command {
     .showHelpAfterError();
 
   addSvgReportOptions(
-    program.command("run")
+    program
+      .command("run")
       .description("Run a benchmark file; each series runs in its own child process.")
       .argument("<file>", "benchmark module exporting default getBenchItem, BENCH_CONFIG and SERIES")
       .option("-s, --series <names>", "comma separated series (default: SERIES of the module)", list)
@@ -32,11 +33,12 @@ function createCli(): Command {
       .option("-m, --meta <json>", "JSON merged into the module META", jsonObject)
       .option("--no-report", "skip SVG report generation"),
   ).action(async (file: string, options: RunOptions) => {
-    if (!await runCommand(file, options)) process.exitCode = 1;
+    if (!(await runCommand(file, options))) process.exitCode = 1;
   });
 
   addSvgReportOptions(
-    program.command("report")
+    program
+      .command("report")
       .description(`Generate ${REPORT_SVG_NAME} for a result directory.`)
       .argument("<dir>", "benchmark output directory")
       .option("-o, --output <file>", `SVG output path relative to <dir> (default: ${REPORT_SVG_NAME})`)
@@ -46,7 +48,9 @@ function createCli(): Command {
   return program;
 }
 
-await createCli().parseAsync(process.argv).catch((error: unknown) => {
-  console.error(`error: ${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 1;
-});
+await createCli()
+  .parseAsync(process.argv)
+  .catch((error: unknown) => {
+    console.error(`error: ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  });

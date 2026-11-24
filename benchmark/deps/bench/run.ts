@@ -29,7 +29,10 @@ export interface UserBenchConfig {
   report?: SvgReportOptions;
 }
 export interface GetBenchItem<Meta extends {} = {}> {
-  (info: string, meta: Meta): Promise<{
+  (
+    info: string,
+    meta: Meta,
+  ): Promise<{
     fn: () => Promise<any>;
     close: () => Promise<any>;
   }>;

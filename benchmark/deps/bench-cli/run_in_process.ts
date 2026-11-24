@@ -8,7 +8,7 @@ import { CHILD_TASK_ENV, ChildTask } from "./child_task.ts";
 const task = readChildTask();
 let getBenchItem: GetBenchItem<any> | undefined;
 try {
-  const mod = await import(task.file) as Partial<{ default?: GetBenchItem<any> }>;
+  const mod = (await import(task.file)) as Partial<{ default?: GetBenchItem<any> }>;
   getBenchItem = mod.default;
 } catch (error) {
   throw new Error(`Failed to import benchmark module: ${task.file}`, { cause: error });

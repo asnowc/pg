@@ -128,7 +128,7 @@ function normalize(input: BenchInput): BenchSetting {
   const { duration = 3000, warmupDuration = 0 } = input;
   const entries = typeof input.concurrency === "number" ? [input.concurrency] : input.concurrency;
   if (!entries.length) throw new RangeError("concurrency must not be empty");
-  const stages = entries.map((entry) => typeof entry === "number" ? { value: entry, duration } : { ...entry });
+  const stages = entries.map((entry) => (typeof entry === "number" ? { value: entry, duration } : { ...entry }));
   for (const stage of stages) {
     if (stage.value <= 0) {
       throw new RangeError(`concurrency must be finite and positive`);

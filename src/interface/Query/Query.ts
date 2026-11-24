@@ -50,5 +50,8 @@ export interface MultipleQueryOperation {
    * @returns 按结果集顺序产生读取器的异步可迭代对象。
    * @since 0.3.0
    */
-  queryMultiple(queryable: SqlStatements, options?: QueryOptions & QueryOptionsWithDecoder): MultipleQueryReader;
+  queryMultiple<T extends any[] = unknown[]>(
+    queryable: SqlStatements,
+    options?: QueryOptions & QueryOptionsWithDecoder,
+  ): MultipleQueryReader<T>;
 }

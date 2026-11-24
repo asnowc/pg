@@ -14,13 +14,14 @@ import { distributionSection } from "./latency.ts";
  */
 async function renderSvgString(input: Omit<SvgReportInput, "path">): Promise<string> {
   const { results, manifest, title = "Concurrency benchmark" } = input;
-  const notes = [...input.notes ?? []];
+  const notes = [...(input.notes ?? [])];
   let options = resolveSvgReportOptions(input);
   // Deno 的 memoryUsage() 恒报告 arrayBuffers 为 0（已计入 external），此时省略该曲线以免误读为零占用
-  const arrayBuffersUnavailable = results.length > 0 &&
-    results.every((result) =>
-      result.run.snapshot.arrayBuffers.length > 0 &&
-      result.run.snapshot.arrayBuffers.every((value) => value === 0)
+  const arrayBuffersUnavailable =
+    results.length > 0 &&
+    results.every(
+      (result) =>
+        result.run.snapshot.arrayBuffers.length > 0 && result.run.snapshot.arrayBuffers.every((value) => value === 0),
     );
   if (arrayBuffersUnavailable && (options.metrics.includes("arrayBuffers") || options.sections.includes("resource"))) {
     options = { ...options, metrics: options.metrics.filter((metric) => metric !== "arrayBuffers") };
@@ -31,7 +32,8 @@ async function renderSvgString(input: Omit<SvgReportInput, "path">): Promise<str
   const colors = results.map((_, index) => seriesColor(index));
   const layout = new ReportLayout();
   // 时间轴从预热开始计时；优先使用配置的预热时长，使各系列和档位边界对齐
-  const warmupMs = manifest?.params.warmupDuration ??
+  const warmupMs =
+    manifest?.params.warmupDuration ??
     (results.length ? Math.min(...results.map((result) => result.run.warmup.duration)) : 0);
   const context = createRenderContext({
     layout,
@@ -47,7 +49,8 @@ async function renderSvgString(input: Omit<SvgReportInput, "path">): Promise<str
   layout.top += 28;
   const operationMetrics = options.metrics.filter((metric) => metric === "inFlight" || metric === "ops");
   const memoryMetrics = options.metrics.filter((metric) => isInstantMetric(metric) && metric !== "inFlight");
-  const hasTimeline = (sections.has("cpu") && options.metrics.includes("cpu")) ||
+  const hasTimeline =
+    (sections.has("cpu") && options.metrics.includes("cpu")) ||
     (sections.has("memory") && memoryMetrics.length > 0) ||
     (sections.has("throughput") && operationMetrics.length > 0);
   layout.text(
@@ -59,10 +62,13 @@ async function renderSvgString(input: Omit<SvgReportInput, "path">): Promise<str
   layout.top += 24;
   if (sections.has("environment")) environmentSection(context, manifest);
   const hasResults = results.length > 0;
-  const hasCharts = hasResults && (
-    sections.has("throughput") || sections.has("distribution") || sections.has("resource") ||
-    sections.has("cpu") || hasTimeline
-  );
+  const hasCharts =
+    hasResults &&
+    (sections.has("throughput") ||
+      sections.has("distribution") ||
+      sections.has("resource") ||
+      sections.has("cpu") ||
+      hasTimeline);
   // 图例只用于图表；纯表格报告的行已按系列着色
   const legendTop = layout.top;
   if (hasCharts) layout.top += Math.ceil(results.length / 4) * 24 + 10;
@@ -86,14 +92,15 @@ async function renderSvgString(input: Omit<SvgReportInput, "path">): Promise<str
     backgroundColor: "#fff",
     color: colors,
     textStyle: { fontFamily: FONT },
-    legend: hasCharts && legendNames.size > 0
-      ? {
-        data: results.map((result) => result.name).filter((name) => legendNames.has(name)),
-        top: legendTop,
-        left: MARGIN,
-        right: MARGIN,
-      }
-      : { show: false },
+    legend:
+      hasCharts && legendNames.size > 0
+        ? {
+            data: results.map((result) => result.name).filter((name) => legendNames.has(name)),
+            top: legendTop,
+            left: MARGIN,
+            right: MARGIN,
+          }
+        : { show: false },
     grid: layout.grids,
     xAxis: layout.xAxes,
     yAxis: layout.yAxes,

@@ -5,9 +5,7 @@ export type PgColumnDataDecoder<T = unknown> = {
   decodeBinary(value: StreamReader, remainingByteLength: number): T | undefined;
 };
 /** @public */
-export type PgColumnDecoder<T = unknown> =
-  | PgColumnDataDecoder<T>
-  | (() => PgColumnDataDecoder<T>);
+export type PgColumnDecoder<T = unknown> = PgColumnDataDecoder<T> | (() => PgColumnDataDecoder<T>);
 /**
  * @public
  * 字节流读取器。执行读取操作前需要确保有足够的可读字节。

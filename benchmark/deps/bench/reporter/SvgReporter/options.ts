@@ -24,7 +24,7 @@ const SVG_SECTIONS = [
   "memory",
   "notes",
 ] as const;
-export type SvgSection = typeof SVG_SECTIONS[number];
+export type SvgSection = (typeof SVG_SECTIONS)[number];
 
 const INTERVAL_METRICS: readonly IntervalMetric[] = [
   "inFlight",
@@ -38,10 +38,10 @@ const INTERVAL_METRICS: readonly IntervalMetric[] = [
 
 const LATENCY_FIELDS = ["min", "p50", "p75", "p90", "p95", "p99", "p995", "p999", "max", "mean", "rme"] as const;
 /** 延迟统计字段，`rme` 为 95% 均值置信区间的相对半宽（%）。 */
-export type LatencyField = typeof LATENCY_FIELDS[number];
+export type LatencyField = (typeof LATENCY_FIELDS)[number];
 
 export const SVG_PRESETS = ["default", "compact", "throughput", "latency", "resource"] as const;
-export type SvgPreset = typeof SVG_PRESETS[number];
+export type SvgPreset = (typeof SVG_PRESETS)[number];
 
 /** 报告中的术语，使报告能贴合被测对象，例如 `{ series: "Library", operations: "queries", throughput: "QPS" }`。 */
 export type SvgLabels = {
@@ -164,7 +164,11 @@ export function resolveSvgReportOptions(options: SvgReportOptions = {}): Resolve
   assertKnown("metric", resolved.metrics, INTERVAL_METRICS);
   assertKnown("latency column", resolved.latencyColumns, LATENCY_FIELDS);
   assertKnown("latency sort field", [resolved.latencySortBy], LATENCY_FIELDS);
-  assertKnown("distribution point", resolved.distribution, LATENCY_FIELDS.filter((field) => field !== "rme"));
+  assertKnown(
+    "distribution point",
+    resolved.distribution,
+    LATENCY_FIELDS.filter((field) => field !== "rme"),
+  );
   assertKnown("label", Object.keys(resolved.labels), Object.keys(DEFAULT_LABELS) as (keyof SvgLabels)[]);
   for (const [key, value] of Object.entries(resolved.labels)) {
     if (typeof value !== "string") throw new Error(`Label "${key}" must be a string`);

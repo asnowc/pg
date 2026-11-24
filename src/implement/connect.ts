@@ -1,6 +1,6 @@
 import type { PgNetConnectOptions } from "@/interface/Connection.ts";
 import { PgConnection } from "@/class.ts";
-import { connectFromDenoTCP } from "@/platforms/DenoConnAdapter.ts";
+import { connectFromDenoTCP } from "@/platforms/deno.ts";
 import { connectFromNodeTCP } from "@/platforms/DuplexAdapter.ts";
 
 /**

@@ -99,7 +99,7 @@ interface BenchModule<Meta extends {} = {}> {
 }
 
 async function loadBenchModule(fileUrl: string): Promise<BenchModule<any>> {
-  const mod = await import(fileUrl) as Partial<BenchModule<any>>;
+  const mod = (await import(fileUrl)) as Partial<BenchModule<any>>;
   if (typeof mod.default !== "function") {
     throw new Error(`${fileUrl}: default export must be a GetBenchItem function`);
   }

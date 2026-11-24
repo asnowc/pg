@@ -10,10 +10,12 @@ export function distributionSection(context: RenderContext) {
   if (!points.length || !stageCount) return;
   const data = results.map((result) =>
     result.stages.map((stage): StackedBar => {
-      const values = points.flatMap((point, shade) => {
-        const value = stage.latency[point];
-        return value === null ? [] : [{ value, shade }];
-      }).sort((a, b) => a.value - b.value);
+      const values = points
+        .flatMap((point, shade) => {
+          const value = stage.latency[point];
+          return value === null ? [] : [{ value, shade }];
+        })
+        .sort((a, b) => a.value - b.value);
       let previous = 0;
       const segments = values.map(({ value, shade }) => {
         const increment = value - previous;
@@ -21,7 +23,7 @@ export function distributionSection(context: RenderContext) {
         return { value: increment, shade };
       });
       return { segments, total: values.at(-1)?.value ?? null };
-    })
+    }),
   );
   layout.heading(
     "Latency distribution by stage",
@@ -29,9 +31,9 @@ export function distributionSection(context: RenderContext) {
     `successful ${options.labels.operations}, ms · ${BETTER_HINT.lower}`,
   );
   layout.text(
-    `Segments (dark → light): ${
-      points.map((point) => LATENCY_LABELS[point]).join(" / ")
-    } · end = highest selected value`,
+    `Segments (dark → light): ${points
+      .map((point) => LATENCY_LABELS[point])
+      .join(" / ")} · end = highest selected value`,
     { color: MUTED_COLOR },
   );
   layout.top += 24;
@@ -45,7 +47,7 @@ export function distributionSection(context: RenderContext) {
     });
     const origin = minimums.length ? Math.min(...minimums) : 0;
     const bars = data.map((stages) => stages[stage]);
-    const highest = Math.max(origin, ...bars.flatMap((bar) => bar?.total == null ? [] : [bar.total]));
+    const highest = Math.max(origin, ...bars.flatMap((bar) => (bar?.total == null ? [] : [bar.total])));
     const range = highest - origin;
     const max = origin + (range > 0 ? range * 1.08 : Math.max(Math.abs(origin) * 0.05, 1));
     layout.text(`Stage #${stage + 1} · concurrency ${stageConcurrencies[stage]}`, {

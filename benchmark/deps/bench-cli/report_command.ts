@@ -18,7 +18,14 @@ export async function reportCommand(dir: string, options: ReportOptions) {
 
   const svgPath = path.resolve(resultDir, options.output ?? REPORT_SVG_NAME);
   const customized = Object.keys(report).length > 0;
-  if (!options.force && !customized && await fs.access(svgPath).then(() => true, () => false)) {
+  if (
+    !options.force &&
+    !customized &&
+    (await fs.access(svgPath).then(
+      () => true,
+      () => false,
+    ))
+  ) {
     console.log(`skip      ${svgPath} (exists, use --force or display options to regenerate)`);
     return;
   }

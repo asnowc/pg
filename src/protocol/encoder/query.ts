@@ -21,14 +21,12 @@ import { SqlStatements } from "@/interface/Query.ts";
  *  名称能完整写入时直接编码，仅跨缓冲区的名称创建续写对象。
  */
 export class ParseMessageEncoder extends StageBufferEncoder implements BufferEncoder {
-  constructor(
-    private readonly typedStatement: PreparedStatement,
-  ) {
+  constructor(private readonly typedStatement: PreparedStatement) {
     super();
     const statementName = typedStatement.statementName ?? "";
     const statementNameByteLength = calcCStringByteLength(statementName);
-    this.bodyLength = 4 + statementNameByteLength + this.typedStatement.statementByteLength +
-      typedStatement.argsLength * 4;
+    this.bodyLength =
+      4 + statementNameByteLength + this.typedStatement.statementByteLength + typedStatement.argsLength * 4;
     this.encoder = new CStringEncoder(statementName);
     this.encodeStage = statementName ? this.encodeHeader : this.encodeEmptyStatement;
   }
@@ -68,7 +66,7 @@ export class ParseMessageEncoder extends StageBufferEncoder implements BufferEnc
     if (this.oidIndex === undefined) {
       if (writer.writableLength < 3) return true;
       writer.buffer[writer.writeOffset++] = 0; //statement text end
-      writer.view.setInt16(writer.writeOffset, this.typedStatement.argsLength), writer.writeOffset += 2;
+      (writer.view.setInt16(writer.writeOffset, this.typedStatement.argsLength), (writer.writeOffset += 2));
       this.oidIndex = 0;
     }
 
@@ -77,7 +75,7 @@ export class ParseMessageEncoder extends StageBufferEncoder implements BufferEnc
 
     while (this.oidIndex < argsEncoders.length) {
       if (writer.writableLength < 4) return true;
-      writer.view.setInt32(writer.writeOffset, argsEncoders[this.oidIndex].oid), writer.writeOffset += 4;
+      (writer.view.setInt32(writer.writeOffset, argsEncoders[this.oidIndex].oid), (writer.writeOffset += 4));
       this.oidIndex++;
     }
     this.oidIndex = undefined;
@@ -112,10 +110,8 @@ export class BindMessageEncoder extends StageBufferEncoder implements BufferEnco
     // | result column count   | 1           | 2    |
     // | result format         | 1           | 2    |
     const statementName = typedStatement.statementName ?? "";
-    const prefixNameByteLength = calcCStringByteLength(portalName) +
-      calcCStringByteLength(statementName) + 2;
-    this.bodyLength = 10 + prefixNameByteLength + typedStatement.argsTotalByteLength +
-      typedStatement.argsLength * 4;
+    const prefixNameByteLength = calcCStringByteLength(portalName) + calcCStringByteLength(statementName) + 2;
+    this.bodyLength = 10 + prefixNameByteLength + typedStatement.argsTotalByteLength + typedStatement.argsLength * 4;
     if (portalName === "" && statementName === "") {
       this.encodeStage = this.encodeEmptyName;
     } else {
@@ -130,7 +126,7 @@ export class BindMessageEncoder extends StageBufferEncoder implements BufferEnco
   private encodeEmptyName(writer: WritableBuffer) {
     if (writer.writableLength < FRAME_HEADER_LENGTH + 8) return true;
     encodeFrameHeaderInto(writer, FrontendMessageCode.Bind, this.bodyLength);
-    writer.view.setInt16(writer.writeOffset, 0), writer.writeOffset += 2; // empty portal name and statement name
+    (writer.view.setInt16(writer.writeOffset, 0), (writer.writeOffset += 2)); // empty portal name and statement name
     return this.encodeFormatsNoCheckLength(writer);
   }
 
@@ -154,9 +150,9 @@ export class BindMessageEncoder extends StageBufferEncoder implements BufferEnco
     return this.encodeFormatsNoCheckLength(writer);
   }
   private encodeFormatsNoCheckLength(writer: WritableBuffer) {
-    writer.view.setInt16(writer.writeOffset, 1), writer.writeOffset += 2; // format code count
-    writer.view.setInt16(writer.writeOffset, 1), writer.writeOffset += 2; // format code
-    writer.view.setInt16(writer.writeOffset, this.typedStatement.argsLength), writer.writeOffset += 2;
+    (writer.view.setInt16(writer.writeOffset, 1), (writer.writeOffset += 2)); // format code count
+    (writer.view.setInt16(writer.writeOffset, 1), (writer.writeOffset += 2)); // format code
+    (writer.view.setInt16(writer.writeOffset, this.typedStatement.argsLength), (writer.writeOffset += 2));
     return this.encodeParameters;
   }
   private streamEncoder?: BufferEncoder;
@@ -180,17 +176,17 @@ export class BindMessageEncoder extends StageBufferEncoder implements BufferEnco
       const enc = argsEncoders[parameterIndex];
       if (args[parameterIndex] === null) {
         if (writer.writableLength < 4) break;
-        writer.view.setInt32(writer.writeOffset, -1), writer.writeOffset += 4;
+        (writer.view.setInt32(writer.writeOffset, -1), (writer.writeOffset += 4));
         continue;
       }
       if ("byteLength" in enc) {
         if (writer.writableLength < enc.byteLength + 4) break;
-        writer.view.setInt32(writer.writeOffset, enc.byteLength), writer.writeOffset += 4; // parameter value length
+        (writer.view.setInt32(writer.writeOffset, enc.byteLength), (writer.writeOffset += 4)); // parameter value length
         enc.encodeInto(writer, args[parameterIndex]);
       } else {
         if (writer.writableLength < 4) break;
         const streamEncoder = enc.startEncode(args[parameterIndex]);
-        writer.view.setInt32(writer.writeOffset, streamEncoder.byteLength), writer.writeOffset += 4; // parameter value length
+        (writer.view.setInt32(writer.writeOffset, streamEncoder.byteLength), (writer.writeOffset += 4)); // parameter value length
         if (streamEncoder.encodeInto(writer)) {
           this.streamEncoder = streamEncoder;
           break;
@@ -200,15 +196,15 @@ export class BindMessageEncoder extends StageBufferEncoder implements BufferEnco
     this.parameterIndex = parameterIndex;
     this.parameterLength += writer.writeOffset - writerOffset;
     if (parameterIndex < argsEncoders.length) return true;
-    if (this.parameterLength - (argsEncoders.length * 4) !== this.typedStatement.argsTotalByteLength) {
+    if (this.parameterLength - argsEncoders.length * 4 !== this.typedStatement.argsTotalByteLength) {
       throw new Error("Parameter length mismatch");
     }
     return this.encodeResultFormat;
   }
   private encodeResultFormat(writer: WritableBuffer) {
     if (writer.writableLength < 4) return true;
-    writer.view.setInt16(writer.writeOffset, 1), writer.writeOffset += 2;
-    writer.view.setInt16(writer.writeOffset, 1), writer.writeOffset += 2;
+    (writer.view.setInt16(writer.writeOffset, 1), (writer.writeOffset += 2));
+    (writer.view.setInt16(writer.writeOffset, 1), (writer.writeOffset += 2));
     return false;
   }
 }
@@ -217,7 +213,10 @@ export class BindMessageEncoder extends StageBufferEncoder implements BufferEnco
  * | c string    | int32    |
  */
 export class ExecuteMessageEncoder extends StageBufferEncoder implements BufferEncoder {
-  constructor(private maxRows: number, private portal: string = "") {
+  constructor(
+    private maxRows: number,
+    private portal: string = "",
+  ) {
     super();
     this.bodyLength = 4 + calcCStringByteLength(this.portal) + 1;
     if (portal) {
@@ -253,7 +252,7 @@ export class ExecuteMessageEncoder extends StageBufferEncoder implements BufferE
   }
   encodeLatest(writer: WritableBuffer) {
     writer.buffer[writer.writeOffset++] = CSTRING_TERMINATOR;
-    writer.view.setInt32(writer.writeOffset, this.maxRows), writer.writeOffset += 4;
+    (writer.view.setInt32(writer.writeOffset, this.maxRows), (writer.writeOffset += 4));
   }
 }
 
@@ -293,12 +292,16 @@ export class QueryMessageEncoder implements BufferEncoder {
       this.encoder = undefined;
     }
     if (writer.writableLength < 1) return true;
-    writer.buffer[writer.writeOffset] = 0, writer.writeOffset += 1; // null terminator
+    ((writer.buffer[writer.writeOffset] = 0), (writer.writeOffset += 1)); // null terminator
   }
 }
 
 class DescribeCloseMessageEncoder implements BufferEncoder {
-  constructor(private code: FrontendMessageCode, private target: DescribeTarget, name: string = "") {
+  constructor(
+    private code: FrontendMessageCode,
+    private target: DescribeTarget,
+    name: string = "",
+  ) {
     this.bodyLength = calcCStringByteLength(name) + 2;
     this.cStringEncoder = new CStringEncoder(name);
   }
@@ -308,7 +311,7 @@ class DescribeCloseMessageEncoder implements BufferEncoder {
     if (this.bodyLength !== undefined) {
       if (writer.writableLength < 6) return true;
       writer.buffer[writer.writeOffset++] = this.code;
-      writer.view.setInt32(writer.writeOffset, 4 + this.bodyLength), writer.writeOffset += 4;
+      (writer.view.setInt32(writer.writeOffset, 4 + this.bodyLength), (writer.writeOffset += 4));
       writer.buffer[writer.writeOffset++] = this.target;
       this.bodyLength = undefined;
     }

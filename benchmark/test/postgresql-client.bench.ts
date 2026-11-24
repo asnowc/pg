@@ -15,15 +15,7 @@ export const BENCH_CONFIG: UserBenchConfig = {
   benchDataDir: RESULT_DIR,
 };
 
-export const SERIES: Library[] = [
-  "@asla/pg",
-  "@asla/pg-node",
-  "postgres",
-  "pg",
-  "fake2",
-  "slonik",
-  "pg-promise",
-];
+export const SERIES: Library[] = ["@asla/pg", "@asla/pg-node", "postgres", "pg", "fake2", "slonik", "pg-promise"];
 export const META: Meta = {
   poolSize: 4,
   // queryName: "select",

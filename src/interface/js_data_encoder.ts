@@ -1,7 +1,5 @@
 /** @public */
-export type JsDataEncoder<T = unknown> =
-  | JsDataVariableLengthEncoder<T>
-  | JsDataFixedLengthEncoder<T>;
+export type JsDataEncoder<T = unknown> = JsDataVariableLengthEncoder<T> | JsDataFixedLengthEncoder<T>;
 
 /** @public */
 export interface JsDataFixedLengthEncoder<T = unknown> {

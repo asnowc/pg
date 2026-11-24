@@ -2,13 +2,13 @@ import type { DataStream } from "@/_utils/DataStream.ts";
 import { InternalError } from "@/_utils/error.ts";
 import { type ReadableBuffer, ReadBuffer } from "@/_utils/ReadBuffer.ts";
 import { WriteBuffer } from "@/_utils/WriterBuffer.ts";
-import type { PgConnectOptions, PgNetConnectOptions, PrunedDenoConn } from "@/interface/Connection.ts";
-import { PgConnection } from "@/class/PgConnection.ts";
+import type { NetConn } from "@/interface/Connection.ts";
 
-const textDecoder = new TextDecoder();
-
-export class DenoConnBufferStream extends WriteBuffer implements DataStream {
-  constructor(private conn: PrunedDenoConn, options: { readBufferSize?: number; writeBufferSize?: number } = {}) {
+export class NetConnBufferStream extends WriteBuffer implements DataStream {
+  constructor(
+    private conn: NetConn,
+    options: { readBufferSize?: number; writeBufferSize?: number } = {},
+  ) {
     super((data) => this.conn.write(data), options.writeBufferSize ?? 16 * 1024);
     this.reader = new ReadBuffer(new Uint8Array(options.readBufferSize ?? 16 * 1024));
   }
@@ -59,30 +59,5 @@ export class DenoConnBufferStream extends WriteBuffer implements DataStream {
     } catch {
       // The socket may already be closed after EOF.
     }
-  }
-}
-
-export async function connectFromDenoTCP(options: PgNetConnectOptions): Promise<PgConnection> {
-  const { hostname, port, encryption, ...rest } = options;
-
-  const stream = await Deno.connect({ hostname, port });
-  return PgConnection.connect(stream, { ...rest, encryption: encryption?.map(mapEncryption) });
-}
-
-function mapEncryption(
-  option: NonNullable<PgNetConnectOptions["encryption"]>[number],
-): NonNullable<PgConnectOptions<Deno.TcpConn>["encryption"]>[number] {
-  switch (option.mode) {
-    case "TLS": {
-      const caCerts = option.ca?.map((cert) => (typeof cert === "string" ? cert : textDecoder.decode(cert)));
-      return {
-        mode: option.mode,
-        upgradeTLS: async (conn) => {
-          return Deno.startTls(conn, { caCerts });
-        },
-      };
-    }
-    default:
-      throw new InternalError(`Deno unsupported encryption mode: ${(option as any).mode}`);
   }
 }

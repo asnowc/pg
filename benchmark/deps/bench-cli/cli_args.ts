@@ -2,7 +2,10 @@ import { InvalidArgumentError } from "commander";
 
 /** 逗号分隔列表 */
 export function list(value: string): string[] {
-  return value.split(",").map((v) => v.trim()).filter(Boolean);
+  return value
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
 }
 
 export function integer(minimum: number) {

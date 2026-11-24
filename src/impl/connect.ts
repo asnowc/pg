@@ -18,9 +18,7 @@ export interface DbConnectOption {
  * @public
  * @deprecated  已废弃。
  */
-export async function createDbConnection(
-  url: string | URL | DbConnectOption,
-): Promise<DbConnection> {
+export async function createDbConnection(url: string | URL | DbConnectOption): Promise<DbConnection> {
   let option: DbConnectOption;
   if (typeof url === "string" || url instanceof URL) option = parserDbConnectUrl(url);
   else option = url;

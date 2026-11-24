@@ -21,8 +21,7 @@ export class QueryWriteQueue {
   constructor(
     private writer: BufferWriterQueue,
     private readonly readQueue: QueryReadQueue,
-  ) {
-  }
+  ) {}
   #cursorFields = new WeakMap<TypedSqlStatement, NonNullable<QueryParserResult["fields"]>>();
 
   extendedQuery<T>(statement: TypedSqlStatement): Promise<QueryParserResult<T>> {
@@ -56,7 +55,7 @@ export class QueryWriteQueue {
   executePortal<T>(statement: TypedSqlStatement, maxRows: number = 0): Promise<QueryParserResult<T>> {
     return new Promise<QueryParserResult<T>>((resolve, reject) => {
       const parser = new QueryResultParser(
-        <any> resolve,
+        <any>resolve,
         reject,
         statement.getResultDecoder,
         ReceiverType.ExtendedQuery,
@@ -73,9 +72,11 @@ export class QueryWriteQueue {
       this.readQueue.push({ taskType: ReceiverType.ClosePortal, resolve, reject });
       this.writer.pushEncoder(getCloseMessageEncoder());
       this.sync();
-    }).then(() => {
-      if (statement) this.#cursorFields.delete(statement);
-    }).catch(throwRewrittenError);
+    })
+      .then(() => {
+        if (statement) this.#cursorFields.delete(statement);
+      })
+      .catch(throwRewrittenError);
   }
   sync(resolve?: () => void, reject?: (error: unknown) => void): void {
     this.writer.pushData(FRAME.SYNC);
@@ -87,12 +88,7 @@ export class QueryWriteQueue {
     onResolve?: (data: QueryParserResult<T>) => void,
   ): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const parser = new QueryResultParser<any>(
-        onResolve ?? (() => {}),
-        reject,
-        undefined,
-        ReceiverType.SimpleQuery,
-      );
+      const parser = new QueryResultParser<any>(onResolve ?? (() => {}), reject, undefined, ReceiverType.SimpleQuery);
       if (onResolve) {
         this.readQueue.push(new RowDescriptionParser((fields) => parser.setFields(fields), reject));
       }

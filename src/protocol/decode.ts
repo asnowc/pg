@@ -82,7 +82,8 @@ export function decodeCommandComplete(data: Uint8Array) {
 export function decodeReadyForQuery(body: Uint8Array): PgTransactionStatus {
   const statusCode = body[0];
   if (
-    statusCode !== PgTransactionStatus.Idle && statusCode !== PgTransactionStatus.Transaction &&
+    statusCode !== PgTransactionStatus.Idle &&
+    statusCode !== PgTransactionStatus.Transaction &&
     statusCode !== PgTransactionStatus.Failed
   ) {
     throw new PgProtocolError(`Invalid ReadyForQuery transaction status: ${statusCode}`);
@@ -93,10 +94,7 @@ export function decodeReadyForQuery(body: Uint8Array): PgTransactionStatus {
 export function decodeCopyResponse(
   data: Uint8Array,
   view: DataView,
-  code:
-    | BackendMessageCode.CopyInResponse
-    | BackendMessageCode.CopyOutResponse
-    | BackendMessageCode.CopyBothResponse,
+  code: BackendMessageCode.CopyInResponse | BackendMessageCode.CopyOutResponse | BackendMessageCode.CopyBothResponse,
 ) {
   const overallFormat = data[0];
   if (overallFormat !== PgFormat.text && overallFormat !== PgFormat.binary) {

@@ -24,9 +24,8 @@ export class WriteBuffer implements WritableBuffer {
     const writeBuffer = typeof bufferOrSize === "number" ? new Uint8Array(bufferOrSize) : bufferOrSize;
     this.buffer = writeBuffer;
 
-    this.callWriteThreshold = typeof flushThreshold === "number"
-      ? Math.floor(flushThreshold)
-      : Math.floor(writeBuffer.byteLength / 2);
+    this.callWriteThreshold =
+      typeof flushThreshold === "number" ? Math.floor(flushThreshold) : Math.floor(writeBuffer.byteLength / 2);
 
     if (this.callWriteThreshold <= 0 || this.callWriteThreshold > writeBuffer.byteLength) {
       throw new Error("flushThreshold must be a positive integer and less than or equal to the buffer length.");
@@ -72,7 +71,7 @@ export class WriteBuffer implements WritableBuffer {
     if (totalWritten <= 0) return 0;
 
     if (totalWritten === this.writeOffset) this.writeOffset = 0;
-    else this.buffer.copyWithin(0, totalWritten, this.writeOffset), this.writeOffset -= totalWritten;
+    else (this.buffer.copyWithin(0, totalWritten, this.writeOffset), (this.writeOffset -= totalWritten));
     return totalWritten;
   }
 
@@ -86,11 +85,11 @@ export class WriteBuffer implements WritableBuffer {
     if (this.writeOffset >= this.callWriteThreshold) return data;
     const totalSize = this.writeOffset + data.byteLength;
     if (totalSize < this.callWriteThreshold) {
-      this.buffer.set(data, this.writeOffset), this.writeOffset += data.byteLength;
+      (this.buffer.set(data, this.writeOffset), (this.writeOffset += data.byteLength));
       return null;
     }
     const bytesToBuffer = this.callWriteThreshold - this.writeOffset;
-    this.buffer.set(data.subarray(0, bytesToBuffer), this.writeOffset), this.writeOffset += bytesToBuffer;
+    (this.buffer.set(data.subarray(0, bytesToBuffer), this.writeOffset), (this.writeOffset += bytesToBuffer));
     return data.subarray(bytesToBuffer);
   }
   /**
@@ -108,8 +107,9 @@ export class WriteBuffer implements WritableBuffer {
       const written = await this.callWrite(rest);
       rest = rest.subarray(written);
     }
-    if (rest.byteLength > 0) { // 这里 writeOffset 必定等于 0
-      this.buffer.set(rest, 0), this.writeOffset = rest.byteLength;
+    if (rest.byteLength > 0) {
+      // 这里 writeOffset 必定等于 0
+      (this.buffer.set(rest, 0), (this.writeOffset = rest.byteLength));
     }
   }
 }

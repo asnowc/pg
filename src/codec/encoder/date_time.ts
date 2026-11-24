@@ -18,7 +18,7 @@ export const plainTimeEncoder: JsDataEncoder<Temporal.PlainTime> = {
   encodeToText: (value) => value.toString(),
   byteLength: 8,
   encodeInto: (writer, value) => {
-    writer.view.setBigInt64(writer.writeOffset, plainTimeToMicroseconds(value)), writer.writeOffset += 8;
+    (writer.view.setBigInt64(writer.writeOffset, plainTimeToMicroseconds(value)), (writer.writeOffset += 8));
   },
 };
 export const plainDateTimeEncoder: JsDataEncoder<Temporal.PlainDateTime> = {
@@ -41,9 +41,14 @@ export const dateEncoder: JsDataEncoder<Date> = {
 };
 
 function plainTimeToMicroseconds(value: Temporal.PlainTime): bigint {
-  return BigInt(value.hour) * 3_600_000_000n + BigInt(value.minute) * 60_000_000n +
-    BigInt(value.second) * 1_000_000n + BigInt(value.millisecond) * 1000n + BigInt(value.microsecond) +
-    BigInt(value.nanosecond) / 1000n;
+  return (
+    BigInt(value.hour) * 3_600_000_000n +
+    BigInt(value.minute) * 60_000_000n +
+    BigInt(value.second) * 1_000_000n +
+    BigInt(value.millisecond) * 1000n +
+    BigInt(value.microsecond) +
+    BigInt(value.nanosecond) / 1000n
+  );
 }
 
 function encodeTimestampInto(writer: WriterBuffer, value: Temporal.Instant): true {

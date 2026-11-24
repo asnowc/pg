@@ -1,7 +1,4 @@
-export const CONNECT_URL = new URL(
-  process.env.TEST_LOGIN_DB ??
-    "postgres://postgres@127.0.0.1:5432/test_public",
-);
+export const CONNECT_URL = new URL(process.env.TEST_LOGIN_DB ?? "postgres://postgres@127.0.0.1:5432/test_public");
 export const DB_CONNECT_INFO = {
   host: CONNECT_URL.hostname,
   port: Number(CONNECT_URL.port || 5432),

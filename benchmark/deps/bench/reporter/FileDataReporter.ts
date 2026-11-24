@@ -49,11 +49,14 @@ export async function genResultSvgFromResultDir(dir: string, options: GenSvgOpti
   return svgPath;
 }
 export function fileExists(filePath: string): Promise<boolean> {
-  return fs.access(filePath).then(() => true, () => false);
+  return fs.access(filePath).then(
+    () => true,
+    () => false,
+  );
 }
 
 /** 读取分析缓存；文件不存在时返回 undefined。 */
 async function readAnalysisCache(filePath: string): Promise<AnalyzedSampleGroup | undefined> {
-  if (!await fileExists(filePath)) return undefined;
+  if (!(await fileExists(filePath))) return undefined;
   return JSON.parse(await fs.readFile(filePath, "utf-8")) as AnalyzedSampleGroup;
 }

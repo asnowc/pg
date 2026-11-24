@@ -36,11 +36,7 @@ export async function startAuthentication(
   let authOk: AuthenticationData | undefined;
 
   await new Promise<void>((resolve, reject) => {
-    const writer = new BufferWriterQueue(
-      conn,
-      () => conn.closeWrite(),
-      reject,
-    );
+    const writer = new BufferWriterQueue(conn, () => conn.closeWrite(), reject);
     parser.setFullParser(BackendMessageCode.Authentication, (data) => {
       const reader = new ReadBuffer(data, data.byteLength);
       const code = reader.view.getUint32(reader.readableStart);
@@ -68,10 +64,13 @@ export async function startAuthentication(
       conn.listenOnError(undefined);
       resolve();
     });
-    conn.startReadLoop((buffer) => {
-      parser.next(buffer);
-      return isDone;
-    }, () => reject(new UnexpectedEOFError()));
+    conn.startReadLoop(
+      (buffer) => {
+        parser.next(buffer);
+        return isDone;
+      },
+      () => reject(new UnexpectedEOFError()),
+    );
   });
   await authOk;
   return {

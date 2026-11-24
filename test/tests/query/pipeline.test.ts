@@ -48,12 +48,14 @@ test("事务查询", async ({ conn }) => {
   }
   {
     // 多语句查询也可以
-    const [a, b, c, d] = await conn.queryMultiple(`
+    const [a, b, c, d] = await conn
+      .queryMultiple<any[]>(`
       BEGIN;
       ${insetPublicTable(["p1"])};
       ${insetPublicTable(["p2"])};
       COMMIT;
-    `).all();
+    `)
+      .all();
     await expect(getPublicTestTableById(conn, b.id)).resolves.not.toBeNull();
     await expect(getPublicTestTableById(conn, c.id)).resolves.not.toBeNull();
   }
@@ -89,10 +91,7 @@ test("事务流水线恢复异常", async ({ conn }) => {
     t.query("INSERT INTO t(c) VALUES ('p2')"), // 跳过
     t.commit(), // 跳过
   ]);
-  await Promise.all([
-    t.rollbackTo("P1"),
-    t.commit(),
-  ]);
+  await Promise.all([t.rollbackTo("P1"), t.commit()]);
   await expect(conn.query("SELECT * FROM t WHERE c = 'p1'").rowCount()).resolves.toBe(1);
 });
 
@@ -104,10 +103,7 @@ test("依赖语句结果的事务查询", async ({ conn }) => {
   if (count) await t.query("SELECT 2");
   else await t.query("SELECT 3");
 
-  await Promise.all([
-    t.query("SELECT 4"),
-    t.commit(),
-  ]);
+  await Promise.all([t.query("SELECT 4"), t.commit()]);
 });
 
 test("query 和 simpleQuery 每次执行结束后不能处于事务中", async ({ pool, conn }) => {
@@ -118,11 +114,9 @@ test("query 和 simpleQuery 每次执行结束后不能处于事务中", async (
   await pool.queryMultiple("BEGIN"); // 链接释放后会导致下一个查询出现非预期状态
   await conn.queryMultiple("BEGIN"); // 导致下一个查询出现非预期状态
 });
-function reversePromise(
-  promise: {
-    then(res?: (value?: undefined) => Promise<any>, reject?: (e: any) => void): Promise<void>;
-  },
-): Promise<void> {
+function reversePromise(promise: {
+  then(res?: (value?: undefined) => Promise<any>, reject?: (e: any) => void): Promise<void>;
+}): Promise<void> {
   return promise.then(
     (): never => {
       throw new Error("Promise was expected to be rejected");

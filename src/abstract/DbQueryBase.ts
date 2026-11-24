@@ -66,6 +66,5 @@ export function sqlLikeToString(sqlLike: SqlLike): string {
  */
 export function isSqlTemplate(obj: any): obj is SqlTemplate {
   if (typeof obj !== "object" || obj === null) return false;
-  return Array.isArray(obj.templates) && Array.isArray(obj.args) &&
-    typeof obj.toTextArgs === "function";
+  return Array.isArray(obj.templates) && Array.isArray(obj.args) && typeof obj.toTextArgs === "function";
 }

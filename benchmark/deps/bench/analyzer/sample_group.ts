@@ -54,54 +54,31 @@ export type AnalyzedSampleGroup = {
 };
 
 const critical95 = [
-  12.706205,
-  4.302653,
-  3.182446,
-  2.776445,
-  2.570582,
-  2.446912,
-  2.364624,
-  2.306004,
-  2.262157,
-  2.228139,
-  2.200985,
-  2.178813,
-  2.160369,
-  2.144787,
-  2.13145,
-  2.119905,
-  2.109816,
-  2.100922,
-  2.093024,
-  2.085963,
-  2.079614,
-  2.073873,
-  2.068658,
-  2.063899,
-  2.059539,
-  2.055529,
-  2.051831,
-  2.048407,
-  2.04523,
-  2.042272,
+  12.706205, 4.302653, 3.182446, 2.776445, 2.570582, 2.446912, 2.364624, 2.306004, 2.262157, 2.228139, 2.200985,
+  2.178813, 2.160369, 2.144787, 2.13145, 2.119905, 2.109816, 2.100922, 2.093024, 2.085963, 2.079614, 2.073873, 2.068658,
+  2.063899, 2.059539, 2.055529, 2.051831, 2.048407, 2.04523, 2.042272,
 ];
 
 function t95(df: number) {
   if (df <= critical95.length) return critical95[df - 1];
   const z = 1.959963984540054;
-  return z + (z ** 3 + z) / (4 * df) + (5 * z ** 5 + 16 * z ** 3 + 3 * z) / (96 * df ** 2) +
-    (3 * z ** 7 + 19 * z ** 5 + 17 * z ** 3 - 15 * z) / (384 * df ** 3);
+  return (
+    z +
+    (z ** 3 + z) / (4 * df) +
+    (5 * z ** 5 + 16 * z ** 3 + 3 * z) / (96 * df ** 2) +
+    (3 * z ** 7 + 19 * z ** 5 + 17 * z ** 3 - 15 * z) / (384 * df ** 3)
+  );
 }
 
 function latencyStatistics(latency: number[], errorCount: number): LatencyStatistics {
   latency.sort((a, b) => a - b);
   const count = latency.length;
   const mean = count ? latency.reduce((sum, value) => sum + value, 0) / count : null;
-  const percentile = (p: number) => count ? latency[Math.ceil(count * p) - 1] : null;
+  const percentile = (p: number) => (count ? latency[Math.ceil(count * p) - 1] : null);
   let rme: number | null = null;
   if (count > 1 && mean !== null && mean > 0) {
     const variance = latency.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (count - 1);
-    rme = t95(count - 1) * Math.sqrt(variance / count) / mean * 100;
+    rme = ((t95(count - 1) * Math.sqrt(variance / count)) / mean) * 100;
   }
   return {
     p50: percentile(0.5),

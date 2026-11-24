@@ -27,15 +27,15 @@ export function cpuIntervals(run: ConcurrencyBenchResultWithCPUAndMemory): CpuIn
     const end = Math.min(endTime, current);
     if (end <= start || current <= previous) continue;
     const fraction = (end - start) / (current - previous);
-    const user = (snapshot.user[i] - snapshot.user[i - 1]) / 1000 * fraction;
-    const system = (snapshot.system[i] - snapshot.system[i - 1]) / 1000 * fraction;
+    const user = ((snapshot.user[i] - snapshot.user[i - 1]) / 1000) * fraction;
+    const system = ((snapshot.system[i] - snapshot.system[i - 1]) / 1000) * fraction;
     intervals.push({
       startSeconds: (start - startTime) / 1000,
       endSeconds: (end - startTime) / 1000,
       user,
       system,
       total: user + system,
-      utilization: (user + system) / (end - start) * 100,
+      utilization: ((user + system) / (end - start)) * 100,
     });
   }
   return intervals;
@@ -63,8 +63,9 @@ export function resourceWindow(
     elapsed += overlap;
     user += (snapshot.user[i] - snapshot.user[i - 1]) * fraction;
     system += (snapshot.system[i] - snapshot.system[i - 1]) * fraction;
-    completed += (snapshot.successCount[i] + snapshot.errorCount[i] -
-      snapshot.successCount[i - 1] - snapshot.errorCount[i - 1]) * fraction;
+    completed +=
+      (snapshot.successCount[i] + snapshot.errorCount[i] - snapshot.successCount[i - 1] - snapshot.errorCount[i - 1]) *
+      fraction;
     for (const metric of metrics) memory[metric] += snapshotMetric(snapshot, i, metric) * overlap;
   }
   return {

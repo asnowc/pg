@@ -32,18 +32,18 @@ export function createRenderContext(
     ...input,
     stageConcurrencies,
     get resources() {
-      return resources ??= results.map((result) => resourceWindow(result.run));
+      return (resources ??= results.map((result) => resourceWindow(result.run)));
     },
     get stageResources() {
-      return stageResources ??= results.map((result) =>
+      return (stageResources ??= results.map((result) =>
         result.stages.map((stage) =>
           resourceWindow(
             result.run,
             result.run.startTime + stage.startSeconds * 1000,
             result.run.startTime + stage.endSeconds * 1000,
-          )
-        )
-      );
+          ),
+        ),
+      ));
     },
   };
 }

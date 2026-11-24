@@ -102,12 +102,14 @@ export class ConcurrencyRunner extends Event implements OperationRunnerContext {
     this.currentConcurrency++;
     const i = this.nextOperationIndex++;
     const data: ConcurrencyBenchSample = [start, 0];
-    new Promise<unknown>((resolve) => resolve(this.fn.call(undefined, i))).then(
-      () => this.onOperationSuccess(data, i),
-      (e) => this.onOperationError(data, i, e),
-    ).catch((e) => {
-      console.error("Unhandled error in callBenchFn", e);
-      this.targetConcurrency = 0;
-    });
+    new Promise<unknown>((resolve) => resolve(this.fn.call(undefined, i)))
+      .then(
+        () => this.onOperationSuccess(data, i),
+        (e) => this.onOperationError(data, i, e),
+      )
+      .catch((e) => {
+        console.error("Unhandled error in callBenchFn", e);
+        this.targetConcurrency = 0;
+      });
   }
 }

@@ -22,7 +22,8 @@ import { isolationQuery } from "@/class/private/QueryFunction.ts";
 import Cursor from "@/class/private/Cursor.ts";
 
 export class QueryOperation
-  implements MultipleQueryOperation, SingleQueryOperation, CursorQueryOperation, TransactionQueryOperation {
+  implements MultipleQueryOperation, SingleQueryOperation, CursorQueryOperation, TransactionQueryOperation
+{
   constructor(getSession: () => PgSession | Promise<PgSession>) {
     this.#getSessionWriter = () => {
       if (this.#writeLocked) throw new HandleUnavailableError("Session is locked");
@@ -58,10 +59,10 @@ export class QueryOperation
     return new Cursor<T>(this.#transferWriter, this.#releaseWriter, queryable, options);
   }
 
-  queryMultiple(
+  queryMultiple<T extends any[] = unknown[]>(
     queryable: SqlStatements,
     options?: QueryOptions & QueryOptionsWithDecoder,
-  ): MultipleQueryReader<unknown[]> {
+  ): MultipleQueryReader<T> {
     if (typeof queryable !== "string") throw new TypeError("Only string simple queries are supported");
     throw new Error("Not implemented");
   }

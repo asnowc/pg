@@ -31,8 +31,7 @@ export class BenchCollector {
   static replaceName(name: string) {
     return name.replace(/[\s\/\\:]/g, "_");
   }
-  constructor(private dir: string) {
-  }
+  constructor(private dir: string) {}
   async ensureDirsExist() {
     await fs.mkdir(this.dir);
   }

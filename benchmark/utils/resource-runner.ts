@@ -18,12 +18,10 @@ export function loadLibrary(name: string): Promise<PoolQueryTest<any>> {
       );
     }
     case "@asla/pg-prev": {
-      return import("./init-asla-pg-test.ts").then(
-        async ({ initTest }) => {
-          const mod: any = await import("@asla/pg-prev");
-          return initTest(mod, "@asla/pg-prev", false).poolQueryTest;
-        },
-      );
+      return import("./init-asla-pg-test.ts").then(async ({ initTest }) => {
+        const mod: any = await import("@asla/pg-prev");
+        return initTest(mod, "@asla/pg-prev", false).poolQueryTest;
+      });
     }
     case "pg": {
       return import("../client/pg.ts").then((mod) => mod.poolQueryTest);
@@ -39,4 +37,4 @@ export function loadLibrary(name: string): Promise<PoolQueryTest<any>> {
   }
 }
 
-export type Library = typeof libraries[number];
+export type Library = (typeof libraries)[number];

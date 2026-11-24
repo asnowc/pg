@@ -48,8 +48,9 @@ test("事务内查询与保存点回滚后提交，连接回到池中", async ({
   await transaction.query("INSERT INTO queue_transaction_test VALUES (2)");
   await transaction.commit();
 
-  expect(await pool.query<{ value: number }>("SELECT value FROM queue_transaction_test").rows())
-    .toEqual([{ value: 2 }]);
+  expect(await pool.query<{ value: number }>("SELECT value FROM queue_transaction_test").rows()).toEqual([
+    { value: 2 },
+  ]);
   expect(pool.idleCount).toBe(1);
 });
 
@@ -72,8 +73,7 @@ test("事务查询出错后能回滚到保存点并继续执行", async ({ pool 
   await transaction.savePoint("before_error");
   await expect(transaction.query("SELECT 1 / 0")).rejects.toThrow();
   await transaction.rollbackTo("before_error");
-  await expect(transaction.query<{ value: number }>("SELECT 5 AS value").firstRow())
-    .resolves.toEqual({ value: 5 });
+  await expect(transaction.query<{ value: number }>("SELECT 5 AS value").firstRow()).resolves.toEqual({ value: 5 });
   await transaction.commit();
 });
 

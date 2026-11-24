@@ -84,7 +84,10 @@ export class SampleCollector {
   length = 0;
 
   private precision: number;
-  constructor(private readonly fd: fs.FileHandle, header: SampleFileHeader) {
+  constructor(
+    private readonly fd: fs.FileHandle,
+    header: SampleFileHeader,
+  ) {
     this.precision = header.precision;
     encodeHeaderInto(this.current.view, header);
     this.current.writeOffset = HEADER_SIZE;
@@ -193,10 +196,7 @@ export async function* iterateFileSamples(filePath: string): AsyncGenerator<Conc
       available += bytesRead;
       let offset = 0;
       for (; offset + RECORD_SIZE <= available; offset += RECORD_SIZE) {
-        yield [
-          view.getUint32(offset, false) / precision,
-          view.getUint32(offset + 4, false) / precision,
-        ];
+        yield [view.getUint32(offset, false) / precision, view.getUint32(offset + 4, false) / precision];
       }
       buffer.copyWithin(0, offset, available);
       available -= offset;
@@ -216,7 +216,7 @@ export async function openFileCollector(
   if (timeOrigin < 0) {
     throw new RangeError("timeOrigin must be a non-negative safe integer in epoch milliseconds");
   }
-  if (!Number.isInteger(precision) || precision < 1 || precision > 0xFFFFFFFF) {
+  if (!Number.isInteger(precision) || precision < 1 || precision > 0xffffffff) {
     throw new RangeError("precision must be an integer between 1 and 4294967295");
   }
   const header = { timeOrigin, precision };

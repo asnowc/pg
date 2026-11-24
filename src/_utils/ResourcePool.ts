@@ -113,7 +113,7 @@ export class ResourcePool<T> implements Pool<T> {
   }
   #checkNewConnect() {
     if (!this.#queue.length) return;
-    if ((this.#pool.size + this.connectingCount < this.#maxCount)) {
+    if (this.#pool.size + this.connectingCount < this.#maxCount) {
       this.#createConnect();
     }
   }
@@ -175,8 +175,11 @@ export class ResourcePool<T> implements Pool<T> {
   notifyIdle(conn: T): void {
     const state = this.#pool.get(conn);
     if (!state || !this.#free.has(conn) || this.#handler.isBusy?.(conn)) return;
-    if (this.#closed || this.#handler.isUsable?.(conn) === false ||
-      (this.#usageLimit > 0 && state.useTotal >= this.#usageLimit)) {
+    if (
+      this.#closed ||
+      this.#handler.isUsable?.(conn) === false ||
+      (this.#usageLimit > 0 && state.useTotal >= this.#usageLimit)
+    ) {
       this.#free.delete(conn);
       this.#pool.delete(conn);
       this.#handler.dispose(conn);
@@ -243,7 +246,7 @@ export class ResourcePool<T> implements Pool<T> {
 
     for (const item of this.#free) {
       const state = this.#pool.get(item);
-      if (state && (now - state.date > idleTimeout) && !this.#handler.isBusy?.(item)) {
+      if (state && now - state.date > idleTimeout && !this.#handler.isBusy?.(item)) {
         this.#free.delete(item);
         this.#pool.delete(item);
         this.#handler.dispose(item);

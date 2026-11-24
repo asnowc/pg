@@ -35,18 +35,21 @@ export class PgDbQueryPool extends DbQueryPool implements AsyncDisposable {
     this.#pool = this.#createPool();
   }
   #createPool() {
-    return new ResourcePool<PgConnection>({
-      create: async () => {
-        const pool = this.#pool;
-        const conn = await createPgClient(this.connectOption);
-        conn.finished.finally(() => pool.remove(conn));
+    return new ResourcePool<PgConnection>(
+      {
+        create: async () => {
+          const pool = this.#pool;
+          const conn = await createPgClient(this.connectOption);
+          conn.finished.finally(() => pool.remove(conn));
 
-        return conn;
+          return conn;
+        },
+        dispose: (conn) => {
+          conn.destroy();
+        },
       },
-      dispose: (conn) => {
-        conn.destroy();
-      },
-    }, { maxCount: 50, idleTimeout: 5000, usageLimit: 9999 });
+      { maxCount: 50, idleTimeout: 5000, usageLimit: 9999 },
+    );
   }
   #getConnectUrl?: () => DbConnectOption;
   #connectOption?: DbConnectOption;
@@ -78,8 +81,8 @@ export class PgDbQueryPool extends DbQueryPool implements AsyncDisposable {
   override async query<T>(sql: QueryInput | MultipleQueryInput): Promise<T> {
     using conn = await this.connect();
     const input = typeof sql === "function" ? sql() : sql;
-    if (Array.isArray(input)) return await conn.query(input) as T;
-    return await conn.query(input) as T;
+    if (Array.isArray(input)) return (await conn.query(input)) as T;
+    return (await conn.query(input)) as T;
   }
   // implement
   override async execute(sql: QueryInput | MultipleQueryInput): Promise<void> {
@@ -87,9 +90,7 @@ export class PgDbQueryPool extends DbQueryPool implements AsyncDisposable {
     return await conn.execute(sql);
   }
   // implement
-  override async multipleQuery<
-    T extends MultipleQueryResult = MultipleQueryResult,
-  >(
+  override async multipleQuery<T extends MultipleQueryResult = MultipleQueryResult>(
     sql: SqlLike | SqlLike[],
   ): Promise<T> {
     using conn = await this.connect();
@@ -145,9 +146,7 @@ export class PgDbQueryPool extends DbQueryPool implements AsyncDisposable {
     return this.#pool.idleCount;
   }
 }
-function getConnectOption(
-  url: URL | string | DbConnectOption,
-): DbConnectOption {
+function getConnectOption(url: URL | string | DbConnectOption): DbConnectOption {
   if (typeof url === "string" || url instanceof URL) {
     return parserDbConnectUrl(url);
   } else if (typeof url === "object") {

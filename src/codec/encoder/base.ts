@@ -29,7 +29,7 @@ export const int4Encoder: JsDataEncoder<number> = {
   encodeToText: String,
   byteLength: 4,
   encodeInto(writer, value) {
-    writer.view.setInt32(writer.writeOffset, value), writer.writeOffset += 4;
+    (writer.view.setInt32(writer.writeOffset, value), (writer.writeOffset += 4));
   },
 };
 export const f64Encoder: JsDataEncoder<number> = {
@@ -37,12 +37,12 @@ export const f64Encoder: JsDataEncoder<number> = {
   encodeToText: String,
   byteLength: 8,
   encodeInto(writer, value) {
-    writer.view.setFloat64(writer.writeOffset, value), writer.writeOffset += 8;
+    (writer.view.setFloat64(writer.writeOffset, value), (writer.writeOffset += 8));
   },
 };
 export const booleanEncoder: JsDataEncoder<boolean> = {
   oid: PgOid.BOOL,
-  encodeToText: (value) => value ? "true" : "false",
+  encodeToText: (value) => (value ? "true" : "false"),
   byteLength: 1,
   encodeInto(writer, value) {
     writer.buffer[writer.writeOffset++] = value ? 1 : 0;

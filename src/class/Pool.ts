@@ -37,7 +37,8 @@ export function checkOptions(options: CreatePoolOptions) {
     throw new RangeError("maxCount must be a positive integer");
   }
   if (
-    options.maxPipeline !== undefined && options.maxPipeline !== Infinity &&
+    options.maxPipeline !== undefined &&
+    options.maxPipeline !== Infinity &&
     (!Number.isSafeInteger(options.maxPipeline) || options.maxPipeline <= 0)
   ) {
     throw new RangeError("maxPipeline must be a positive integer or Infinity");
@@ -51,7 +52,10 @@ export function checkOptions(options: CreatePoolOptions) {
 }
 
 export class TimeoutChecker {
-  constructor(private onCheck: (idleTimeout: number) => boolean, idleTimeout: number) {
+  constructor(
+    private onCheck: (idleTimeout: number) => boolean,
+    idleTimeout: number,
+  ) {
     this.idleTimeout = idleTimeout;
   }
   /** 空闲回收时间（毫秒） */

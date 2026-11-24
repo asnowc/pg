@@ -41,7 +41,7 @@ export default class MultipleQueryReader implements IMultipleQueryReader {
     return this.getSession(async (session) => {
       let last: QueryResult<any> | undefined;
       //TODO: 避免解码不需要的语句结果
-      await session.queryWriter.simpleQuery(this.statement, (result) => last = result);
+      await session.queryWriter.simpleQuery(this.statement, (result) => (last = result));
       if (!last) throw new Error("No results returned");
       return last!;
     });
@@ -49,10 +49,7 @@ export default class MultipleQueryReader implements IMultipleQueryReader {
   then<T>(onfulfilled?: (data: undefined) => T, onrejected?: (reason: unknown) => void): Promise<T>;
   then(onfulfilled?: (data: undefined) => unknown, onrejected?: (reason: unknown) => void): Promise<unknown> {
     return this.getSession((session) => {
-      return session.queryWriter.simpleQuery(this.statement).then(
-        () => onfulfilled?.(undefined),
-        onrejected,
-      );
+      return session.queryWriter.simpleQuery(this.statement).then(() => onfulfilled?.(undefined), onrejected);
     });
   }
 }

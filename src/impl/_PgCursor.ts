@@ -3,7 +3,11 @@ import type { DbPoolConnection } from "#abstract";
 import type { Cursor } from "@/interface/Query.ts";
 
 export class PgCursor<T> extends DbCursor<T> {
-  constructor(cursor: Cursor<T>, conn: DbPoolConnection, readonly defaultChunkSize = 20) {
+  constructor(
+    cursor: Cursor<T>,
+    conn: DbPoolConnection,
+    readonly defaultChunkSize = 20,
+  ) {
     super();
     this.#cursor = cursor;
     this.#conn = conn;

@@ -38,7 +38,7 @@ export class TypedTemplateSqlStatement<T = unknown> extends TypedSqlStatement<T>
     const init = initTemplateStringsArray(chunks, args);
     super(init.chunks, {
       args: init.args,
-      argsEncoders: init.args.map((arg) => arg === null ? nullEncoder : getJsDataEncoder(encoderMap, arg)),
+      argsEncoders: init.args.map((arg) => (arg === null ? nullEncoder : getJsDataEncoder(encoderMap, arg))),
     });
     this.#chunks = init.chunks;
     this.#decoderMap = decoderMap;

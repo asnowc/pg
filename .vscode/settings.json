@@ -1,5 +1,6 @@
 {
-  "editor.defaultFormatter": "denoland.vscode-deno",
-  "vitest.runtime": "deno",
-  "deno.codeLens.test": false
+  "vitest.runtime": "node",
+  "deno.config": "./deno.json",
+  "deno.enablePaths": ["./benchmark", "./src/platforms/deno"],
+  "editor.defaultFormatter": "oxc.oxc-vscode"
 }

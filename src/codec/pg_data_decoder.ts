@@ -1,16 +1,7 @@
 import { PgOid } from "@/util/pg_oid.ts";
 import { json, jsonb } from "./decoder/json.ts";
 import { inet, macaddr } from "./decoder/network.ts";
-import {
-  int64,
-  boolean,
-  float32,
-  float64,
-  numeric,
-  int32,
-  uInt64,
-  uInt32,
-} from "./decoder/numeric.ts";
+import { int64, boolean, float32, float64, numeric, int32, uInt64, uInt32 } from "./decoder/numeric.ts";
 import { date, time, timestamp, timestamptz, timetz } from "./decoder/datetime.ts";
 import { bitText, bytea, char, text, uuid } from "./decoder/text.ts";
 import type { PgColumnDataDecoder, PgColumnDecoder } from "@/interface/pg_data_decoder.ts";

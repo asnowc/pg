@@ -60,10 +60,9 @@ test("常用二进制类型按 PostgreSQL 格式解码", () => {
     expect(decodeBinary(oid, negative)).toBe(-Infinity);
   }
   expect(decodeBinary(PgOid.TEXT, new TextEncoder().encode("中文"))).toBe("中文");
-  expect(decodeBinary(
-    PgOid.UUID,
-    Uint8Array.fromHex("a0eebc999c0b4ef8bb6d6bb9bd380a11"),
-  )).toBe("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11");
+  expect(decodeBinary(PgOid.UUID, Uint8Array.fromHex("a0eebc999c0b4ef8bb6d6bb9bd380a11"))).toBe(
+    "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+  );
   expect(decodeBinary(PgOid.BIT, Uint8Array.of(0, 0, 0, 5, 0xa8))).toBe("10101");
 
   const numeric = Uint8Array.of(0, 3, 0, 0, 0, 0, 0, 8, 0, 12, 0x0d, 0x7a, 0x04, 0xd2);
@@ -71,15 +70,9 @@ test("常用二进制类型按 PostgreSQL 格式解码", () => {
 
   const time = new Uint8Array(8);
   new DataView(time.buffer).setBigInt64(0, 11_045_678_900n);
-  expect(decodeBinary(PgOid.TIME, time)).toEqual(
-    Temporal.PlainTime.from("03:04:05.6789"),
-  );
-  expect(decodeBinary(PgOid.INET, Uint8Array.of(2, 24, 0, 4, 192, 168, 1, 20))).toBe(
-    "192.168.1.20/24",
-  );
-  expect(decodeBinary(PgOid.MACADDR, Uint8Array.of(0x08, 0, 0x2b, 1, 2, 3))).toBe(
-    "08:00:2b:01:02:03",
-  );
+  expect(decodeBinary(PgOid.TIME, time)).toEqual(Temporal.PlainTime.from("03:04:05.6789"));
+  expect(decodeBinary(PgOid.INET, Uint8Array.of(2, 24, 0, 4, 192, 168, 1, 20))).toBe("192.168.1.20/24");
+  expect(decodeBinary(PgOid.MACADDR, Uint8Array.of(0x08, 0, 0x2b, 1, 2, 3))).toBe("08:00:2b:01:02:03");
 });
 
 test("列解码器支持分段读取、列状态隔离及重复解码", () => {

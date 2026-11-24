@@ -17,10 +17,7 @@ class DbPoolTransactionImpl extends DbQuery implements DbPoolTransaction {
   #errorRollback?: boolean;
   readonly mode?: TransactionMode;
   readonly #begin: string;
-  constructor(
-    connect: () => Promise<DbPoolConnection>,
-    option?: TransactionMode | DbPoolTransactionOption,
-  ) {
+  constructor(connect: () => Promise<DbPoolConnection>, option?: TransactionMode | DbPoolTransactionOption) {
     super();
     if (option) {
       if (typeof option === "string") this.mode = option;
@@ -128,9 +125,7 @@ class DbPoolTransactionImpl extends DbQuery implements DbPoolTransaction {
     return this.#getConnQuery(call, callIfFirst, onError);
   }
 
-  override query<T extends MultipleQueryResult = MultipleQueryResult>(
-    sql: MultipleQueryInput,
-  ): Promise<T>;
+  override query<T extends MultipleQueryResult = MultipleQueryResult>(sql: MultipleQueryInput): Promise<T>;
   override query<T extends object = any>(sql: QueryDataInput<T>): Promise<QueryRowsResult<T>>;
   override query<T extends object = any>(sql: QueryInput): Promise<QueryRowsResult<T>>;
   override query(sql: QueryInput | MultipleQueryInput): Promise<any> {
@@ -141,9 +136,7 @@ class DbPoolTransactionImpl extends DbQuery implements DbPoolTransaction {
       async (conn) => {
         if (typeof sql === "function") sql = sql();
         const isArray = sql instanceof Array;
-        const result = await conn.query(
-          isArray ? [this.#begin, ...(sql as any[])] : [this.#begin, sql],
-        );
+        const result = await conn.query(isArray ? [this.#begin, ...(sql as any[])] : [this.#begin, sql]);
         if (isArray) return result.slice(1);
         else return result[1];
       },
@@ -162,17 +155,13 @@ class DbPoolTransactionImpl extends DbQuery implements DbPoolTransaction {
     );
   }
   /** @deprecated 不建议使用 */
-  override multipleQuery<T extends MultipleQueryResult = MultipleQueryResult>(
-    sql: SqlLike | SqlLike[],
-  ): Promise<T> {
+  override multipleQuery<T extends MultipleQueryResult = MultipleQueryResult>(sql: SqlLike | SqlLike[]): Promise<T> {
     return this.#query(
       (conn): Promise<any> => {
         return conn.multipleQuery(sql);
       },
       (conn) => {
-        return conn.multipleQuery(
-          sql instanceof Array ? [this.#begin, ...sql] : [this.#begin, sql],
-        );
+        return conn.multipleQuery(sql instanceof Array ? [this.#begin, ...sql] : [this.#begin, sql]);
       },
     );
   }

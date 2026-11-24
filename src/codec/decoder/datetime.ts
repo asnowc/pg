@@ -59,11 +59,9 @@ export const timetz: PgColumnDataDecoder<string> = {
     reader.readableStart += 4;
     const offset = Math.abs(secondsWestOfUtc);
     const sign = secondsWestOfUtc <= 0 ? "+" : "-";
-    return `${formatTime(microseconds)}${sign}${String(Math.floor(offset / 3600)).padStart(2, "0")}:${
-      String(
-        Math.floor(offset % 3600 / 60),
-      ).padStart(2, "0")
-    }`;
+    return `${formatTime(microseconds)}${sign}${String(Math.floor(offset / 3600)).padStart(2, "0")}:${String(
+      Math.floor((offset % 3600) / 60),
+    ).padStart(2, "0")}`;
   },
 };
 
@@ -91,11 +89,12 @@ function instantFromPostgresMicroseconds(microseconds: bigint): Temporal.Instant
 
 function formatTime(microseconds: bigint): string {
   const hours = microseconds / 3_600_000_000n;
-  const minutes = microseconds / 60_000_000n % 60n;
-  const seconds = microseconds / 1_000_000n % 60n;
+  const minutes = (microseconds / 60_000_000n) % 60n;
+  const seconds = (microseconds / 1_000_000n) % 60n;
   const fraction = microseconds % 1_000_000n;
-  const base = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${
-    String(seconds).padStart(2, "0")
-  }`;
+  const base = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(
+    2,
+    "0",
+  )}`;
   return fraction === 0n ? base : `${base}.${String(fraction).padStart(6, "0").replace(/0+$/, "")}`;
 }

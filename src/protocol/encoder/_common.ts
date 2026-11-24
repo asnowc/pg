@@ -2,13 +2,9 @@ import { WritableBuffer } from "@/_utils/WriterBuffer.ts";
 import { BufferEncoder } from "@/_utils/BufferWriterQueue.ts";
 import { FrontendMessageCode } from "../const.ts";
 
-export function encodeFrameHeaderInto(
-  writer: WritableBuffer,
-  code: FrontendMessageCode,
-  bodyLength: number,
-) {
+export function encodeFrameHeaderInto(writer: WritableBuffer, code: FrontendMessageCode, bodyLength: number) {
   writer.view.setUint8(writer.writeOffset++, code);
-  writer.view.setInt32(writer.writeOffset, bodyLength + 4), writer.writeOffset += 4;
+  (writer.view.setInt32(writer.writeOffset, bodyLength + 4), (writer.writeOffset += 4));
 }
 export type { BufferEncoder };
 

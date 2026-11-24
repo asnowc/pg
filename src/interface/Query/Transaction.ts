@@ -67,8 +67,4 @@ export interface Transaction extends SingleQueryOperation, CursorQueryOperation,
  * @public
  * @since 0.3.0
  */
-export type TransactionMode =
-  | "SERIALIZABLE"
-  | "REPEATABLE READ"
-  | "READ COMMITTED"
-  | "READ UNCOMMITTED";
+export type TransactionMode = "SERIALIZABLE" | "REPEATABLE READ" | "READ COMMITTED" | "READ UNCOMMITTED";

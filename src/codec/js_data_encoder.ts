@@ -52,7 +52,7 @@ export const JS_DATA_ENCODER_V1: JSDataEncoderMap = createJsDataEncoderV1();
 function createJsDataEncoderV1(): JSDataEncoderMap {
   const map = new Map<Function | string | number, JsDataEncoder | ((value: unknown) => JsDataEncoder)>();
   map.set("string", stringEncoder);
-  map.set("number", (value) => Number.isInteger(value) ? int4Encoder : f64Encoder);
+  map.set("number", (value) => (Number.isInteger(value) ? int4Encoder : f64Encoder));
   map.set("boolean", booleanEncoder);
   map.set(Uint8Array, bytesEncoder);
   map.set(Temporal.PlainDate, plainDateEncoder);

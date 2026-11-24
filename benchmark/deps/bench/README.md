@@ -216,13 +216,16 @@ import { ConcurrencyBench, type ConcurrencyBenchSample } from "./bench.ts";
 
 const success: ConcurrencyBenchSample[] = [];
 const failed: ConcurrencyBenchSample[] = [];
-const result = await new ConcurrencyBench({ concurrency: [1, 2, 1], duration: 200, warmupDuration: 50 })
-  .runWidthCpuAndMemory({
-    fn: () => new Promise<void>((resolve) => setTimeout(resolve, 1)),
-    intervalSampleCPUAndMemory: 50,
-    collectorSuccess: success,
-    collectorFailed: failed,
-  });
+const result = await new ConcurrencyBench({
+  concurrency: [1, 2, 1],
+  duration: 200,
+  warmupDuration: 50,
+}).runWidthCpuAndMemory({
+  fn: () => new Promise<void>((resolve) => setTimeout(resolve, 1)),
+  intervalSampleCPUAndMemory: 50,
+  collectorSuccess: success,
+  collectorFailed: failed,
+});
 console.log(result.stageSamples, success.length, failed.length);
 ```
 

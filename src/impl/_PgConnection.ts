@@ -23,16 +23,14 @@ export class PgConnection extends DbQuery implements DbConnection, DbQueryBase {
 
   #connection: Connection;
 
-  override query<T extends MultipleQueryResult = MultipleQueryResult>(
-    sql: MultipleQueryInput,
-  ): Promise<T>;
+  override query<T extends MultipleQueryResult = MultipleQueryResult>(sql: MultipleQueryInput): Promise<T>;
   override query<T = any>(sql: QueryDataInput<T>): Promise<QueryRowsResult<T>>;
   override query<T = any>(sql: QueryInput): Promise<QueryRowsResult<T>>;
   override query<T = any>(sql: SqlLike[] | SqlLike): Promise<unknown[] | unknown>;
   override async query<T = any>(input: QueryInput | MultipleQueryInput): Promise<T> {
     const text = genSql(input);
     if (input instanceof Array) {
-      return await this.#multiple(text) as T;
+      return (await this.#multiple(text)) as T;
     }
     const results = await this.#multiple(text);
     return (results[0] ?? { rows: [], rowCount: 0 }) as T;
@@ -42,7 +40,7 @@ export class PgConnection extends DbQuery implements DbConnection, DbQueryBase {
   }
   override async multipleQuery<T extends MultipleQueryResult>(sql: SqlLike | SqlLike[]): Promise<T> {
     const text = sql instanceof Array ? sql.map(sqlLikeToString).join(";\n") : sqlLikeToString(sql);
-    return await this.#multiple(text) as T;
+    return (await this.#multiple(text)) as T;
   }
   [Symbol.asyncDispose](): Promise<void> {
     return this.close();

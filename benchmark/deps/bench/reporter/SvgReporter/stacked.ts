@@ -24,7 +24,7 @@ export function stackedSeries(
       barMaxWidth: labelPosition === "right" ? 16 : 48,
       itemStyle: {
         color: colors[index],
-        opacity: 1 - segment.shade / Math.max(1, shadeCount - 1) * 0.6,
+        opacity: 1 - (segment.shade / Math.max(1, shadeCount - 1)) * 0.6,
         borderColor: "#fff",
         borderWidth: 1.5,
       },
@@ -36,7 +36,7 @@ export function stackedSeries(
         fontSize: 10,
         formatter: () => format(bar.total),
       },
-      data: results.map((_, category) => category === index ? segment.value : "-"),
+      data: results.map((_, category) => (category === index ? segment.value : "-")),
     }));
   });
 }
@@ -55,7 +55,7 @@ export function stageStackedBars(
   const minimumWidth = Math.max(260, 100 + results.length * 64);
   const perRow = Math.min(stageCount, Math.max(1, Math.floor((CONTENT_WIDTH + gap) / (minimumWidth + gap))));
   const width = (CONTENT_WIDTH - gap * (perRow - 1)) / perRow;
-  const known = data.flat().flatMap((bar) => bar.total === null ? [] : [bar.total]);
+  const known = data.flat().flatMap((bar) => (bar.total === null ? [] : [bar.total]));
   const largest = Math.max(0, ...known);
   const max = largest > 0 ? largest * 1.15 : 1;
   layout.heading(title, 15, `${unit} · ${BETTER_HINT.lower}`);
@@ -83,12 +83,19 @@ export function stageStackedBars(
         axisLabel: { interval: 0, width: Math.max(24, plotWidth / results.length - 8), overflow: "truncate" },
       },
       { type: "value", min: 0, max, axisLabel: { formatter: (value: number) => format(value) } },
-      stackedSeries(results, colors, data.map((stages) => stages[stage]), gridIndex, segmentLabels.length, "top"),
+      stackedSeries(
+        results,
+        colors,
+        data.map((stages) => stages[stage]),
+        gridIndex,
+        segmentLabels.length,
+        "top",
+      ),
     );
     results.forEach((_, index) => {
       if (data[index]?.[stage]?.total != null) return;
       layout.top = rowTop + 28 + CHART_HEIGHT / 2;
-      layout.text("N/A", { x: left + 48 + plotWidth * (index + 0.5) / results.length - 12, color: MUTED_COLOR });
+      layout.text("N/A", { x: left + 48 + (plotWidth * (index + 0.5)) / results.length - 12, color: MUTED_COLOR });
     });
   }
   layout.top = top + Math.ceil(stageCount / perRow) * rowHeight;

@@ -57,23 +57,22 @@ function stageBars(
   const stageCount = stageConcurrencies.length;
   if (!stageCount || !results.length) return;
   const stages = stageConcurrencies.map((_, stage) =>
-    rankDescending(results.map((_, series) => value(series, stage)), (value) => value).sort((a, b) => a.index - b.index)
+    rankDescending(
+      results.map((_, series) => value(series, stage)),
+      (value) => value,
+    ).sort((a, b) => a.index - b.index),
   );
   const labels = stages.map((rows) =>
-    rows.map(({ value, ratio }) => value === null ? "N/A" : `(${formatRatio(ratio)})\n${barNumberFormat.format(value)}`)
+    rows.map(({ value, ratio }) =>
+      value === null ? "N/A" : `(${formatRatio(ratio)})\n${barNumberFormat.format(value)}`,
+    ),
   );
-  const largest = Math.max(0, ...stages.flat().flatMap(({ value }) => value === null ? [] : [value]));
+  const largest = Math.max(0, ...stages.flat().flatMap(({ value }) => (value === null ? [] : [value])));
   const max = largest > 0 ? largest * 1.25 : 1;
   const axisWidth = Math.max(48, format(max).length * 7 + 12);
   const labelWidth = Math.max(
     56,
-    ...labels.flatMap((stage) =>
-      stage.flatMap((label) =>
-        label.split("\n").map(
-          (line) => line.length * 6 + 12,
-        )
-      )
-    ),
+    ...labels.flatMap((stage) => stage.flatMap((label) => label.split("\n").map((line) => line.length * 6 + 12))),
   );
   const gap = 20;
   const minimumWidth = Math.max(240, axisWidth + results.length * labelWidth + 12);
@@ -84,7 +83,7 @@ function stageBars(
   layout.heading(title, 15, `${unit} · ${BETTER_HINT[better]}`);
   const top = layout.top;
   for (let stage = 0; stage < stageCount; stage++) {
-    const left = MARGIN + stage % perRow * (width + gap);
+    const left = MARGIN + (stage % perRow) * (width + gap);
     const rowTop = top + Math.floor(stage / perRow) * rowHeight;
     layout.top = rowTop;
     layout.text(`Stage #${stage + 1} · concurrency ${stageConcurrencies[stage]}`, {
@@ -113,14 +112,14 @@ function stageBars(
           color: MUTED_COLOR,
           formatter: () => labels[stage][series],
         },
-        data: results.map((_, category) => category === series ? stages[stage][series].value ?? "-" : "-"),
+        data: results.map((_, category) => (category === series ? (stages[stage][series].value ?? "-") : "-")),
       })),
     );
     stages[stage].forEach(({ value }, series) => {
       if (value !== null) return;
       layout.top = rowTop + 40 + CHART_HEIGHT / 2;
       layout.text("N/A", {
-        x: left + axisWidth + plotWidth * (series + 0.5) / results.length - 12,
+        x: left + axisWidth + (plotWidth * (series + 0.5)) / results.length - 12,
         color: MUTED_COLOR,
       });
     });
@@ -140,8 +139,14 @@ export function resourceSection(context: RenderContext) {
   layout.table(
     [
       { title: options.labels.series, width: 220 },
-      ...["User CPU µs/op", "System CPU µs/op", "Total CPU µs/op", "JS heap MiB", "External MiB", "ArrayBuffer MiB"]
-        .map((title) => ({ title, width: 150, align: "right" as const })),
+      ...[
+        "User CPU µs/op",
+        "System CPU µs/op",
+        "Total CPU µs/op",
+        "JS heap MiB",
+        "External MiB",
+        "ArrayBuffer MiB",
+      ].map((title) => ({ title, width: 150, align: "right" as const })),
     ],
     rankDescending(resources, (resource) => resource.cpuPerOperation.total).map(({ item, index }) => ({
       color: colors[index],
@@ -200,7 +205,7 @@ function resourceBar(
       barGap: "-100%",
       itemStyle: { color: colors[index] },
       label: { show: true, position: "top", formatter: () => format(value(index)), color: MUTED_COLOR },
-      data: results.map((_, category) => category === index ? value(index) ?? "-" : "-"),
+      data: results.map((_, category) => (category === index ? (value(index) ?? "-") : "-")),
     })),
   );
 }
@@ -209,7 +214,7 @@ export function cpuSection(context: RenderContext) {
   const { layout, results, colors, options, warmupSeconds, stageResources } = context;
   if (options.metrics.includes("cpu")) {
     const metrics = ["user", "system", "total", "utilization"] as const;
-    const info: Record<typeof metrics[number], { title: string; unit: string }> = {
+    const info: Record<(typeof metrics)[number], { title: string; unit: string }> = {
       user: { title: "User CPU time by sampling interval", unit: "CPU time (ms)" },
       system: { title: "System CPU time by sampling interval", unit: "CPU time (ms)" },
       total: { title: "Total CPU time by sampling interval", unit: "CPU time (ms)" },
@@ -263,11 +268,14 @@ export function cpuSection(context: RenderContext) {
     stageResources.map((stages) =>
       stages.map(({ cpuPerOperation: cpu }) => ({
         total: cpu.total,
-        segments: cpu.user === null || cpu.system === null ? [] : [
-          { value: cpu.user, shade: 0 },
-          { value: cpu.system, shade: 1 },
-        ],
-      }))
+        segments:
+          cpu.user === null || cpu.system === null
+            ? []
+            : [
+                { value: cpu.user, shade: 0 },
+                { value: cpu.system, shade: 1 },
+              ],
+      })),
     ),
   );
 }

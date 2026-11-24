@@ -13,8 +13,8 @@ export function encodeStartupMessage(version: number, parameters: Map<string, st
   const message = new Uint8Array(length);
   const view = new DataView(message.buffer, message.byteOffset, message.byteLength);
   let offset = 0;
-  view.setInt32(offset, length), offset += 4;
-  view.setInt32(offset, version), offset += 4;
+  (view.setInt32(offset, length), (offset += 4));
+  (view.setInt32(offset, version), (offset += 4));
 
   for (const [key, value] of parameters) {
     offset += encodeUTF16StringInto(key, message.subarray(offset));
@@ -29,15 +29,12 @@ export function encodeNegotiateTlsMessage(): Uint8Array {
   const request = new Uint8Array(8);
   const view = new DataView(request.buffer, request.byteOffset, request.byteLength);
   let offset = 0;
-  view.setInt32(offset, 8), offset += 4;
-  view.setInt32(offset, SSL_REQUEST_CODE), offset += 4;
+  (view.setInt32(offset, 8), (offset += 4));
+  (view.setInt32(offset, SSL_REQUEST_CODE), (offset += 4));
   return request;
 }
 
-type PasswordMessage =
-  | { password: string }
-  | { data: Uint8Array }
-  | { mechanism: string; data: Uint8Array | null };
+type PasswordMessage = { password: string } | { data: Uint8Array } | { mechanism: string; data: Uint8Array | null };
 
 export function encodePasswordMessage(message: PasswordMessage): Uint8Array {
   if ("password" in message) {
@@ -58,7 +55,7 @@ export function encodePasswordMessage(message: PasswordMessage): Uint8Array {
     let offset = FRAME_HEADER_LENGTH;
     offset += encodeUTF16StringInto(message.mechanism, buffer.subarray(offset));
     buffer[offset++] = CSTRING_TERMINATOR;
-    view.setInt32(offset, message.data?.byteLength ?? -1), offset += 4;
+    (view.setInt32(offset, message.data?.byteLength ?? -1), (offset += 4));
     if (message.data) buffer.set(message.data, offset);
     return buffer;
   }

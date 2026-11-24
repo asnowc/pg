@@ -6,8 +6,8 @@ function encodeMessageHeaderInto(
   code: FrontendMessageCode,
   bodyLength: number = 0,
 ): number {
-  view.setUint8(offset, code), offset += 1;
-  view.setInt32(offset, bodyLength + 4), offset += 4;
+  (view.setUint8(offset, code), (offset += 1));
+  (view.setInt32(offset, bodyLength + 4), (offset += 4));
   return offset;
 }
 
@@ -59,9 +59,9 @@ function createStaticMessage() {
         offset = encodeMessageHeaderInto(view, offset, FrontendMessageCode.Bind, 8);
         data[offset++] = CSTRING_TERMINATOR; // portal name
         data[offset++] = CSTRING_TERMINATOR; // statement names
-        view.setInt16(offset, 0), offset += 2; // format code count
-        view.setInt16(offset, 0), offset += 2; // parameter value count
-        view.setInt16(offset, 0), offset += 2; // result column count
+        (view.setInt16(offset, 0), (offset += 2)); // format code count
+        (view.setInt16(offset, 0), (offset += 2)); // parameter value count
+        (view.setInt16(offset, 0), (offset += 2)); // result column count
       },
     },
   } satisfies Record<string, { byteLength: number; create(data: Uint8Array, view: DataView, offset: number): void }>;

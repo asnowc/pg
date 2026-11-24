@@ -35,10 +35,7 @@ async function startAuth<T extends ConnectionSource>(
     finaleSource = source;
   }
   try {
-    const startupMessage = encodeStartupMessage(
-      PROTOCOL_VERSION,
-      getStartupParameters({ user, database }),
-    );
+    const startupMessage = encodeStartupMessage(PROTOCOL_VERSION, getStartupParameters({ user, database }));
     await stream.writeData(startupMessage);
     await stream.flush();
     const info = await startAuthentication(stream, options);
@@ -69,19 +66,22 @@ async function negotiateTls<T>(
   await stream.writeData(encodeNegotiateTlsMessage());
   await stream.flush();
   return new Promise((resolve, reject) => {
-    stream.startReadLoop((buffer) => {
-      const responseCode = buffer.view.getUint8(buffer.readableStart);
-      buffer.readableStart++;
-      if (responseCode === TLSResponseCode.Accepted) resolve(encryptionOptions.upgradeTLS(source));
-      else if (responseCode === TLSResponseCode.Rejected) {
-        resolve(null);
-      } else {
-        reject(new PgAuthenticationError(`Invalid PostgreSQL SSL response: 0x${responseCode.toString(16)}`));
-      }
-      return true;
-    }, () => {
-      reject(new UnexpectedEOFError());
-    });
+    stream.startReadLoop(
+      (buffer) => {
+        const responseCode = buffer.view.getUint8(buffer.readableStart);
+        buffer.readableStart++;
+        if (responseCode === TLSResponseCode.Accepted) resolve(encryptionOptions.upgradeTLS(source));
+        else if (responseCode === TLSResponseCode.Rejected) {
+          resolve(null);
+        } else {
+          reject(new PgAuthenticationError(`Invalid PostgreSQL SSL response: 0x${responseCode.toString(16)}`));
+        }
+        return true;
+      },
+      () => {
+        reject(new UnexpectedEOFError());
+      },
+    );
   });
 }
 /**

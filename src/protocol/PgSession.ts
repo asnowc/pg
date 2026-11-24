@@ -24,11 +24,15 @@ export class PgSession extends EventEmitter {
     this.processId = backendKey?.processId ?? null;
     this.secretKey = backendKey?.secretKey ?? null;
 
-    const bufferWriterQueue = new BufferWriterQueue(stream, () => stream.closeWrite(), (cause: unknown) => {
-      const error = cause instanceof Error ? cause : new Error("PostgreSQL query write failed", { cause });
-      this.readQueue.fail(error);
-      this.destroy(error);
-    });
+    const bufferWriterQueue = new BufferWriterQueue(
+      stream,
+      () => stream.closeWrite(),
+      (cause: unknown) => {
+        const error = cause instanceof Error ? cause : new Error("PostgreSQL query write failed", { cause });
+        this.readQueue.fail(error);
+        this.destroy(error);
+      },
+    );
     this.queryWriter = new QueryWriteQueue(bufferWriterQueue, this.readQueue);
     const parser = new MessageParsers(maxMessageSize);
     this.readQueue.init(parser, this.queryWriter);
@@ -42,17 +46,20 @@ export class PgSession extends EventEmitter {
       }
       this.emit("close");
     });
-    stream.startReadLoop((buffer) => parser.next(buffer), () => {
-      if (this.readQueue.head) {
-        this.readQueue.fail(
-          new UnexpectedEOFError("The EOF has been reached but the read queue has not been fully processed"),
-        );
-      }
-      if (!this.closed) {
-        this.destroy(new UnexpectedEOFError("The EOF has been reached but the client has not called close"));
-      }
-      this.emit("close");
-    });
+    stream.startReadLoop(
+      (buffer) => parser.next(buffer),
+      () => {
+        if (this.readQueue.head) {
+          this.readQueue.fail(
+            new UnexpectedEOFError("The EOF has been reached but the read queue has not been fully processed"),
+          );
+        }
+        if (!this.closed) {
+          this.destroy(new UnexpectedEOFError("The EOF has been reached but the client has not called close"));
+        }
+        this.emit("close");
+      },
+    );
   }
   readonly processId: number | null;
   readonly secretKey: number | null;

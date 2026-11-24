@@ -92,9 +92,9 @@ export const PUBLIC_TABLE = {
   },
 };
 export function getPublicTestTableById(conn: SingleQueryOperation, id: string) {
-  return conn.query<{ id: number; c: string }>(
-    `SELECT * FROM ${PUBLIC_TABLE.name} WHERE ${PUBLIC_TABLE.columns.id} = '${id}'`,
-  ).firstRow();
+  return conn
+    .query<{ id: number; c: string }>(`SELECT * FROM ${PUBLIC_TABLE.name} WHERE ${PUBLIC_TABLE.columns.id} = '${id}'`)
+    .firstRow();
 }
 export function createPublicTestTable(conn: SingleQueryOperation) {
   return conn.query(

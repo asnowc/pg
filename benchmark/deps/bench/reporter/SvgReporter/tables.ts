@@ -26,16 +26,21 @@ export function environmentSection({ layout }: RenderContext, manifest: SvgRepor
     rows.push([
       "Machine",
       `${env.cpuModel} · ${env.cpuCount} logical cores · ${format(env.totalMemory / 1024 ** 3, 1)} GiB RAM · ` +
-      `${env.platform} ${env.arch} ${env.osRelease}`,
+        `${env.platform} ${env.arch} ${env.osRelease}`,
     ]);
   }
   rows.push([
     "Params",
     `concurrency ${concurrency} · ${params.duration} ms per stage · warmup ${params.warmupDuration ?? 0} ms · ` +
-    `sampling every ${params.intervalSample} ms${params.gc ? " · forced GC before each series" : ""}`,
+      `sampling every ${params.intervalSample} ms${params.gc ? " · forced GC before each series" : ""}`,
   ]);
   if (meta && typeof meta === "object" && Object.keys(meta).length) {
-    rows.push(["Meta", Object.entries(meta).map(([key, value]) => `${key}=${JSON.stringify(value)}`).join(" · ")]);
+    rows.push([
+      "Meta",
+      Object.entries(meta)
+        .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+        .join(" · "),
+    ]);
   }
   if (manifest.createdAt) rows.push(["Created", manifest.createdAt.replace("T", " ").replace(/\.\d+Z$/, " UTC")]);
 

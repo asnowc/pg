@@ -1,7 +1,11 @@
 import { WritableBuffer, WriteBuffer } from "./WriterBuffer.ts";
 
 export class BufferWriterQueue {
-  constructor(writer: WriteBuffer, private onClose: () => Promise<void>, private onError: (error: unknown) => void) {
+  constructor(
+    writer: WriteBuffer,
+    private onClose: () => Promise<void>,
+    private onError: (error: unknown) => void,
+  ) {
     this.#writer = writer;
   }
   #writer: WriteBuffer;

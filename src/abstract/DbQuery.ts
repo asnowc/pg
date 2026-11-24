@@ -27,9 +27,7 @@ export abstract class DbQuery {
   /** @deprecated 已废弃 */
   abstract execute(sql: QueryInput | MultipleQueryInput): Promise<void>;
   /** @deprecated 已废弃 */
-  abstract query<T extends MultipleQueryResult = MultipleQueryResult>(
-    sql: MultipleQueryInput,
-  ): Promise<T>;
+  abstract query<T extends MultipleQueryResult = MultipleQueryResult>(sql: MultipleQueryInput): Promise<T>;
   /** @deprecated 已废弃 */
   abstract query<T = any>(sql: QueryDataInput<T>): Promise<QueryRowsResult<T>>;
   /** @deprecated 已废弃 */
@@ -38,9 +36,7 @@ export abstract class DbQuery {
    * 执行多语句的方法
    * @deprecated 不建议使用。改用 query()
    */
-  abstract multipleQuery<T extends MultipleQueryResult = MultipleQueryResult>(
-    sql: SqlLike | SqlLike[],
-  ): Promise<T>;
+  abstract multipleQuery<T extends MultipleQueryResult = MultipleQueryResult>(sql: SqlLike | SqlLike[]): Promise<T>;
 
   /** @deprecated 已废弃 */
   /** 单语句查询受影响的行 */
@@ -79,9 +75,7 @@ export abstract class DbQuery {
    *  @deprecated 不建议使用。
    */
   multipleQueryRows<T extends any[] = any[]>(sql: SqlLike | SqlLike[]): Promise<T[]> {
-    return this.multipleQuery(sql).then((res) => res.map((item) => item.rows ?? [])) as Promise<
-      T[]
-    >;
+    return this.multipleQuery(sql).then((res) => res.map((item) => item.rows ?? [])) as Promise<T[]>;
   }
   /**
    * 指定某一列为key，返回 key 到 row 的映射

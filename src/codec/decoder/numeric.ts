@@ -15,9 +15,8 @@ export const int32: PgColumnDataDecoder<number> = {
   decodeBinary(reader, remainingByteLength) {
     const length = remainingByteLength === 2 ? 2 : 4;
     if (reader.readableLength < length) return undefined;
-    const value = length === 2
-      ? reader.view.getInt16(reader.readableStart)
-      : reader.view.getInt32(reader.readableStart);
+    const value =
+      length === 2 ? reader.view.getInt16(reader.readableStart) : reader.view.getInt32(reader.readableStart);
     reader.readableStart += length;
     return value;
   },
@@ -111,15 +110,20 @@ function formatNumeric(groups: number[], weight: number, sign: number, scale: nu
   if (sign !== 0 && sign !== 0x4000) throw new RangeError(`Invalid numeric sign: ${sign}`);
 
   const integerGroups = Math.max(weight + 1, 0);
-  let integer = integerGroups === 0 ? "0" : Array.from({ length: integerGroups }, (_, index) => {
-    const group = groups[index] ?? 0;
-    return index === 0 ? String(group) : String(group).padStart(4, "0");
-  }).join("");
+  let integer =
+    integerGroups === 0
+      ? "0"
+      : Array.from({ length: integerGroups }, (_, index) => {
+          const group = groups[index] ?? 0;
+          return index === 0 ? String(group) : String(group).padStart(4, "0");
+        }).join("");
   integer = integer.replace(/^0+(?=\d)/, "");
   const fractionGroups = Math.ceil(scale / 4);
   const fraction = Array.from({ length: fractionGroups }, (_, index) => {
     const groupIndex = index + weight + 1;
-    return String(groupIndex >= 0 ? groups[groupIndex] ?? 0 : 0).padStart(4, "0");
-  }).join("").slice(0, scale);
+    return String(groupIndex >= 0 ? (groups[groupIndex] ?? 0) : 0).padStart(4, "0");
+  })
+    .join("")
+    .slice(0, scale);
   return `${sign === 0x4000 ? "-" : ""}${integer}${scale > 0 ? `.${fraction}` : ""}`;
 }

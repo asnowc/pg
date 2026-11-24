@@ -7,8 +7,7 @@ import { connectPgSession } from "@/protocol/connect_session.ts";
 export const LIB_NAME = "调度模拟";
 
 class Pool {
-  constructor(readonly conn: PgSession[]) {
-  }
+  constructor(readonly conn: PgSession[]) {}
   count = 0;
   async query(sql: string): Promise<any> {
     const conn = this.conn[this.count++ % this.conn.length];

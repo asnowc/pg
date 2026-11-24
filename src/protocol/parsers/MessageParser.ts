@@ -8,8 +8,7 @@ export interface MessageParser<T = unknown> {
 
 const EMPTY_BODY = new Uint8Array(0);
 export class MessageParsers {
-  constructor(readonly maxHeaderLength: number) {
-  }
+  constructor(readonly maxHeaderLength: number) {}
   private readonly parsers: Record<number, MessageParser | undefined> = {};
   private readonly onFinishMap: Record<number, ((body: Uint8Array) => void) | undefined> = {};
   setFullParser(type: number, onFinish: (body: Uint8Array) => void): void {
@@ -86,8 +85,7 @@ function decodeMessageLength(reader: ReadableBuffer, maxLength: number) {
 }
 
 class MessageFullParser implements MessageParser {
-  constructor(public onFinish?: (body: Uint8Array) => void) {
-  }
+  constructor(public onFinish?: (body: Uint8Array) => void) {}
   private bodyChunks?: Uint8Array;
   reset(): void {
     this.bodyChunks = undefined;

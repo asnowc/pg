@@ -32,6 +32,6 @@ export function relatedQuery<T>(
   return new QueryReader(() =>
     processMaybePromise(getWriter(), (session: PgSession) => {
       return session.queryWriter.extendedQuery<T>(statement);
-    })
+    }),
   );
 }

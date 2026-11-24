@@ -23,9 +23,7 @@ class DbPoolConnectionImpl extends DbQuery implements DbPoolConnection {
   }
   #conn?: DbQueryBase;
 
-  override query<T extends MultipleQueryResult = MultipleQueryResult>(
-    sql: MultipleQueryInput,
-  ): Promise<T>;
+  override query<T extends MultipleQueryResult = MultipleQueryResult>(sql: MultipleQueryInput): Promise<T>;
   override query<T = any>(sql: QueryDataInput<T>): Promise<QueryRowsResult<T>>;
   override query<T = any>(sql: QueryInput): Promise<QueryRowsResult<T>>;
   override query(sql: QueryInput | MultipleQueryInput): Promise<any> {
@@ -43,9 +41,7 @@ class DbPoolConnectionImpl extends DbQuery implements DbPoolConnection {
     return this.#conn.execute(sql);
   }
   /** @deprecated 不建议使用 */
-  override multipleQuery<T extends MultipleQueryResult = MultipleQueryResult>(
-    sql: SqlLike | SqlLike[],
-  ): Promise<T> {
+  override multipleQuery<T extends MultipleQueryResult = MultipleQueryResult>(sql: SqlLike | SqlLike[]): Promise<T> {
     if (!this.#conn) {
       return Promise.reject(new ConnectionNotAvailableError("Connection already release"));
     }

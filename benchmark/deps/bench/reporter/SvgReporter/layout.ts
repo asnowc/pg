@@ -45,7 +45,7 @@ export function rankDescending<T>(items: readonly T[], value: (item: T) => numbe
     }
     return b.value - a.value || a.index - b.index;
   });
-  const values = ranked.flatMap((row) => row.value === null ? [] : [row.value]);
+  const values = ranked.flatMap((row) => (row.value === null ? [] : [row.value]));
   const lowest = values.length ? Math.min(...values) : null;
   for (const row of ranked) {
     if (row.value === null || lowest === null) continue;
@@ -55,10 +55,10 @@ export function rankDescending<T>(items: readonly T[], value: (item: T) => numbe
 }
 
 export const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
-export const formatRatio = (ratio: number | null) => ratio === null ? "N/A" : `${ratio.toFixed(2)}x`;
+export const formatRatio = (ratio: number | null) => (ratio === null ? "N/A" : `${ratio.toFixed(2)}x`);
 
 export const errorRate = (success: number, failed: number) =>
-  success + failed > 0 ? failed / (success + failed) * 100 : null;
+  success + failed > 0 ? (failed / (success + failed)) * 100 : null;
 
 /** 自上而下累积 ECharts 配置，每个区块只需关心自己的高度。 */
 export class ReportLayout {
@@ -99,7 +99,7 @@ export class ReportLayout {
       x += column.width;
     }
     columns.forEach((column, i) =>
-      this.text(column.title, { x: xs[i], align: column.align, font: `bold 12px ${FONT}`, color: MUTED_COLOR })
+      this.text(column.title, { x: xs[i], align: column.align, font: `bold 12px ${FONT}`, color: MUTED_COLOR }),
     );
     this.top += ROW_HEIGHT - 4;
     this.graphics.push({

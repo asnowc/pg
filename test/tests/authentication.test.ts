@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { connectFromNet, PgAuthenticationError, type PgConnectOptions } from "@asla/pg";
+import fs from "node:fs/promises";
 
 import { PUBLIC_DB_CONNECT_INFO } from "@test/utils/db.ts";
 const TLS_CA_FILE = "./test/fixtures/tls/ca.crt";
@@ -11,7 +12,7 @@ const USER = {
   tls: "auth_tls",
 } as const;
 
-function authenticate(options: Omit<PgConnectOptions<Deno.Conn>, "database"> & { database?: string }) {
+function authenticate(options: Omit<PgConnectOptions, "database"> & { database?: string }) {
   return connectFromNet({
     database: PUBLIC_DB_CONNECT_INFO.database,
     hostname: PUBLIC_DB_CONNECT_INFO.hostname,
@@ -59,14 +60,16 @@ test("拒绝包含 NUL 的 Startup 参数", async () => {
 });
 
 test("服务端拒绝客户端选择的不支持 SASL 机制", async () => {
-  await expect(authenticate({
-    user: USER.scram,
-    createSaslExchange: () => ({
-      mechanism: "UNSUPPORTED",
-      initialResponse: () => new Uint8Array(),
-      continue: () => new Uint8Array(),
+  await expect(
+    authenticate({
+      user: USER.scram,
+      createSaslExchange: () => ({
+        mechanism: "UNSUPPORTED",
+        initialResponse: () => new Uint8Array(),
+        continue: () => new Uint8Array(),
+      }),
     }),
-  })).rejects.toThrow();
+  ).rejects.toThrow();
 });
 test("TLS fixture 使用受信 CA 建立连接", async () => {
   await using db = await connectFromNet({
@@ -74,10 +77,12 @@ test("TLS fixture 使用受信 CA 建立连接", async () => {
     hostname: PUBLIC_DB_CONNECT_INFO.hostname,
     port: PUBLIC_DB_CONNECT_INFO.port,
     database: PUBLIC_DB_CONNECT_INFO.database,
-    encryption: [{
-      mode: "TLS",
-      ca: [await Deno.readTextFile(TLS_CA_FILE)],
-    }],
+    encryption: [
+      {
+        mode: "TLS",
+        ca: [await fs.readFile(TLS_CA_FILE, "utf8")],
+      },
+    ],
   });
   expect(db.processId).not.toBeNull();
 });

@@ -11,11 +11,14 @@ import { PgConnectOptions, PgNetConnectOptions } from "@/interface/Connection.ts
 import { PgConnection } from "@/class/PgConnection.ts";
 
 export class DuplexBufferStream extends WriteBuffer implements DataStream {
-  constructor(private duplex: Duplex, options: { readBufferSize?: number; writeBufferSize?: number } = {}) {
+  constructor(
+    private duplex: Duplex,
+    options: { readBufferSize?: number; writeBufferSize?: number } = {},
+  ) {
     super(
       (data) => {
         return new Promise<number>((resolve, reject) => {
-          this.duplex.write(data, (err) => err ? reject(err) : resolve(data.byteLength));
+          this.duplex.write(data, (err) => (err ? reject(err) : resolve(data.byteLength)));
         });
       },
       options.writeBufferSize ?? 16 * 1024,
@@ -108,9 +111,9 @@ function mapEncryption(
 ): NonNullable<PgConnectOptions<Socket>["encryption"]>[number] {
   switch (option.mode) {
     case "TLS": {
-      const caCerts = option.ca?.map((
-        cert,
-      ) => (typeof cert === "string" ? cert : Buffer.from(cert.buffer, cert.byteOffset, cert.byteLength)));
+      const caCerts = option.ca?.map((cert) =>
+        typeof cert === "string" ? cert : Buffer.from(cert.buffer, cert.byteOffset, cert.byteLength),
+      );
       return {
         mode: option.mode,
         upgradeTLS: async (conn) => {

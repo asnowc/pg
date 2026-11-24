@@ -10,17 +10,12 @@ import { CountLinkList, eachLink } from "@/_utils/LinkList.ts";
 import { QueryResultParser } from "./parsers/QueryResultParser.ts";
 import { RowDescriptionParser } from "./parsers/RowDescription.ts";
 
-type ResultReceiver =
-  | QueryResultParser
-  | EmptyReceiver
-  | CloseReceiver
-  | RowDescriptionParser;
+type ResultReceiver = QueryResultParser | EmptyReceiver | CloseReceiver | RowDescriptionParser;
 
 const MSCode = BackendMessageCode;
 
 export class QueryReadQueue {
-  constructor(private onIdle?: () => void) {
-  }
+  constructor(private onIdle?: () => void) {}
   private link = new CountLinkList<ResultReceiver>();
   get head() {
     return this.link.head;

@@ -2,20 +2,20 @@ import { expect } from "vitest";
 import { test } from "@test/fixtures/db_connect.ts";
 
 test("按批读取游标并在完成后归还连接", async ({ pool }) => {
-  const cursor = await pool.open<{ value: number }>("SELECT generate_series(1, 3) AS value", { fetchSize: 1 });
+  const cursor = await pool.open<{ value: number }>("SELECT generate_series(1, 3) AS value");
 
   expect(pool.totalCount).toBe(1);
   expect(pool.idleCount).toBe(0);
-  expect(await cursor.read()).toEqual([{ value: 1 }]);
+  expect(await cursor.read(1)).toEqual([{ value: 1 }]);
   expect(cursor.rowsRead).toBe(1);
   expect(await cursor.read(2)).toEqual([{ value: 2 }, { value: 3 }]);
   expect(cursor.rowsRead).toBe(3);
-  expect(await cursor.read()).toEqual([]);
+  expect(await cursor.read(1)).toEqual([]);
   expect(pool.idleCount).toBe(1);
 });
 
 test("异步迭代完整读取游标并提供完成信息", async ({ pool }) => {
-  const cursor = await pool.open<{ value: number }>("SELECT generate_series(1, 3) AS value", { fetchSize: 2 });
+  const cursor = await pool.open<{ value: number }>("SELECT generate_series(1, 3) AS value");
 
   expect(await Array.fromAsync(cursor)).toEqual([{ value: 1 }, { value: 2 }, { value: 3 }]);
   expect(await cursor.completion).toEqual({ rowCount: 3, notices: [] });
@@ -24,9 +24,9 @@ test("异步迭代完整读取游标并提供完成信息", async ({ pool }) => 
 });
 
 test("显式关闭游标会归还连接且重复关闭安全", async ({ pool }) => {
-  const cursor = await pool.open<{ value: number }>("SELECT generate_series(1, 3) AS value", { fetchSize: 1 });
+  const cursor = await pool.open<{ value: number }>("SELECT generate_series(1, 3) AS value");
 
-  expect(await cursor.read()).toEqual([{ value: 1 }]);
+  expect(await cursor.read(1)).toEqual([{ value: 1 }]);
   expect(pool.idleCount).toBe(0);
 
   await cursor.close();
@@ -38,7 +38,7 @@ test("显式关闭游标会归还连接且重复关闭安全", async ({ pool }) 
 });
 
 test("异步迭代提前退出会关闭游标并归还连接", async ({ pool }) => {
-  const cursor = await pool.open<{ value: number }>("SELECT generate_series(1, 4) AS value", { fetchSize: 1 });
+  const cursor = await pool.open<{ value: number }>("SELECT generate_series(1, 4) AS value");
 
   for await (const row of cursor) {
     expect(row).toEqual({ value: 1 });

@@ -57,7 +57,7 @@ export type TLSEncryptionOptions<T> = {
 };
 
 /** @public */
-export type PrunedDenoConn = {
+export type NetConn = {
   close: () => void;
   read: (p: Uint8Array) => Promise<number | null>;
   write: (p: Uint8Array) => Promise<number>;
@@ -65,4 +65,4 @@ export type PrunedDenoConn = {
 };
 
 /** @public */
-export type ConnectionSource = Duplex | PrunedDenoConn;
+export type ConnectionSource = Duplex | NetConn;

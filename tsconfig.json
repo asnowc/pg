@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "lib": ["esnext"],
+    "types": ["node"],
+    "target": "esnext",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "paths": {
+      "@/*": ["./src/*"],
+      "#abstract": ["./src/abstract/mod.ts"],
+      "@test/*": ["./test/*"],
+      "@asla/pg": ["./src/mod.ts"]
+    }
+  },
+  "exclude": ["node_modules", "dist", "benchmark"]
+}

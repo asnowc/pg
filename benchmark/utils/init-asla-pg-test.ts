@@ -36,7 +36,8 @@ export function initTest(
       await client.query(sql`select ${1} as x`).rows();
     },
     selectArgs: async (client) => {
-      await client.query(sql`select
+      await client
+        .query(sql`select
       ${1337}::int as int,
       ${"wat"} as string,
       ${new Date()}::timestamp with time zone as timestamp,
@@ -44,7 +45,8 @@ export function initTest(
       ${false}::bool as boolean,
       ${BUFFER_DATA}::bytea as bytea,
       ${JSON.stringify(JSON_DATA)}::jsonb as json
-    `).rows();
+    `)
+        .rows();
     },
   };
   const connInfo: ConnectHandler<PgConnection> = {

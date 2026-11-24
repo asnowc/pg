@@ -187,19 +187,13 @@ SQL，适合参数化查询和需要类型化结果的场景。协议说明：<h
 例如，查询单行：
 
 ```ts
-const user = await conn
-  .query<{ id: number; name: string }>(
-    "SELECT id, name FROM users WHERE id = 42",
-  )
-  .getFirstRow();
+const user = await conn.query<{ id: number; name: string }>("SELECT id, name FROM users WHERE id = 42").getFirstRow();
 ```
 
 批量读取或建立索引时，可以选择其他消费方式：
 
 ```ts
-const users = await conn
-  .query<{ id: number; name: string }>("SELECT id, name FROM users")
-  .getMap("id");
+const users = await conn.query<{ id: number; name: string }>("SELECT id, name FROM users").getMap("id");
 
 const query = conn.query<{ id: number; name: string }>("SELECT id, name FROM users");
 for await (const user of query) {
@@ -218,9 +212,7 @@ const sql = createSqlBuilder(JS_DATA_ENCODER_V1);
 const userId = 42;
 
 const user = await conn
-  .query<{ id: number; name: string }>(
-    sql`SELECT id, name FROM users WHERE id = ${userId}`,
-  )
+  .query<{ id: number; name: string }>(sql`SELECT id, name FROM users WHERE id = ${userId}`)
   .getFirstRow();
 ```
 
@@ -257,10 +249,7 @@ await using tx = conn.begin("SERIALIZABLE");
 按批读取：
 
 ```ts
-await using cursor = conn.openCursor<{ id: number }>(
-  "SELECT id FROM users ORDER BY id",
-  { iteratorMaxRows: 100 },
-);
+await using cursor = conn.openCursor<{ id: number }>("SELECT id FROM users ORDER BY id", { iteratorMaxRows: 100 });
 
 let rows = await cursor.read(100);
 while (rows.length > 0) {

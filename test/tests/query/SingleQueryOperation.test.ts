@@ -35,7 +35,12 @@ test("getResults 返回行、字段和完成信息", async ({ conn }) => {
 test("getMap 使用指定字段构建映射", async ({ conn }) => {
   const sql = "SELECT * FROM (VALUES (1, 'one'), (2, 'two')) AS values(id, value)";
   const rows = await conn.query<{ id: number; value: string }>(sql).map("id");
-  expect(rows).toEqual(new Map([[1, { id: 1, value: "one" }], [2, { id: 2, value: "two" }]]));
+  expect(rows).toEqual(
+    new Map([
+      [1, { id: 1, value: "one" }],
+      [2, { id: 2, value: "two" }],
+    ]),
+  );
 });
 
 test("异步迭代逐行返回数据并返回完成信息", async ({ conn }) => {

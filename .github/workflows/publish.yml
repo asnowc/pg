@@ -15,10 +15,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-      - uses: denoland/setup-deno@v2
+      - uses: pnpm/setup@v3
         with:
-          deno-version: ^2
+          runtime: node@26
           cache: true
-      - run: deno ci
+          require-lockfile: true
       - name: Publish
-        run: deno publish
+        run: pnpm dlx jsr publish

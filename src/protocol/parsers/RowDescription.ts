@@ -6,8 +6,7 @@ export class RowDescriptionParser {
   constructor(
     private readonly resolve: (resolver: DecodeRowDescriptionResult[]) => void,
     readonly reject: (reason: unknown) => void,
-  ) {
-  }
+  ) {}
   readonly taskType = ReceiverType.RowDescription;
   fields?: DecodeRowDescriptionResult[];
 
