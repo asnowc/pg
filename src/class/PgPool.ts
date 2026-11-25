@@ -32,12 +32,11 @@ import type { CreatePoolOptions } from "./Pool.ts";
 import { CountLinkList } from "@/_utils/LinkList.ts";
 import { poolForTest } from "./PgPoolForTest.ts";
 import { ConnQueryOperation } from "./QueryOperation.ts";
-import { PgSession } from "@/protocol/PgSession.ts";
 import { isolationQuery } from "./private/QueryFunction.ts";
-import Transaction from "@/class/private/Transaction.ts";
-import Cursor from "@/class/private/Cursor.ts";
+import Transaction from "./private/Transaction.ts";
+import Cursor from "./private/Cursor.ts";
 import MultipleQueryReader from "./private/MultipleQueryReader.ts";
-import { PreparedMultipleStatement } from "./PreparedMultipleStatement.ts";
+import { MultipleStatementPortal, PgSession } from "@/protocol.ts";
 
 export type { CreatePoolOptions } from "./Pool.ts";
 /** @public */
@@ -304,7 +303,7 @@ export class PgPool
     queryable: SqlStatements,
     options?: QueryOptions & QueryOptionsWithDecoder,
   ): IMultipleQueryReader<T> {
-    return new MultipleQueryReader<T>(this.#getSession, new PreparedMultipleStatement(queryable, options));
+    return new MultipleQueryReader<T>(this.#getSession, queryable, options);
   }
 
   static {

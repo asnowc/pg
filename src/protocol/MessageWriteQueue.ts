@@ -1,4 +1,4 @@
-import type { FieldInfo, TransactionMode } from "@/interface/Query.ts";
+import type { FieldInfo, SqlStatements, TransactionMode } from "@/interface/Query.ts";
 import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
 import { throwRewrittenError } from "@/_utils/error.ts";
 import { QueryParserResult, ReceiverType } from "./parsers/QueryTask.ts";
@@ -9,20 +9,55 @@ import {
   BindMessageEncoder,
   ExecuteMessageEncoder,
   getCloseMessageEncoder,
+  getDescribeMessageEncoder,
   ParseMessageEncoder,
   QueryMessageEncoder,
+  TerminateFrame,
 } from "./encode.ts";
 import { BufferWriterQueue } from "@/_utils/BufferWriterQueue.ts";
-import { TerminateFrame } from "./encoder/Message.ts";
-import { RowDescriptionParser } from "@/protocol/parsers/RowDescription.ts";
-import { PreparedMultipleStatement } from "@/class/PreparedMultipleStatement.ts";
+import { RowDescriptionParser } from "./parsers/RowDescription.ts";
+import { MultipleStatementPortal, QueryPortalOptions, StatementPortal } from "./QueryPortal.ts";
 
 export class QueryWriteQueue {
   constructor(
     private writer: BufferWriterQueue,
     private readonly readQueue: QueryReadQueue,
   ) {}
-  #cursorFields = new WeakMap<TypedSqlStatement, NonNullable<QueryParserResult["fields"]>>();
+
+  prepare(portal: StatementPortal) {
+    this.writer.pushEncoder(new ParseMessageEncoder(portal.statement));
+    this.writer.pushEncoder(new BindMessageEncoder(portal.statement, portal.portalName));
+  }
+
+  describe(portal: StatementPortal, resolve: (fields: FieldInfo[]) => void, reject: (error: unknown) => void) {
+    this.readQueue.push(new RowDescriptionParser(resolve, reject));
+    if (portal.portalName) this.writer.pushEncoder(getDescribeMessageEncoder(portal.portalName));
+    else {
+      this.writer.pushData(FRAME.DESCRIBE_PORTAL_ANONYMOUS);
+    }
+  }
+  execute(portal: StatementPortal, maxRows: number = 0) {
+    this.readQueue.push(portal);
+    this.writer.pushEncoder(new ExecuteMessageEncoder(maxRows, portal.portalName));
+  }
+  flush() {
+    this.writer.pushData(FRAME.FLUSH);
+  }
+  sync(resolve?: () => void, reject?: (error: unknown) => void): void {
+    this.writer.pushData(FRAME.SYNC);
+    this.readQueue.enqueueSync(resolve, reject);
+  }
+
+  query(portal: MultipleStatementPortal): void {
+    this.readQueue.push(
+      new RowDescriptionParser(
+        (fields) => portal.setFields(fields),
+        () => {},
+      ),
+    );
+    this.readQueue.push(portal);
+    this.writer.pushEncoder(new QueryMessageEncoder(portal.encoder, portal.statementsLength));
+  }
 
   extendedQuery<T>(statement: TypedSqlStatement): Promise<QueryParserResult<T>> {
     return new Promise<QueryParserResult<T>>((resolve, reject) => {
@@ -40,16 +75,10 @@ export class QueryWriteQueue {
   }
   openCursor(statement: TypedSqlStatement): Promise<FieldInfo[]> {
     return new Promise<FieldInfo[]>((resolve, reject) => {
-      this.readQueue.push(
-        new RowDescriptionParser((fields) => {
-          this.#cursorFields.set(statement, fields);
-          resolve(fields);
-        }, reject),
-      );
+      this.readQueue.push(new RowDescriptionParser(resolve, reject));
       this.writer.pushEncoder(new ParseMessageEncoder(statement));
       this.writer.pushEncoder(new BindMessageEncoder(statement));
       this.writer.pushData(FRAME.DESCRIBE_PORTAL_ANONYMOUS);
-      this.writer.pushData(FRAME.FLUSH);
     }).catch(throwRewrittenError);
   }
   executePortal<T>(statement: TypedSqlStatement, maxRows: number = 0): Promise<QueryParserResult<T>> {
@@ -60,40 +89,22 @@ export class QueryWriteQueue {
         statement.getResultDecoder,
         ReceiverType.ExtendedQuery,
       );
-      const fields = this.#cursorFields.get(statement);
-      if (fields) parser.setFields(fields);
       this.readQueue.push(parser);
       this.writer.pushEncoder(new ExecuteMessageEncoder(maxRows));
       this.writer.pushData(FRAME.FLUSH);
     }).catch(throwRewrittenError);
   }
-  closePortal(statement?: TypedSqlStatement): Promise<void> {
+  closePortal(statement: TypedSqlStatement): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       this.readQueue.push({ taskType: ReceiverType.ClosePortal, resolve, reject });
-      this.writer.pushEncoder(getCloseMessageEncoder());
+      this.writer.pushEncoder(getCloseMessageEncoder(statement.statementName));
       this.sync();
-    })
-      .then(() => {
-        if (statement) this.#cursorFields.delete(statement);
-      })
-      .catch(throwRewrittenError);
-  }
-  sync(resolve?: () => void, reject?: (error: unknown) => void): void {
-    this.writer.pushData(FRAME.SYNC);
-    this.readQueue.enqueueSync(resolve, reject);
+    }).catch(throwRewrittenError);
   }
 
-  simpleQuery<T>(
-    statement: PreparedMultipleStatement,
-    onResolve?: (data: QueryParserResult<T>) => void,
-  ): Promise<void> {
+  simpleQuery(portal: MultipleStatementPortal): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const parser = new QueryResultParser<any>(onResolve ?? (() => {}), reject, undefined, ReceiverType.SimpleQuery);
-      if (onResolve) {
-        this.readQueue.push(new RowDescriptionParser((fields) => parser.setFields(fields), reject));
-      }
-      this.readQueue.push(parser);
-      this.writer.pushEncoder(new QueryMessageEncoder(statement.statements));
+      this.query(portal);
       this.sync(resolve, reject);
     });
   }

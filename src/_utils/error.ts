@@ -38,6 +38,13 @@ export class HandleUnavailableError extends Error {
     super(message);
   }
 }
+
+export class NullByteError extends Error {
+  constructor() {
+    super("PostgreSQL SQL statements cannot contain null bytes");
+  }
+}
+
 //TODO: 给 Error 分类
 export function throwRewrittenError(e: unknown): never {
   if (e instanceof Error) {

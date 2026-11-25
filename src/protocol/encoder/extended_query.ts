@@ -11,7 +11,6 @@ import {
 } from "./_common.ts";
 import { CSTRING_TERMINATOR, DescribeTarget, FRAME_HEADER_LENGTH, FrontendMessageCode } from "../const.ts";
 import { calcCStringByteLength } from "@/_utils/string.ts";
-import { SqlStatements } from "@/interface/Query.ts";
 
 /**
  *  https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-PARSE
@@ -215,12 +214,12 @@ export class BindMessageEncoder extends StageBufferEncoder implements BufferEnco
 export class ExecuteMessageEncoder extends StageBufferEncoder implements BufferEncoder {
   constructor(
     private maxRows: number,
-    private portal: string = "",
+    private portalName: string = "",
   ) {
     super();
-    this.bodyLength = 4 + calcCStringByteLength(this.portal) + 1;
-    if (portal) {
-      this.encoder = new UTF16BufferEncoder(this.portal);
+    this.bodyLength = 4 + calcCStringByteLength(this.portalName) + 1;
+    if (portalName) {
+      this.encoder = new UTF16BufferEncoder(this.portalName);
       this.encodeStage = this.stageEncodeHeader;
     } else {
       this.encodeStage = this.encodeNoPortal;
@@ -253,46 +252,6 @@ export class ExecuteMessageEncoder extends StageBufferEncoder implements BufferE
   encodeLatest(writer: WritableBuffer) {
     writer.buffer[writer.writeOffset++] = CSTRING_TERMINATOR;
     (writer.view.setInt32(writer.writeOffset, this.maxRows), (writer.writeOffset += 4));
-  }
-}
-
-export class QueryMessageEncoder implements BufferEncoder {
-  constructor(statement: SqlStatements) {
-    if (typeof statement === "string") {
-      this.encoder = new UTF16BufferEncoder(statement);
-      this.bodyLength = calcCStringByteLength(statement) + 1;
-    } else if (statement instanceof Uint8Array) {
-      this.encoder = new Uint8ArrayEncoder(statement);
-      this.bodyLength = statement.byteLength + 1;
-    } else if (statement instanceof PreparedStatement) {
-      if (typeof statement.sqlStatement === "string") {
-        this.encoder = new UTF16BufferEncoder(statement.sqlStatement);
-      } else {
-        this.encoder = new Uint8ArrayEncoder(statement.sqlStatement);
-      }
-      this.bodyLength = statement.statementByteLength + 1;
-    } else if (statement instanceof Blob) {
-      this.bodyLength = statement.size + 1;
-      throw new Error("Blob statements are not supported");
-    } else {
-      throw new Error("Unsupported statement type");
-      //TODO: 处理数组
-    }
-  }
-  private encoder?: BufferEncoder;
-  private bodyLength?: number;
-  encodeInto(writer: WritableBuffer): boolean | void {
-    if (this.bodyLength !== undefined) {
-      if (writer.writableLength < 5) return true;
-      encodeFrameHeaderInto(writer, FrontendMessageCode.Query, this.bodyLength);
-      this.bodyLength = undefined;
-    }
-    if (this.encoder) {
-      if (this.encoder.encodeInto(writer)) return true;
-      this.encoder = undefined;
-    }
-    if (writer.writableLength < 1) return true;
-    ((writer.buffer[writer.writeOffset] = 0), (writer.writeOffset += 1)); // null terminator
   }
 }
 

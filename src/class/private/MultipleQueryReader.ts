@@ -1,18 +1,20 @@
-import { MultipleQueryReader as IMultipleQueryReader } from "@/interface/Query.ts";
+import { MultipleQueryReader as IMultipleQueryReader, QueryOptions, SqlStatements } from "@/interface/Query.ts";
 import { processMaybePromise } from "@/_utils/AsyncAble.ts";
-import { PgSession } from "@/protocol.ts";
+import { MultipleStatementPortal, PgSession } from "@/protocol.ts";
 import { QueryResult } from "../../interface/Query/QueryReader.ts";
 import { GetPgSession } from "@/class/private/QueryFunction.ts";
 import { HandleUnavailableError } from "@/_utils/error.ts";
-import { PreparedMultipleStatement } from "@/class/PreparedMultipleStatement.ts";
+import { QueryOptionsWithDecoder } from "@/interface/Query/_internal.ts";
 
 export default class MultipleQueryReader<T extends any[] = unknown[]> implements IMultipleQueryReader<T> {
-  constructor(
-    getSession: GetPgSession,
-    private statement: PreparedMultipleStatement,
-  ) {
+  constructor(getSession: GetPgSession, queryable: SqlStatements, options?: QueryOptions & QueryOptionsWithDecoder) {
     this.#getSession = getSession;
+    this.#portal = new MultipleStatementPortal(
+      queryable,
+      options ? { getResultDecoder: options.getResultDecoder, onNotice: options.onNotice } : undefined,
+    );
   }
+  #portal: MultipleStatementPortal;
   #getSession?: GetPgSession;
   private getSession<T>(exec: (session: PgSession) => T) {
     if (!this.#getSession) {
@@ -26,11 +28,15 @@ export default class MultipleQueryReader<T extends any[] = unknown[]> implements
     const results = await this.allResults();
     return results.map((result) => result.rows) as T;
   }
+
   allResults(): Promise<QueryResult<T[number]>[]> {
     return this.getSession(async (session) => {
-      const items: QueryResult<unknown>[] = [];
-      await session.queryWriter.simpleQuery(this.statement, (result) => items.push(result));
-      return items;
+      return new Promise<QueryResult<T[number]>[]>((resolve, reject) => {
+        const items: QueryResult<unknown>[] = [];
+        this.#portal.resolve = (result) => items.push(result);
+        this.#portal.reject = reject;
+        session.queryWriter.simpleQuery(this.#portal).then(() => resolve(items as QueryResult<T[number]>[]), reject);
+      });
     });
   }
   async last<R>(): Promise<R> {
@@ -41,15 +47,16 @@ export default class MultipleQueryReader<T extends any[] = unknown[]> implements
     return this.getSession(async (session) => {
       let last: QueryResult<any> | undefined;
       //TODO: 避免解码不需要的语句结果
-      await session.queryWriter.simpleQuery(this.statement, (result) => (last = result));
+      this.#portal.resolve = (result) => (last = result);
+      await session.queryWriter.simpleQuery(this.#portal);
       if (!last) throw new Error("No results returned");
-      return last!;
+      return last;
     });
   }
   then<T>(onfulfilled?: (data: undefined) => T, onrejected?: (reason: unknown) => void): Promise<T>;
   then(onfulfilled?: (data: undefined) => unknown, onrejected?: (reason: unknown) => void): Promise<unknown> {
     return this.getSession((session) => {
-      return session.queryWriter.simpleQuery(this.statement).then(() => onfulfilled?.(undefined), onrejected);
+      return session.queryWriter.simpleQuery(this.#portal).then(() => onfulfilled?.(undefined), onrejected);
     });
   }
 }

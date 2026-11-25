@@ -1,3 +1,5 @@
+import { NullByteError } from "./error.ts";
+
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
@@ -34,7 +36,7 @@ export function calcCStringByteLength(str: string): number {
   const max = str.length;
   while (i < max) {
     code = str.codePointAt(i)!;
-    if (code === 0) throw new Error("PostgreSQL strings cannot contain NUL bytes");
+    if (code === 0) throw new NullByteError();
     else if (code < 0x80) utf8Len++;
     else if (code < 0x8_00) utf8Len += 2;
     else if (code < 0x10000) utf8Len += 3;

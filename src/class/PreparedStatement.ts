@@ -2,6 +2,7 @@ import type { JsDataEncoder } from "@/interface/js_data_encoder.ts";
 import type { PgColumnDataDecoder } from "@/interface/pg_data_decoder.ts";
 import type { FieldInfo } from "@/interface/Query/QueryReader.ts";
 import { calcCStringByteLength } from "@/_utils/string.ts";
+import { NullByteError } from "@/_utils/error.ts";
 
 function templateStringsArrayToTemplate(chunks: ReadonlyArray<string>) {
   let template = chunks[0];
@@ -13,6 +14,7 @@ function templateStringsArrayToTemplate(chunks: ReadonlyArray<string>) {
 }
 function calcArgsTotalByteLength(argsEncoders: readonly JsDataEncoder[], args: unknown[]) {
   let byteLength = 0;
+  //TODO: startEncode
   for (let i = 0; i < argsEncoders.length; i++) {
     if (args[i] === null) continue;
     const encoder = argsEncoders[i];
@@ -41,7 +43,7 @@ export class PreparedStatement {
     if (typeof sqlStatement === "string") {
       this.statementByteLength = calcCStringByteLength(sqlStatement);
     } else {
-      if (sqlStatement.includes(0)) throw new Error("PostgreSQL strings cannot contain NUL bytes");
+      if (sqlStatement.includes(0)) throw new NullByteError();
       this.statementByteLength = sqlStatement.byteLength;
     }
     this.statementNameLength = this.statementName ? calcCStringByteLength(this.statementName) : 0;

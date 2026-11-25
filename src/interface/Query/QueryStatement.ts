@@ -9,9 +9,4 @@ export type SqlStatement = string | Uint8Array | PreparedStatement;
  * 表示可以包含多条 SQL 语句的查询对象
  * @public
  */
-export type SqlStatements =
-  | string
-  | Uint8Array
-  | Blob
-  | PreparedStatement
-  | ArrayLike<string | Uint8Array | Blob | PreparedStatement>;
+export type SqlStatements = string | Uint8Array | Blob;

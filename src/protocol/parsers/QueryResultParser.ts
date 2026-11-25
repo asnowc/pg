@@ -13,10 +13,10 @@ export class QueryResultParser<D = unknown> {
   private rowCount: number | null = null;
 
   constructor(
-    resolve: (resolver: QueryParserResult<D>) => void,
-    readonly reject: (reason: unknown) => void,
-    readonly getResultDecoder: ((info: DecodeRowDescriptionResult) => PgColumnDataDecoder) | undefined,
-    readonly taskType: ReceiverType.ExtendedQuery | ReceiverType.SimpleQuery,
+    public resolve: (resolver: QueryParserResult<D>) => void = () => {},
+    public reject: (reason: unknown) => void = () => {},
+    readonly getResultDecoder?: (info: DecodeRowDescriptionResult) => PgColumnDataDecoder,
+    readonly taskType?: ReceiverType.ExtendedQuery | ReceiverType.SimpleQuery,
   ) {
     this.#resolve = resolve;
   }

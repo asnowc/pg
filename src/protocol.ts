@@ -5,3 +5,4 @@ export * from "./protocol/encode.ts";
 export * from "./protocol/auth.ts";
 export * from "./protocol/PgSession.ts";
 export * from "./protocol/static_frame.ts";
+export * from "./protocol/QueryPortal.ts";

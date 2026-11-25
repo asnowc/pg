@@ -3,7 +3,7 @@ import type {
   CursorOpenOptions,
   CursorQueryOperation,
   MultipleQueryOperation,
-  MultipleQueryReader,
+  MultipleQueryReader as IMultipleQueryReader,
   QueryOptions,
   QueryReader as IQueryReader,
   SingleQueryOperation,
@@ -19,7 +19,8 @@ import { PgSession } from "@/protocol/PgSession.ts";
 import Transaction from "./private/Transaction.ts";
 import { HandleUnavailableError } from "@/_utils/error.ts";
 import { isolationQuery } from "@/class/private/QueryFunction.ts";
-import Cursor from "@/class/private/Cursor.ts";
+import Cursor from "./private/Cursor.ts";
+import MultipleQueryReader from "./private/MultipleQueryReader.ts";
 
 export class QueryOperation
   implements MultipleQueryOperation, SingleQueryOperation, CursorQueryOperation, TransactionQueryOperation
@@ -62,9 +63,8 @@ export class QueryOperation
   queryMultiple<T extends any[] = unknown[]>(
     queryable: SqlStatements,
     options?: QueryOptions & QueryOptionsWithDecoder,
-  ): MultipleQueryReader<T> {
-    if (typeof queryable !== "string") throw new TypeError("Only string simple queries are supported");
-    throw new Error("Not implemented");
+  ): IMultipleQueryReader<T> {
+    return new MultipleQueryReader(this.#transferWriter, queryable, options);
   }
   static isLocked(operation: QueryOperation): boolean {
     return operation.#writeLocked;

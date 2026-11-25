@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import { connectFromNet, PgAuthenticationError, type PgConnectOptions } from "@asla/pg";
 import fs from "node:fs/promises";
+import { NullByteError } from "@/_utils/error.ts";
 
 import { PUBLIC_DB_CONNECT_INFO } from "@test/utils/db.ts";
 const TLS_CA_FILE = "./test/fixtures/tls/ca.crt";
@@ -56,7 +57,7 @@ test("服务端 Startup 错误会拒绝连接", async () => {
 });
 
 test("拒绝包含 NUL 的 Startup 参数", async () => {
-  await expect(authenticate({ user: USER.scram, database: "invalid\0name" })).rejects.toThrow("NUL");
+  await expect(authenticate({ user: USER.scram, database: "invalid\0name" })).rejects.toThrow(NullByteError);
 });
 
 test("服务端拒绝客户端选择的不支持 SASL 机制", async () => {
