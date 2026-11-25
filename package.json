@@ -7,6 +7,7 @@
   "scripts": {
     "check:type": "tsc --noEmit",
     "check:fmt": "oxfmt --check .",
+    "test": "vitest run",
     "ci:test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "build": "rolldown -c"

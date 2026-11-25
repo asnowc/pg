@@ -59,7 +59,7 @@ export default class Transaction implements ITransaction {
   }
 
   open<T>(queryable: SqlStatement, options?: CursorOpenOptions & QueryOptionsWithDecoder): ICursor<T> {
-    return new Cursor<T>(this.transferGetWriter, (session) => (this.session = session), queryable, options);
+    return new Cursor<T>(this.transferGetWriter(), (session) => (this.session = session), queryable, options);
   }
 
   async savePoint(name: string): Promise<void> {

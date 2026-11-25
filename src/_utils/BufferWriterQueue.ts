@@ -84,7 +84,7 @@ export class BufferWriterQueue {
         case QueueItemType.Data: {
           this.setPendingWrite(this.#writer.writeData(item.data));
           this.shift();
-          break;
+          return;
         }
         case QueueItemType.Close: {
           const promise = this.#writer.writeOffset > 0 ? this.#writer.flush().then(this.onClose) : this.onClose();

@@ -1,6 +1,5 @@
 import { Cursor as ICursor, CursorOpenOptions, FieldInfo, QueryCompletion, SqlStatement } from "@/interface/Query.ts";
 import { createTypedSqlStatement } from "./sql_statement.ts";
-import { GetPgSession } from "./QueryFunction.ts";
 import { PgSession } from "@/protocol/PgSession.ts";
 import { QueryOptionsWithDecoder } from "@/interface/Query/_internal.ts";
 import { MaybePromise, processMaybePromise } from "@/_utils/AsyncAble.ts";
@@ -9,12 +8,11 @@ import { HandleUnavailableError } from "@/_utils/error.ts";
 
 export default class Cursor<T> implements ICursor<T> {
   constructor(
-    getSession: GetPgSession,
+    session: MaybePromise<PgSession>,
     private readonly onRelease: (writer: PgSession) => void,
     queryable: SqlStatement,
     options: CursorOpenOptions & QueryOptionsWithDecoder = {},
   ) {
-    let session = getSession();
     const statement = createTypedSqlStatement(queryable, options);
     if (session instanceof Promise) {
       const fields = Promise.withResolvers<Readonly<FieldInfo>[]>();

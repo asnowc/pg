@@ -8,6 +8,14 @@
   API。新增能力从该入口导出，不要创建实验性子路径。
 - 连接、连接池、查询、游标和 COPY API 是长期支持的主 API。
 
+## 技术栈
+
+- 语言与模块：TypeScript、ES Modules，使用显式 `.ts` 导入后缀。
+- 主项目开发使用 Node.js；基准测试使用 Deno。
+- 数据库：PostgreSQL，直接实现 Frontend/Backend Protocol 3.0。
+- 包管理与构建：pnpm、Rolldown。
+- 质量与测试：TypeScript 类型检查、oxfmt 格式化、Vitest 和 V8 覆盖率；集成测试使用 Docker Compose 运行 PostgreSQL。
+
 ## 架构边界
 
 - 协议编解码、认证和传输位于底层；连接生命周期、查询、游标和 COPY 位于其上层。修改时定位直接拥有该行为的模块，
@@ -52,7 +60,7 @@
 
 ## 基准测试
 
-- `benchmark/` 使用独立的 `deno.json` 与 `package.json`，命令在该目录下执行。
+- `benchmark/` 使用独立的 `package.json`，基准命令在该目录下执行。
 - [benchmark/deps](../benchmark/deps/) 下的 `bench/`、`bench-cli/` 及入口 `bench.ts`、`bench-cli.ts`
   是通用基准工具，将来会独立为单独的仓库：
   - 不得引用 `@asla/pg`、`src/` 或 `benchmark/` 下的项目代码；项目相关内容放在 `benchmark/client`、`benchmark/test` 和

@@ -56,7 +56,7 @@ export class QueryOperation
     queryable: SqlStatement | TypedSqlStatement<T>,
     options?: CursorOpenOptions & QueryOptionsWithDecoder,
   ): ICursor<T> {
-    return new Cursor<T>(this.#transferWriter, this.#releaseWriter, queryable, options);
+    return new Cursor<T>(this.#transferWriter(), this.#releaseWriter, queryable, options);
   }
 
   queryMultiple<T extends any[] = unknown[]>(

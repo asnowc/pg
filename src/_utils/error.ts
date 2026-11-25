@@ -38,10 +38,10 @@ export class HandleUnavailableError extends Error {
     super(message);
   }
 }
-
+//TODO: 给 Error 分类
 export function throwRewrittenError(e: unknown): never {
   if (e instanceof Error) {
-    Error.captureStackTrace(e);
+    e = new Error("query field", { cause: e });
   } else {
     e = new Error(String(e));
   }

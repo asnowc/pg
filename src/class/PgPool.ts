@@ -298,7 +298,7 @@ export class PgPool
     queryable: SqlStatement | TypedSqlStatement<T>,
     options?: CursorOpenOptions & QueryOptionsWithDecoder,
   ): ICursor<T> {
-    return new Cursor<T>(this.#getSession, this.#onRelease, queryable, options);
+    return new Cursor<T>(this.#getSession(), this.#onRelease, queryable, options);
   }
   queryMultiple<T extends any[] = unknown[]>(
     queryable: SqlStatements,

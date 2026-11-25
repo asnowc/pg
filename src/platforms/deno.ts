@@ -1,1 +1,1 @@
-export * from "./deno/connect.ts";
+export * from "./deno/tcp_connect.ts";

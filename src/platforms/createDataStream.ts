@@ -1,7 +1,7 @@
 import type { DataStream } from "@/_utils/DataStream.ts";
 import { Duplex } from "node:stream";
-import { NetConnBufferStream } from "./NetConnBufferStream.ts";
-import { DuplexBufferStream } from "./DuplexAdapter.ts";
+import { NetConnBufferStream } from "@/_utils/NetConnBufferStream.ts";
+import { DuplexBufferStream } from "./node.ts";
 import { ConnectionSource } from "@/interface/Connection.ts";
 
 export function createDataStream<T extends ConnectionSource>(source: T): DataStream {

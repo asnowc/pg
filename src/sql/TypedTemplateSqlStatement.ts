@@ -61,12 +61,12 @@ export class TypedTemplateSqlStatement<T = unknown> extends TypedSqlStatement<T>
     }
     return this.#sql;
   }
-  override getResultDecoder(field: FieldInfo): PgColumnDataDecoder {
+  override getResultDecoder = (field: FieldInfo): PgColumnDataDecoder => {
     const decoder = this.#decoderMap.get(field.typeOID);
     if (!decoder) throw new NoDecoderError(field.typeOID, field.name, field.index);
     if (typeof decoder === "function") return decoder();
     return decoder;
-  }
+  };
   override toString(): string {
     return this.toSql();
   }

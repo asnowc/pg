@@ -1,4 +1,3 @@
-import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
 import { DataRowDecoder, decodeCommandComplete, DecodeRowDescriptionResult } from "../decode.ts";
 import { QueryParserResult, ReceiverType } from "./QueryTask.ts";
 import { ReadableBuffer } from "@/_utils/ReadBuffer.ts";

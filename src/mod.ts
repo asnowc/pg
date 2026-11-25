@@ -9,7 +9,7 @@ export * from "./error.ts";
 export * from "./impl/mod.ts"; // 废弃
 export * from "./abstract/mod.ts"; // 废弃
 
-export * from "./implement.ts";
+export * from "./platform.ts";
 
 export * from "./class.ts";
 export * from "./sql.ts";
