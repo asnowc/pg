@@ -80,7 +80,7 @@ export class PgSession extends EventEmitter {
   }
   async close(): Promise<void> {
     if (!this.#closedInfo) {
-      this.#closedInfo = this.queryWriter.close();
+      this.#closedInfo = this.queryWriter.terminate();
     }
     await this.#closedInfo;
   }

@@ -1,5 +1,5 @@
 import type { FieldInfo, TransactionMode } from "@/interface/Query.ts";
-import { PreparedStatement, TypedSqlStatement } from "@/class/PreparedStatement.ts";
+import { PreparedStatement } from "@/class/PreparedStatement.ts";
 import { throwRewrittenError } from "@/_utils/error.ts";
 import { ReceiverType } from "./parsers/QueryTask.ts";
 import { QueryReadQueue } from "./MessageReadQueue.ts";
@@ -26,12 +26,12 @@ export class QueryWriteQueue {
     private writer: BufferWriterQueue,
     private readonly readQueue: QueryReadQueue,
   ) {}
-
-  prepare(portal: StatementPortal) {
-    this.writer.pushEncoder(new ParseMessageEncoder(portal.statement));
-    this.writer.pushEncoder(new BindMessageEncoder(portal.statement, portal.portalName));
+  parse(statement: PreparedStatement) {
+    this.writer.pushEncoder(new ParseMessageEncoder(statement));
   }
-
+  bind(statement: PreparedStatement, portalName?: string) {
+    this.writer.pushEncoder(new BindMessageEncoder(statement, portalName));
+  }
   describe(portal: StatementPortal, resolve?: OkCallBack<FieldInfo[]>, reject?: ErrorCallBack) {
     const parser = new RowDescriptionParser((fields) => {
       portal.setFields(fields);
@@ -62,43 +62,42 @@ export class QueryWriteQueue {
       this.writer.pushEncoder(getClosePortalMessageEncoder(statement.portalName));
     }).catch(throwRewrittenError);
   }
+
   query(portal: MultipleStatementPortal): void {
-    this.readQueue.push(
-      new RowDescriptionParser(
-        (fields) => portal.setFields(fields),
-        () => {},
-      ),
-    );
+    this.readQueue.push(new RowDescriptionParser((fields) => portal.setFields(fields)));
     this.readQueue.push(portal);
     this.writer.pushEncoder(new QueryMessageEncoder(portal.encoder, portal.statementsLength));
   }
 
   beginTransaction(mode?: TransactionMode): void {
-    const statement = new TypedSqlStatement("BEGIN" + (mode ? " ISOLATION LEVEL " + mode : ""));
+    const statement = new PreparedStatement("BEGIN" + (mode ? " ISOLATION LEVEL " + mode : ""));
     writeExtended(this.writer, statement);
     this.readQueue.push({ taskType: ReceiverType.StartTransaction });
   }
   commitTransaction() {
-    const statement = new TypedSqlStatement("COMMIT");
+    const statement = new PreparedStatement("COMMIT");
     writeExtended(this.writer, statement);
     this.readQueue.push({ taskType: ReceiverType.EndTransaction });
     this.sync();
   }
   rollbackTransaction() {
-    const statement = new TypedSqlStatement("ROLLBACK");
+    const statement = new PreparedStatement("ROLLBACK");
     writeExtended(this.writer, statement);
     this.readQueue.push({ taskType: ReceiverType.EndTransaction });
     this.sync();
   }
-  destroy() {
-    this.writer.clear();
-  }
-  close(): Promise<void> {
+
+  terminate(): Promise<void> {
     this.writer.pushEncoder(TerminateFrame);
     return this.writer.pushClose();
   }
+
+  prepare(portal: StatementPortal) {
+    this.parse(portal.statement);
+    this.bind(portal.statement, portal.portalName);
+  }
 }
-function writeExtended(writer: BufferWriterQueue, statement: TypedSqlStatement) {
+function writeExtended(writer: BufferWriterQueue, statement: PreparedStatement) {
   writer.pushEncoder(new ParseMessageEncoder(statement));
   writer.pushEncoder(new BindMessageEncoder(statement));
   writer.pushData(FRAME.DESCRIBE_PORTAL_ANONYMOUS);
