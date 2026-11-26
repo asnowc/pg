@@ -1,9 +1,9 @@
 import { PgColumnDataDecoder } from "@/interface/pg_data_decoder.ts";
-import { FieldInfo, SqlStatements } from "@/interface/Query.ts";
+import { FieldInfo, SqlStatement, SqlStatements } from "@/interface/Query.ts";
 import { BufferEncoder, Uint8ArrayEncoder, UTF16BufferEncoder } from "./encoder/_common.ts";
 import { calcCStringByteLength } from "@/_utils/string.ts";
 import { NullByteError } from "@/_utils/error.ts";
-import { PreparedStatement } from "@/class/PreparedStatement.ts";
+import { PreparedStatement, TypedSqlStatement } from "@/class/PreparedStatement.ts";
 import { QueryResultParser } from "./parsers/QueryResultParser.ts";
 import { QueryParserResult, ReceiverType } from "./parsers/QueryTask.ts";
 
@@ -21,15 +21,18 @@ export interface QueryPortal {
 }
 
 export class StatementPortal extends QueryResultParser implements QueryPortal {
-  constructor(
-    readonly statement: PreparedStatement,
-    options: QueryPortalOptions = {},
-  ) {
+  constructor(statement: SqlStatement | TypedSqlStatement, options: QueryPortalOptions = {}) {
     super(options.resolve, options.reject, options.getResultDecoder, ReceiverType.ExtendedQuery);
     this.onNotice = options.onNotice;
     this.getResultDecoder = options.getResultDecoder;
-    super(options?.resolve, options?.reject);
+    if (typeof statement === "string" || statement instanceof Uint8Array) {
+      statement = new PreparedStatement(statement);
+    } else if (statement instanceof TypedSqlStatement) {
+      this.getResultDecoder = statement.getResultDecoder;
+    }
+    this.statement = statement;
   }
+  readonly statement: PreparedStatement;
   onNotice?: (info: { notice: string }) => void;
   getResultDecoder?: (field: FieldInfo) => PgColumnDataDecoder;
   readonly portalName?: string | undefined;

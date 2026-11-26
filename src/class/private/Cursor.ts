@@ -1,10 +1,10 @@
 import { Cursor as ICursor, CursorOpenOptions, FieldInfo, QueryCompletion, SqlStatement } from "@/interface/Query.ts";
-import { createTypedSqlStatement } from "./sql_statement.ts";
 import { PgSession } from "@/protocol/PgSession.ts";
 import { QueryOptionsWithDecoder } from "@/interface/Query/_internal.ts";
 import { MaybePromise, processMaybePromise } from "@/_utils/AsyncAble.ts";
-import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
 import { HandleUnavailableError } from "@/_utils/error.ts";
+import { StatementPortal } from "@/protocol.ts";
+import { QueryParserResult } from "@/protocol/parsers/QueryTask.ts";
 
 export default class Cursor<T> implements ICursor<T> {
   constructor(
@@ -13,23 +13,16 @@ export default class Cursor<T> implements ICursor<T> {
     queryable: SqlStatement,
     options: CursorOpenOptions & QueryOptionsWithDecoder = {},
   ) {
-    const statement = createTypedSqlStatement(queryable, options);
-    if (session instanceof Promise) {
-      const fields = Promise.withResolvers<Readonly<FieldInfo>[]>();
-      this.fields = fields.promise;
-      this.fields.catch(() => {});
-      session = session.then((session) => {
-        this.#session = session;
-        session.queryWriter.openCursor(statement).then(fields.resolve, fields.reject);
-        return session;
-      });
-      session.catch(() => {});
-    } else {
-      this.fields = session.queryWriter.openCursor(statement);
-    }
-    this.#session = session;
-    this.#statement = statement;
+    this.#portal = new StatementPortal(queryable, options);
     this.#completion = Promise.withResolvers<QueryCompletion>();
+    const { promise, reject, resolve } = Promise.withResolvers<Readonly<FieldInfo>[]>();
+    this.fields = promise;
+    this.#session = processMaybePromise(session, (session) => {
+      const { queryWriter } = session;
+      queryWriter.prepare(this.#portal);
+      queryWriter.describe(this.#portal, resolve, reject);
+      return session;
+    });
   }
   #session?: MaybePromise<PgSession>;
   #getSession() {
@@ -40,16 +33,23 @@ export default class Cursor<T> implements ICursor<T> {
   get completion(): Promise<QueryCompletion> {
     return this.#completion.promise;
   }
-  #statement: TypedSqlStatement;
+  #portal: StatementPortal;
   fields: Promise<Readonly<FieldInfo>[]>;
   async read(maxRows: number): Promise<T[]> {
-    const result = await processMaybePromise(this.#getSession(), (session) => {
-      return session.queryWriter.executePortal<T>(this.#statement, maxRows);
+    const result = await processMaybePromise(this.#getSession(), ({ queryWriter }) => {
+      return new Promise<QueryParserResult<any>>((resolve, reject) => {
+        queryWriter.execute(this.#portal, maxRows);
+        //TODO: 当前并发执行 read 会导致回调被覆盖，需要支持并发 execute
+        this.#portal.resolve = resolve;
+        this.#portal.reject = reject;
+      });
     });
     this.rowsRead += result.rows.length;
     if (result.completed) {
       this.#completion.resolve({ notices: result.notices, rowCount: result.rowCount });
-      this.#release();
+      const session = this.#session as PgSession;
+      session.queryWriter.sync();
+      this.#release(session);
     }
     return result.rows;
   }
@@ -61,17 +61,21 @@ export default class Cursor<T> implements ICursor<T> {
       yield* rows;
     } while (rows.length);
   }
-  #release() {
-    this.onRelease(this.#session as PgSession);
+  #release(session: PgSession) {
+    this.#session = undefined;
     this.#closed = true;
+    this.onRelease(session);
   }
   #closed?: Promise<void> | undefined | true;
   async close(): Promise<void> {
     if (this.#closed == undefined) {
       this.#closed = processMaybePromise(this.#getSession(), (session) => {
-        return session.queryWriter.closePortal(this.#statement).then(() => {
+        const promise = session.queryWriter.closePortal(this.#portal).finally(() => {
           this.#completion.reject(new Error("Cursor has been closed"));
         });
+        session.queryWriter.sync();
+        this.#release(session);
+        return promise;
       });
     }
     await this.#closed;

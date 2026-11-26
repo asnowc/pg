@@ -281,6 +281,9 @@ class DescribeCloseMessageEncoder implements BufferEncoder {
 export function getDescribeMessageEncoder(name?: string): BufferEncoder {
   return new DescribeCloseMessageEncoder(FrontendMessageCode.Describe, DescribeTarget.Portal, name);
 }
-export function getCloseMessageEncoder(name?: string): BufferEncoder {
+export function getClosePortalMessageEncoder(name?: string): BufferEncoder {
   return new DescribeCloseMessageEncoder(FrontendMessageCode.Close, DescribeTarget.Portal, name);
+}
+export function getCloseStatementMessageEncoder(name?: string): BufferEncoder {
+  return new DescribeCloseMessageEncoder(FrontendMessageCode.Close, DescribeTarget.Statement, name);
 }

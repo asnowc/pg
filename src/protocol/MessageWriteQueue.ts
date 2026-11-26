@@ -1,14 +1,14 @@
-import type { FieldInfo, SqlStatements, TransactionMode } from "@/interface/Query.ts";
-import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
+import type { FieldInfo, TransactionMode } from "@/interface/Query.ts";
+import { PreparedStatement, TypedSqlStatement } from "@/class/PreparedStatement.ts";
 import { throwRewrittenError } from "@/_utils/error.ts";
-import { QueryParserResult, ReceiverType } from "./parsers/QueryTask.ts";
-import { QueryResultParser } from "./parsers/QueryResultParser.ts";
+import { ReceiverType } from "./parsers/QueryTask.ts";
 import { QueryReadQueue } from "./MessageReadQueue.ts";
 import { FRAME } from "./static_frame.ts";
 import {
   BindMessageEncoder,
   ExecuteMessageEncoder,
-  getCloseMessageEncoder,
+  getClosePortalMessageEncoder,
+  getCloseStatementMessageEncoder,
   getDescribeMessageEncoder,
   ParseMessageEncoder,
   QueryMessageEncoder,
@@ -16,7 +16,10 @@ import {
 } from "./encode.ts";
 import { BufferWriterQueue } from "@/_utils/BufferWriterQueue.ts";
 import { RowDescriptionParser } from "./parsers/RowDescription.ts";
-import { MultipleStatementPortal, QueryPortalOptions, StatementPortal } from "./QueryPortal.ts";
+import { MultipleStatementPortal, StatementPortal } from "./QueryPortal.ts";
+
+type OkCallBack<T = undefined | void> = (fields: T) => void;
+type ErrorCallBack = (error: unknown) => void;
 
 export class QueryWriteQueue {
   constructor(
@@ -29,12 +32,14 @@ export class QueryWriteQueue {
     this.writer.pushEncoder(new BindMessageEncoder(portal.statement, portal.portalName));
   }
 
-  describe(portal: StatementPortal, resolve: (fields: FieldInfo[]) => void, reject: (error: unknown) => void) {
-    this.readQueue.push(new RowDescriptionParser(resolve, reject));
+  describe(portal: StatementPortal, resolve?: OkCallBack<FieldInfo[]>, reject?: ErrorCallBack) {
+    const parser = new RowDescriptionParser((fields) => {
+      portal.setFields(fields);
+      resolve?.(fields);
+    }, reject);
+    this.readQueue.push(parser);
     if (portal.portalName) this.writer.pushEncoder(getDescribeMessageEncoder(portal.portalName));
-    else {
-      this.writer.pushData(FRAME.DESCRIBE_PORTAL_ANONYMOUS);
-    }
+    else this.writer.pushData(FRAME.DESCRIBE_PORTAL_ANONYMOUS);
   }
   execute(portal: StatementPortal, maxRows: number = 0) {
     this.readQueue.push(portal);
@@ -43,11 +48,20 @@ export class QueryWriteQueue {
   flush() {
     this.writer.pushData(FRAME.FLUSH);
   }
-  sync(resolve?: () => void, reject?: (error: unknown) => void): void {
+  sync(resolve?: (data?: undefined) => void, reject?: ErrorCallBack): void {
     this.writer.pushData(FRAME.SYNC);
     this.readQueue.enqueueSync(resolve, reject);
   }
-
+  closeStatement(statement: PreparedStatement, resolve?: OkCallBack, reject?: ErrorCallBack): void {
+    this.readQueue.push({ taskType: ReceiverType.CloseStatement, resolve, reject });
+    this.writer.pushEncoder(getCloseStatementMessageEncoder(statement.statementName));
+  }
+  closePortal(statement: StatementPortal): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.readQueue.push({ taskType: ReceiverType.ClosePortal, resolve, reject });
+      this.writer.pushEncoder(getClosePortalMessageEncoder(statement.portalName));
+    }).catch(throwRewrittenError);
+  }
   query(portal: MultipleStatementPortal): void {
     this.readQueue.push(
       new RowDescriptionParser(
@@ -57,56 +71,6 @@ export class QueryWriteQueue {
     );
     this.readQueue.push(portal);
     this.writer.pushEncoder(new QueryMessageEncoder(portal.encoder, portal.statementsLength));
-  }
-
-  extendedQuery<T>(statement: TypedSqlStatement): Promise<QueryParserResult<T>> {
-    return new Promise<QueryParserResult<T>>((resolve, reject) => {
-      const parser = new QueryResultParser<any>(
-        resolve,
-        reject,
-        statement.getResultDecoder,
-        ReceiverType.ExtendedQuery,
-      );
-      this.readQueue.push(new RowDescriptionParser((fields) => parser.setFields(fields), reject));
-      this.readQueue.push(parser);
-      writeExtended(this.writer, statement);
-      this.writer.pushData(FRAME.FLUSH);
-    }).catch(throwRewrittenError);
-  }
-  openCursor(statement: TypedSqlStatement): Promise<FieldInfo[]> {
-    return new Promise<FieldInfo[]>((resolve, reject) => {
-      this.readQueue.push(new RowDescriptionParser(resolve, reject));
-      this.writer.pushEncoder(new ParseMessageEncoder(statement));
-      this.writer.pushEncoder(new BindMessageEncoder(statement));
-      this.writer.pushData(FRAME.DESCRIBE_PORTAL_ANONYMOUS);
-    }).catch(throwRewrittenError);
-  }
-  executePortal<T>(statement: TypedSqlStatement, maxRows: number = 0): Promise<QueryParserResult<T>> {
-    return new Promise<QueryParserResult<T>>((resolve, reject) => {
-      const parser = new QueryResultParser(
-        <any>resolve,
-        reject,
-        statement.getResultDecoder,
-        ReceiverType.ExtendedQuery,
-      );
-      this.readQueue.push(parser);
-      this.writer.pushEncoder(new ExecuteMessageEncoder(maxRows));
-      this.writer.pushData(FRAME.FLUSH);
-    }).catch(throwRewrittenError);
-  }
-  closePortal(statement: TypedSqlStatement): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      this.readQueue.push({ taskType: ReceiverType.ClosePortal, resolve, reject });
-      this.writer.pushEncoder(getCloseMessageEncoder(statement.statementName));
-      this.sync();
-    }).catch(throwRewrittenError);
-  }
-
-  simpleQuery(portal: MultipleStatementPortal): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      this.query(portal);
-      this.sync(resolve, reject);
-    });
   }
 
   beginTransaction(mode?: TransactionMode): void {

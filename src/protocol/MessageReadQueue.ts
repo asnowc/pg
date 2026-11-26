@@ -151,11 +151,15 @@ export class QueryReadQueue {
     parsers.set(MSCode.BindComplete, (body) => {});
     parsers.set(MSCode.CloseComplete, (body) => {
       const current = this.getReceiver();
-      if (current.taskType !== ReceiverType.ClosePortal) {
-        throw new InternalError("Unexpected CloseComplete for a non-close task");
+      switch (current.taskType) {
+        case ReceiverType.CloseStatement:
+        case ReceiverType.ClosePortal:
+          break;
+        default:
+          throw new InternalError("Unexpected CloseComplete for a non-close task");
       }
       this.shift();
-      current.resolve();
+      current.resolve?.();
     });
     parsers.set(MSCode.ParseComplete, (body) => {});
   }

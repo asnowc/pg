@@ -30,12 +30,14 @@ export default class MultipleQueryReader<T extends any[] = unknown[]> implements
   }
 
   allResults(): Promise<QueryResult<T[number]>[]> {
-    return this.getSession(async (session) => {
+    return this.getSession(({ queryWriter }) => {
       return new Promise<QueryResult<T[number]>[]>((resolve, reject) => {
         const items: QueryResult<unknown>[] = [];
         this.#portal.resolve = (result) => items.push(result);
         this.#portal.reject = reject;
-        session.queryWriter.simpleQuery(this.#portal).then(() => resolve(items as QueryResult<T[number]>[]), reject);
+        queryWriter.query(this.#portal);
+        queryWriter.sync(() => resolve(items as QueryResult<T[number]>[]), reject);
+        queryWriter.flush();
       });
     });
   }
@@ -44,19 +46,30 @@ export default class MultipleQueryReader<T extends any[] = unknown[]> implements
     return results[results.length - 1].rows as R;
   }
   lastResults<T>(): Promise<QueryResult<T>> {
-    return this.getSession(async (session) => {
-      let last: QueryResult<any> | undefined;
-      //TODO: 避免解码不需要的语句结果
-      this.#portal.resolve = (result) => (last = result);
-      await session.queryWriter.simpleQuery(this.#portal);
-      if (!last) throw new Error("No results returned");
-      return last;
+    return this.getSession(({ queryWriter }) => {
+      return new Promise<QueryResult<T>>((resolve, reject) => {
+        let last: QueryResult<any> | undefined;
+        //TODO: 避免解码不需要的语句结果
+        this.#portal.resolve = (result) => (last = result);
+        this.#portal.reject = reject;
+
+        queryWriter.query(this.#portal);
+        queryWriter.sync(() => {
+          if (!last) throw new Error("No results returned");
+          return resolve(last);
+        }, reject);
+        queryWriter.flush();
+      });
     });
   }
   then<T>(onfulfilled?: (data: undefined) => T, onrejected?: (reason: unknown) => void): Promise<T>;
   then(onfulfilled?: (data: undefined) => unknown, onrejected?: (reason: unknown) => void): Promise<unknown> {
-    return this.getSession((session) => {
-      return session.queryWriter.simpleQuery(this.#portal).then(() => onfulfilled?.(undefined), onrejected);
+    return this.getSession(({ queryWriter }) => {
+      return new Promise<undefined>((resolve, reject) => {
+        queryWriter.query(this.#portal);
+        queryWriter.flush();
+        queryWriter.sync(resolve, reject);
+      }).then(onfulfilled, onrejected);
     });
   }
 }
