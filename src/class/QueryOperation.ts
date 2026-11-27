@@ -17,7 +17,7 @@ import { TypedSqlStatement } from "@/class/PreparedStatement.ts";
 import { QueryOptionsWithDecoder } from "@/interface/Query/_internal.ts";
 import { PgSession } from "@/protocol/PgSession.ts";
 import Transaction from "./private/Transaction.ts";
-import { HandleUnavailableError } from "@/_utils/error.ts";
+import { HandleUnavailableError } from "@/internal/error.ts";
 import { isolationQuery } from "@/class/private/QueryFunction.ts";
 import Cursor from "./private/Cursor.ts";
 import MultipleQueryReader from "./private/MultipleQueryReader.ts";

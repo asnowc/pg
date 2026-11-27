@@ -9,8 +9,8 @@ import type {
 } from "@/interface/Query.ts";
 import { QueryOptionsWithDecoder } from "@/interface/Query/_internal.ts";
 import { GetPgSession, relatedQuery } from "./QueryFunction.ts";
-import { MaybePromise, processMaybePromise } from "@/_utils/AsyncAble.ts";
-import { HandleUnavailableError } from "@/_utils/error.ts";
+import { MaybePromise, processMaybePromise } from "@/internal/AsyncAble.ts";
+import { HandleUnavailableError } from "@/internal/error.ts";
 import { PgSession } from "@/protocol.ts";
 import Cursor from "./Cursor.ts";
 

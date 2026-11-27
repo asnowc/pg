@@ -1,5 +1,5 @@
-import { WritableBuffer } from "@/_utils/WriterBuffer.ts";
-import { BufferEncoder } from "@/_utils/BufferWriterQueue.ts";
+import { WritableBuffer } from "@/internal/WriterBuffer.ts";
+import { BufferEncoder } from "@/internal/BufferWriterQueue.ts";
 import { FrontendMessageCode } from "../const.ts";
 
 export function encodeFrameHeaderInto(writer: WritableBuffer, code: FrontendMessageCode, bodyLength: number) {

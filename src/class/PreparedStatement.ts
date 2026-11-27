@@ -1,8 +1,8 @@
 import type { JsDataEncoder } from "@/interface/js_data_encoder.ts";
 import type { PgColumnDataDecoder } from "@/interface/pg_data_decoder.ts";
 import type { FieldInfo } from "@/interface/Query/QueryReader.ts";
-import { calcCStringByteLength } from "@/_utils/string.ts";
-import { NullByteError } from "@/_utils/error.ts";
+import { calcCStringByteLength } from "@/internal/string.ts";
+import { NullByteError } from "@/internal/error.ts";
 
 function templateStringsArrayToTemplate(chunks: ReadonlyArray<string>) {
   let template = chunks[0];

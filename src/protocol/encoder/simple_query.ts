@@ -1,4 +1,4 @@
-import { WritableBuffer } from "@/_utils/WriterBuffer.ts";
+import { WritableBuffer } from "@/internal/WriterBuffer.ts";
 import { BufferEncoder, encodeFrameHeaderInto } from "./_common.ts";
 import { FrontendMessageCode } from "../const.ts";
 

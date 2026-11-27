@@ -1,6 +1,6 @@
 import { DecodeRowDescriptionResult, RowDescriptionDecoder } from "../decode.ts";
 import { ReceiverType } from "./QueryTask.ts";
-import { ReadableBuffer } from "@/_utils/ReadBuffer.ts";
+import { ReadableBuffer } from "@/internal/ReadBuffer.ts";
 
 export class RowDescriptionParser {
   constructor(

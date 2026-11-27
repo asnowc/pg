@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest";
-import { WriteBuffer } from "@/_utils/WriterBuffer.ts";
-import { BufferWriterQueue } from "@/_utils/BufferWriterQueue.ts";
+import { WriteBuffer } from "@/internal/WriterBuffer.ts";
+import { BufferWriterQueue } from "@/internal/BufferWriterQueue.ts";
 
 function createWriter(size = 8, maxWrite = Infinity) {
   const output: number[] = [];

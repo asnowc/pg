@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { connectFromNet, PgAuthenticationError, type PgConnectOptions } from "@asla/pg";
 import fs from "node:fs/promises";
-import { NullByteError } from "@/_utils/error.ts";
+import { NullByteError } from "@/internal/error.ts";
 
 import { PUBLIC_DB_CONNECT_INFO } from "@test/utils/db.ts";
 const TLS_CA_FILE = "./test/fixtures/tls/ca.crt";

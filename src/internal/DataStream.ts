@@ -1,5 +1,5 @@
-import type { ReadableBuffer } from "@/_utils/ReadBuffer.ts";
-import type { WriteBuffer } from "@/_utils/WriterBuffer.ts";
+import type { ReadableBuffer } from "@/internal/ReadBuffer.ts";
+import type { WriteBuffer } from "@/internal/WriterBuffer.ts";
 
 export interface DataStream extends WriteBuffer {
   /**

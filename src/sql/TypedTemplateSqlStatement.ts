@@ -3,7 +3,7 @@ import { JsDataEncoder, JSDataEncoderMap } from "@/interface/js_data_encoder.ts"
 import { getJsDataEncoder } from "@/codec/js_data_encoder.ts";
 import { PgColumnDataDecoder, PgColumnDecoder } from "@/interface/pg_data_decoder.ts";
 import { FieldInfo } from "@/interface/Query.ts";
-import { NoDecoderError } from "@/_utils/error.ts";
+import { NoDecoderError } from "@/internal/error.ts";
 
 export let createTypedTemplateSqlStatement: <T>(
   chunks: TemplateStringsArray,

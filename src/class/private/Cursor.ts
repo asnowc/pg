@@ -1,10 +1,10 @@
 import { Cursor as ICursor, CursorOpenOptions, FieldInfo, QueryCompletion, SqlStatement } from "@/interface/Query.ts";
 import { PgSession } from "@/protocol/PgSession.ts";
 import { QueryOptionsWithDecoder } from "@/interface/Query/_internal.ts";
-import { MaybePromise, processMaybePromise } from "@/_utils/AsyncAble.ts";
-import { HandleUnavailableError } from "@/_utils/error.ts";
+import { MaybePromise, processMaybePromise } from "@/internal/AsyncAble.ts";
+import { HandleUnavailableError } from "@/internal/error.ts";
 import { StatementPortal } from "@/protocol.ts";
-import { QueryParserResult } from "@/protocol/parsers/QueryTask.ts";
+import { QueryParserResult } from "@/protocol/QueryPortal.ts";
 
 export default class Cursor<T> implements ICursor<T> {
   constructor(

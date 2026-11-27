@@ -1,6 +1,6 @@
-import { ReadableBuffer } from "@/_utils/ReadBuffer.ts";
+import { ReadableBuffer } from "@/internal/ReadBuffer.ts";
 import { MessageParser } from "./_common.ts";
-import { PgProtocolError } from "@/_utils/error.ts";
+import { PgProtocolError } from "@/internal/error.ts";
 import { PgColumnDataDecoder } from "@/interface/pg_data_decoder.ts";
 import { DecodeRowDescriptionResult } from "./RowDescriptionDecoder.ts";
 import { PgFormat } from "../const.ts";

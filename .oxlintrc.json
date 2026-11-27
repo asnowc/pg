@@ -1,0 +1,9 @@
+{
+  "categories": {
+    "correctness": "off"
+  },
+  "jsPlugins": ["./tools/import-boundary.mjs"],
+  "rules": {
+    "import-boundary/boundaries": ["error"]
+  }
+}

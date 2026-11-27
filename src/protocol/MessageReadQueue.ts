@@ -1,16 +1,14 @@
 import { MessageParsers } from "./parsers/MessageParser.ts";
 import { BackendMessageCode, PgTransactionStatus } from "./const.ts";
-import { InternalError } from "@/_utils/error.ts";
-import { CloseReceiver, EmptyReceiver, ReceiverType } from "./parsers/QueryTask.ts";
+import { InternalError } from "@/internal/error.ts";
 import { decodeError, decodeNotice, decodeNotification, decodeParameterStatus, decodeReadyForQuery } from "./decode.ts";
 import { PgDatabaseError, PreviousQueryError } from "@/error.ts";
 import { AsyncMessageType } from "@/interface/protocol.ts";
 import type { QueryWriteQueue } from "./MessageWriteQueue.ts";
-import { CountLinkList, eachLink } from "@/_utils/LinkList.ts";
-import { QueryResultParser } from "./parsers/QueryResultParser.ts";
-import { RowDescriptionParser } from "./parsers/RowDescription.ts";
+import { CountLinkList, eachLink } from "@/internal/LinkList.ts";
+import { QueryPortal, CloseReceiver, EmptyReceiver, ReceiverType, RowDescriptionParser } from "./QueryPortal.ts";
 
-type ResultReceiver = QueryResultParser | EmptyReceiver | CloseReceiver | RowDescriptionParser;
+type ResultReceiver = QueryPortal | EmptyReceiver | CloseReceiver | RowDescriptionParser;
 
 const MSCode = BackendMessageCode;
 
@@ -169,7 +167,7 @@ export class QueryReadQueue {
     return receiver;
   }
 
-  private getResultReceiver(): QueryResultParser {
+  private getResultReceiver(): QueryPortal {
     const query = this.getReceiver();
     if (!isQueryReceiver(query)) {
       throw new InternalError("Unexpected message: current query is not a query result receiver");
@@ -205,7 +203,7 @@ export class QueryReadQueue {
   readonly parameters: Record<string, string> = {};
 }
 
-function isQueryReceiver(receiver: ResultReceiver): receiver is QueryResultParser {
+function isQueryReceiver(receiver: ResultReceiver): receiver is QueryPortal {
   return receiver.taskType === ReceiverType.ExtendedQuery || receiver.taskType === ReceiverType.SimpleQuery;
 }
 

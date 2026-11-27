@@ -3,7 +3,7 @@ import { getJsDataEncoder, JS_DATA_ENCODER_V1 } from "@/codec/js_data_encoder.ts
 import { PG_DATA_DECODER_V1 } from "@/codec/pg_data_decoder.ts";
 import type { JsDataEncoder } from "@/interface/js_data_encoder.ts";
 import { PgOid } from "@/util/pg_oid.ts";
-import { ReadBuffer } from "@/_utils/ReadBuffer.ts";
+import { ReadBuffer } from "@/internal/ReadBuffer.ts";
 const encoderV1 = JS_DATA_ENCODER_V1;
 
 function getDecoder(oid: PgOid) {

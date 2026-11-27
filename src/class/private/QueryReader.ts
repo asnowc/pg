@@ -1,5 +1,5 @@
 import type { QueryCompletion, QueryReader as IQueryReader, QueryResult } from "@/interface/Query.ts";
-import { QueryParserResult } from "@/protocol/parsers/QueryTask.ts";
+import { QueryParserResult } from "@/protocol/QueryPortal.ts";
 
 export default class QueryReader<T = unknown> implements IQueryReader<T> {
   constructor(sendExtendQuery: () => Promise<QueryParserResult<T>>) {

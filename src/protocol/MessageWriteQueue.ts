@@ -1,7 +1,6 @@
 import type { FieldInfo, TransactionMode } from "@/interface/Query.ts";
 import { PreparedStatement } from "@/class/PreparedStatement.ts";
-import { throwRewrittenError } from "@/_utils/error.ts";
-import { ReceiverType } from "./parsers/QueryTask.ts";
+import { throwRewrittenError } from "@/internal/error.ts";
 import { QueryReadQueue } from "./MessageReadQueue.ts";
 import { FRAME } from "./static_frame.ts";
 import {
@@ -14,9 +13,8 @@ import {
   QueryMessageEncoder,
   TerminateFrame,
 } from "./encode.ts";
-import { BufferWriterQueue } from "@/_utils/BufferWriterQueue.ts";
-import { RowDescriptionParser } from "./parsers/RowDescription.ts";
-import { MultipleStatementPortal, StatementPortal } from "./QueryPortal.ts";
+import { BufferWriterQueue } from "@/internal/BufferWriterQueue.ts";
+import { RowDescriptionParser, ReceiverType, MultipleStatementPortal, StatementPortal } from "./QueryPortal.ts";
 
 type OkCallBack<T = undefined | void> = (fields: T) => void;
 type ErrorCallBack = (error: unknown) => void;

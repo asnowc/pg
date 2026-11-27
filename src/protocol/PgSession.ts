@@ -2,10 +2,10 @@ import { QueryReadQueue } from "./MessageReadQueue.ts";
 import { QueryWriteQueue } from "./MessageWriteQueue.ts";
 import { AuthenticationResult } from "./auth.ts";
 import { MessageParsers } from "./parsers/MessageParser.ts";
-import type { DataStream } from "@/_utils/DataStream.ts";
-import { EventEmitter, Listener } from "@/_utils/EventEmitter.ts";
-import { SessionDestroyedError, UnexpectedEOFError } from "@/_utils/error.ts";
-import { BufferWriterQueue } from "@/_utils/BufferWriterQueue.ts";
+import type { DataStream } from "@/internal/DataStream.ts";
+import { EventEmitter, Listener } from "@/internal/EventEmitter.ts";
+import { SessionDestroyedError, UnexpectedEOFError } from "@/internal/error.ts";
+import { BufferWriterQueue } from "@/internal/BufferWriterQueue.ts";
 
 const DEFAULT_MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
 

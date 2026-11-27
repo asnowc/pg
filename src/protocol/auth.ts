@@ -1,13 +1,13 @@
 import type { PgAuthenticationExchangeOptions } from "@/interface/Connection.ts";
 import { AuthCode, BackendMessageCode, PgTransactionStatus } from "./const.ts";
 import { decodeBackendKeyData, decodeError, decodeNegotiateProtocolVersion, type PgBackendKeyData } from "./decode.ts";
-import { PgProtocolError, UnexpectedEOFError } from "@/_utils/error.ts";
+import { PgProtocolError, UnexpectedEOFError } from "@/internal/error.ts";
 import { MessageParsers } from "./parsers/MessageParser.ts";
-import type { DataStream } from "@/_utils/DataStream.ts";
+import type { DataStream } from "@/internal/DataStream.ts";
 import { AuthenticationData, AuthParser, getAuthParser } from "./parsers/AuthParser.ts";
-import { ReadBuffer } from "@/_utils/ReadBuffer.ts";
+import { ReadBuffer } from "@/internal/ReadBuffer.ts";
 import { PgAuthenticationError } from "@/error.ts";
-import { BufferWriterQueue } from "@/_utils/BufferWriterQueue.ts";
+import { BufferWriterQueue } from "@/internal/BufferWriterQueue.ts";
 
 const DEFAULT_MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
 

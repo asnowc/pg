@@ -1,5 +1,5 @@
 import { PgSession } from "@/protocol.ts";
-import { CountLinkList, eachLink, LinkList } from "@/_utils/LinkList.ts";
+import { CountLinkList, eachLink, LinkList } from "@/internal/LinkList.ts";
 import { PgConnection } from "@/class/PgConnection.ts";
 
 /**

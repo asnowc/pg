@@ -1,4 +1,4 @@
-import { InternalError } from "@/_utils/error.ts";
+import { InternalError } from "@/internal/error.ts";
 import { connect as connectTls } from "node:tls";
 import { connect, Socket } from "node:net";
 import { once } from "node:events";

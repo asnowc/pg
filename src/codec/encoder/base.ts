@@ -1,4 +1,4 @@
-import { calcCStringByteLength } from "@/_utils/string.ts";
+import { calcCStringByteLength } from "@/internal/string.ts";
 import type { JsDataEncoder, WriterBuffer } from "@/interface/js_data_encoder.ts";
 import { PgOid } from "@/util/pg_oid.ts";
 

@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { ReadBuffer } from "@/\u005futils/ReadBuffer.ts";
+import { ReadBuffer } from "@/internal/ReadBuffer.ts";
 
 test("compact 保留未读字节并允许继续追加", () => {
   const reader = new ReadBuffer(new Uint8Array(6));

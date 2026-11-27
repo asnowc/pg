@@ -1,7 +1,7 @@
 import { BackendMessageCode, NOTICE_STANDARD_FIELD_MAP, PgFormat, PgTransactionStatus } from "./const.ts";
 import type { PgErrorFields } from "./messages.ts";
-import { decodeUTF16String, findCStringTerminator } from "@/_utils/string.ts";
-import { PgProtocolError } from "@/_utils/error.ts";
+import { decodeUTF16String, findCStringTerminator } from "@/internal/string.ts";
+import { PgProtocolError } from "@/internal/error.ts";
 import { getFormat } from "./decoder/_common.ts";
 export * from "./decoder/DataRowDecoder.ts";
 export * from "./decoder/RowDescriptionDecoder.ts";

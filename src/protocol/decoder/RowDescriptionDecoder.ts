@@ -1,7 +1,7 @@
 import { PgFieldDescription } from "../messages.ts";
 import { getFormat, type MessageParser } from "./_common.ts";
 import { createCStringDecoder } from "./CStringDecoder.ts";
-import type { ReadableBuffer } from "@/_utils/ReadBuffer.ts";
+import type { ReadableBuffer } from "@/internal/ReadBuffer.ts";
 
 export type DecodeRowDescriptionResult = PgFieldDescription & { index: number };
 

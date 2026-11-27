@@ -1,5 +1,5 @@
 import { PreparedStatement } from "@/class/PreparedStatement.ts";
-import { WritableBuffer } from "@/_utils/WriterBuffer.ts";
+import { WritableBuffer } from "@/internal/WriterBuffer.ts";
 import {
   BufferEncoder,
   CStringEncoder,
@@ -10,7 +10,7 @@ import {
   UTF16BufferEncoder,
 } from "./_common.ts";
 import { CSTRING_TERMINATOR, DescribeTarget, FRAME_HEADER_LENGTH, FrontendMessageCode } from "../const.ts";
-import { calcCStringByteLength } from "@/_utils/string.ts";
+import { calcCStringByteLength } from "@/internal/string.ts";
 
 /**
  *  https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-PARSE

@@ -1,10 +1,18 @@
 import { DataRowDecoder, decodeCommandComplete, DecodeRowDescriptionResult } from "../decode.ts";
-import { QueryParserResult, ReceiverType } from "./QueryTask.ts";
-import { ReadableBuffer } from "@/_utils/ReadBuffer.ts";
+import { ReceiverType } from "./QueryTask.ts";
+import { ReadableBuffer } from "@/internal/ReadBuffer.ts";
 import { PgColumnDataDecoder } from "@/interface/pg_data_decoder.ts";
-import { skipData } from "./_common.ts";
+import { skipData } from "../parsers/_common.ts";
+import { FieldInfo } from "@/interface/Query.ts";
 
-export class QueryResultParser<D = unknown> {
+export interface QueryPortalOptions {
+  onNotice?: (info: { notice: string }) => void;
+  getResultDecoder?: (field: FieldInfo) => PgColumnDataDecoder;
+  resolve?: (data: QueryParserResult<any>) => void;
+  reject?: (error: unknown) => void;
+}
+
+export class QueryPortal<D = unknown> {
   private fields: DecodeRowDescriptionResult[] = [];
   private dataRowDecoder?: DataRowDecoder<Record<string, unknown>>;
   private failed = false;
@@ -12,15 +20,21 @@ export class QueryResultParser<D = unknown> {
   private notices: string[] = [];
   private rowCount: number | null = null;
 
+  onNotice?: (info: { notice: string }) => void;
+  getResultDecoder?: (field: FieldInfo) => PgColumnDataDecoder;
+  readonly portalName?: string;
+
   constructor(
-    public resolve: (resolver: QueryParserResult<D>) => void = () => {},
-    public reject: (reason: unknown) => void = () => {},
-    readonly getResultDecoder?: (info: DecodeRowDescriptionResult) => PgColumnDataDecoder,
-    readonly taskType?: ReceiverType.ExtendedQuery | ReceiverType.SimpleQuery,
+    readonly taskType: ReceiverType.ExtendedQuery | ReceiverType.SimpleQuery,
+    options: QueryPortalOptions,
   ) {
-    this.#resolve = resolve;
+    this.resolve = options.resolve;
+    this.reject = options.reject;
+    this.onNotice = options.onNotice;
+    this.getResultDecoder = options.getResultDecoder;
   }
-  #resolve: (resolver: QueryParserResult<D>) => void;
+  resolve?: (resolver: QueryParserResult<D>) => void;
+  reject?: (reason: unknown) => void;
   setFields(fields: DecodeRowDescriptionResult[]) {
     this.fields = fields;
     const statement = this.getResultDecoder;
@@ -29,7 +43,7 @@ export class QueryResultParser<D = unknown> {
     this.dataRowDecoder = new DataRowDecoder(decoders, fields);
   }
   finish(completed: boolean) {
-    this.#resolve({
+    this.resolve?.({
       completed: completed,
       notices: this.notices,
       rows: this.rows,
@@ -52,7 +66,7 @@ export class QueryResultParser<D = unknown> {
       row = this.dataRowDecoder.next(reader, remainingByteLength);
     } catch (error) {
       this.failed = true;
-      this.reject(error);
+      this.reject?.(error);
       const remaining = remainingByteLength - (reader.readableStart - start);
       return skipData(reader, Math.max(0, remaining));
     }
@@ -78,3 +92,10 @@ function decodeRowCount(commandTag: string): number {
   const match = / (\d+)\0?$/.exec(commandTag);
   return match ? Number(match[1]) : 0;
 }
+export type QueryParserResult<T = unknown> = {
+  readonly rows: T[];
+  readonly notices: string[];
+  readonly rowCount: number | null;
+  readonly fields: Readonly<DecodeRowDescriptionResult>[];
+  readonly completed: boolean;
+};

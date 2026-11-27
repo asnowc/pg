@@ -1,4 +1,4 @@
-import { ResourceManager, ResourcePool } from "@/_utils/ResourcePool.ts";
+import { ResourceManager, ResourcePool } from "@/internal/ResourcePool.ts";
 import { test as viTest, vi } from "vitest";
 export class MockConn {
   constructor(readonly id: number) {}

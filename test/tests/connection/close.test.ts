@@ -1,6 +1,6 @@
 import { createConn, test } from "@test/fixtures/db_connect.ts";
 import { expect } from "vitest";
-import { SessionClosedError, SessionDestroyedError } from "@/_utils/error.ts";
+import { SessionClosedError, SessionDestroyedError } from "@/internal/error.ts";
 
 test("重复关闭已关闭的连接会被忽略", async ({ conn }) => {
   await conn.close();

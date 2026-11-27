@@ -1,9 +1,9 @@
 import { MultipleQueryReader as IMultipleQueryReader, QueryOptions, SqlStatements } from "@/interface/Query.ts";
-import { processMaybePromise } from "@/_utils/AsyncAble.ts";
+import { processMaybePromise } from "@/internal/AsyncAble.ts";
 import { MultipleStatementPortal, PgSession } from "@/protocol.ts";
 import { QueryResult } from "../../interface/Query/QueryReader.ts";
 import { GetPgSession } from "@/class/private/QueryFunction.ts";
-import { HandleUnavailableError } from "@/_utils/error.ts";
+import { HandleUnavailableError } from "@/internal/error.ts";
 import { QueryOptionsWithDecoder } from "@/interface/Query/_internal.ts";
 
 export default class MultipleQueryReader<T extends any[] = unknown[]> implements IMultipleQueryReader<T> {

@@ -1,11 +1,11 @@
 import { PgAuthenticationError } from "@/error.ts";
 import type { PgAuthenticationExchangeOptions, PgSaslExchange } from "@/interface/Connection.ts";
-import { decodeUTF16String } from "@/_utils/string.ts";
+import { decodeUTF16String } from "@/internal/string.ts";
 import { AuthCode } from "../const.ts";
 import { encodePasswordMessage } from "../encode.ts";
-import { PgProtocolError } from "@/_utils/error.ts";
-import { ReadableBuffer } from "@/_utils/ReadBuffer.ts";
-import { BufferWriterQueue } from "@/_utils/BufferWriterQueue.ts";
+import { PgProtocolError } from "@/internal/error.ts";
+import { ReadableBuffer } from "@/internal/ReadBuffer.ts";
+import { BufferWriterQueue } from "@/internal/BufferWriterQueue.ts";
 
 export type AuthenticationData = true | Promise<void>;
 

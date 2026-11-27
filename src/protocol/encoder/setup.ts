@@ -1,5 +1,5 @@
 import { CSTRING_TERMINATOR, FRAME_HEADER_LENGTH, FrontendMessageCode, SSL_REQUEST_CODE } from "../const.ts";
-import { calcCStringByteLength, encodeUTF16StringInto } from "@/_utils/string.ts";
+import { calcCStringByteLength, encodeUTF16StringInto } from "@/internal/string.ts";
 
 /**
  * 仅发送 StartupMessage。

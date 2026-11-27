@@ -1,8 +1,8 @@
 import { Duplex } from "node:stream";
-import type { DataStream } from "@/_utils/DataStream.ts";
-import { InternalError } from "@/_utils/error.ts";
-import { type ReadableBuffer, ReadBuffer } from "@/_utils/ReadBuffer.ts";
-import { WriteBuffer } from "@/_utils/WriterBuffer.ts";
+import type { DataStream } from "@/internal/DataStream.ts";
+import { InternalError } from "@/internal/error.ts";
+import { type ReadableBuffer, ReadBuffer } from "@/internal/ReadBuffer.ts";
+import { WriteBuffer } from "@/internal/WriterBuffer.ts";
 
 export class DuplexBufferStream extends WriteBuffer implements DataStream {
   constructor(

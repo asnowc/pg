@@ -2,9 +2,9 @@ import { QueryOptions, SqlStatement } from "@/interface/Query.ts";
 import { QueryOptionsWithDecoder } from "@/interface/Query/_internal.ts";
 import type { QueryReader as IQueryReader } from "@/interface/Query.ts";
 import QueryReader from "./QueryReader.ts";
-import { MaybePromise, processMaybePromise } from "@/_utils/AsyncAble.ts";
+import { MaybePromise, processMaybePromise } from "@/internal/AsyncAble.ts";
 import { PgSession, StatementPortal } from "@/protocol.ts";
-import { QueryParserResult } from "@/protocol/parsers/QueryTask.ts";
+import { QueryParserResult } from "@/protocol/QueryPortal.ts";
 
 export type GetPgSession = () => MaybePromise<PgSession>;
 

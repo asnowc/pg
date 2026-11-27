@@ -1,6 +1,6 @@
-import { DataStream } from "@/_utils/DataStream.ts";
-import { ReadableBuffer, ReadBuffer } from "../../src/_utils/ReadBuffer.ts";
-import { WriteBuffer } from "@/_utils/WriterBuffer.ts";
+import { DataStream } from "@/internal/DataStream.ts";
+import { ReadableBuffer, ReadBuffer } from "@/internal/ReadBuffer.ts";
+import { WriteBuffer } from "@/internal/WriterBuffer.ts";
 import { BackendMessageCode, PgTransactionStatus } from "@/protocol/const.ts";
 
 function backendMessage(code: BackendMessageCode, body = new Uint8Array()) {

@@ -3,9 +3,9 @@ import { PROTOCOL_VERSION, TLSResponseCode } from "./const.ts";
 import { PgAuthenticationError } from "@/error.ts";
 import { encodeNegotiateTlsMessage, encodeStartupMessage } from "./encode.ts";
 import { AuthenticationResult, startAuthentication } from "./auth.ts";
-import { UnexpectedEOFError } from "@/_utils/error.ts";
+import { UnexpectedEOFError } from "@/internal/error.ts";
 import { PgSession } from "@/protocol.ts";
-import type { DataStream } from "@/_utils/DataStream.ts";
+import type { DataStream } from "@/internal/DataStream.ts";
 import { ConnectionSource } from "@asla/pg";
 import { createDataStream } from "@/platforms/createDataStream.ts";
 

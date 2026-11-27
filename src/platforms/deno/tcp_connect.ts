@@ -1,4 +1,4 @@
-import { InternalError } from "@/_utils/error.ts";
+import { InternalError } from "@/internal/error.ts";
 import type { PgConnectOptions, PgNetConnectOptions } from "@/interface/Connection.ts";
 import { PgConnection } from "@/class/PgConnection.ts";
 

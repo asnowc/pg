@@ -1,5 +1,5 @@
-import { ReadableBuffer } from "@/_utils/ReadBuffer.ts";
-import { InternalError, PgProtocolError } from "@/_utils/error.ts";
+import { ReadableBuffer } from "@/internal/ReadBuffer.ts";
+import { InternalError, PgProtocolError } from "@/internal/error.ts";
 
 export interface MessageParser<T = unknown> {
   next(reader: ReadableBuffer, remainingByteLength: number): T | undefined;

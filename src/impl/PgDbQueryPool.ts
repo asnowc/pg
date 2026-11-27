@@ -11,7 +11,7 @@ import type {
   SqlLike,
 } from "#abstract";
 import { createPgClient } from "./_pg_client.ts";
-import { ResourcePool } from "@/_utils/ResourcePool.ts";
+import { ResourcePool } from "@/internal/ResourcePool.ts";
 import { PgConnection as LegacyPgConnection } from "./_PgConnection.ts";
 import { parserDbConnectUrl } from "./connect.ts";
 import type { DbConnectOption } from "./connect.ts";

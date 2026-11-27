@@ -29,7 +29,7 @@ import {
   WaitQueueItem,
 } from "./Pool.ts";
 import type { CreatePoolOptions } from "./Pool.ts";
-import { CountLinkList } from "@/_utils/LinkList.ts";
+import { CountLinkList } from "@/internal/LinkList.ts";
 import { poolForTest } from "./PgPoolForTest.ts";
 import { ConnQueryOperation } from "./QueryOperation.ts";
 import { isolationQuery } from "./private/QueryFunction.ts";

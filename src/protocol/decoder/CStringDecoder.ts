@@ -1,4 +1,4 @@
-import { ReadableBuffer } from "@/_utils/ReadBuffer.ts";
+import { ReadableBuffer } from "@/internal/ReadBuffer.ts";
 import { concatU8ArrayList, StreamDecoder } from "./_common.ts";
 
 const textDecoder = new TextDecoder();

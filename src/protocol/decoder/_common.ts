@@ -1,6 +1,6 @@
-import { ReadableBuffer } from "@/_utils/ReadBuffer.ts";
+import { ReadableBuffer } from "@/internal/ReadBuffer.ts";
 import { PgFormat } from "../const.ts";
-import { PgProtocolError } from "@/_utils/error.ts";
+import { PgProtocolError } from "@/internal/error.ts";
 
 export interface StreamDecoder<T> {
   next(reader: ReadableBuffer): T | undefined;
